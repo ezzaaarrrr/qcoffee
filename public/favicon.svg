@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="coffeeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B5A2B" />
+      <stop offset="100%" stop-color="#4A2C11" />
+    </linearGradient>
+    <linearGradient id="steamGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#A57C59" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#A57C59" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+  <!-- Cup Body -->
+  <path d="M112 192h240c17.7 0 32 14.3 32 32v128c0 53-43 96-96 96H208c-53 0-96-43-96-96V224c0-17.7 14.3-32 32-32z" fill="url(#coffeeGrad)" />
+  <!-- Cup Handle -->
+  <path d="M384 256h24c22.1 0 40 17.9 40 40v32c0 22.1-17.9 40-40 40h-24" fill="none" stroke="url(#coffeeGrad)" stroke-width="32" stroke-linecap="round" />
+  <!-- Cup Rim/Saucer or top reflection -->
+  <ellipse cx="232" cy="192" rx="120" ry="24" fill="#6F4E37" />
+  <!-- Coffee Liquid surface inside cup -->
+  <ellipse cx="232" cy="196" rx="110" ry="18" fill="#3D2314" />
+  <!-- Steam lines -->
+  <path d="M192 128c0-32 16-48 16-64" fill="none" stroke="url(#steamGrad)" stroke-width="16" stroke-linecap="round" />
+  <path d="M232 112c0-32 16-48 16-64" fill="none" stroke="url(#steamGrad)" stroke-width="16" stroke-linecap="round" />
+  <path d="M272 128c0-32 16-48 16-64" fill="none" stroke="url(#steamGrad)" stroke-width="16" stroke-linecap="round" />
+</svg>
