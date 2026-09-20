@@ -152,7 +152,7 @@ export async function fetchRoastingItems(roastingId: string) {
 export async function fetchProducts() {
   const { data, error } = await (supabase as any)
     .from("products")
-    .select("id, name, code, is_active, current_stock, min_stock")
+    .select("id, name, code, is_active, current_stock, min_stock, unit")
     .order("name");
   if (error) throw error;
   return (data ?? []) as {
@@ -162,6 +162,7 @@ export async function fetchProducts() {
     is_active: boolean;
     current_stock?: number | null;
     min_stock?: number | null;
+    unit?: string | null;
   }[];
 }
 

@@ -39,7 +39,7 @@ import { TimePickerDialog } from "@/components/TimePickerDialog";
 
 export const Route = createFileRoute("/_authenticated/grinding")({
   validateSearch: (search: Record<string, unknown>) => ({
-    action: (search.action as string) || undefined,
+    action: (search["action"] as string) || undefined,
   }),
   head: () => ({
     meta: [

@@ -38,7 +38,7 @@ import {
   type GrindingRow,
   type RoastingRow,
 } from "@/lib/queries";
-import { formatDate, ROLE_LABELS } from "@/lib/domain";
+import { formatDate, ROLE_LABELS, type AppRole } from "@/lib/domain";
 import { useCurrentUser } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/_authenticated/checklists")({
@@ -67,8 +67,16 @@ type UnifiedActivity = {
 };
 
 function DashboardChecklistPage() {
-  const { roles, userRole: activeRole, canCreate } = useCurrentUser();
-  const userRole = activeRole ?? (roles.includes("admin") ? "admin" : "admin_process");
+  const { roles, canCreate } = useCurrentUser();
+  const userRole: AppRole = roles.includes("admin")
+    ? "admin"
+    : roles.includes("qc_field")
+      ? "qc_field"
+      : roles.includes("admin_process")
+        ? "admin_process"
+        : roles.includes("prod_process_uh")
+          ? "prod_process_uh"
+          : "admin_process";
 
   const formulasi = useQuery({ queryKey: ["formulasi"], queryFn: fetchFormulasi });
   const grinding = useQuery({ queryKey: ["grinding"], queryFn: fetchGrinding });
@@ -311,7 +319,7 @@ function DashboardChecklistPage() {
           <StatCard
             label="Perlu Revisi / Ditolak"
             value={rejectedCount}
-            accent="error"
+            accent="destructive"
             hint="Checklist tidak lolos QC"
           />
         </div>
@@ -340,7 +348,7 @@ function DashboardChecklistPage() {
                   <span>Checklist Baru</span>
                 </Button>
               </Link>
-              <Link to="/formulasi">
+              <Link to="/formulasi" search={{ action: undefined }}>
                 <Button size="sm" variant="outline" className="h-8 text-xs px-2.5">
                   Lihat →
                 </Button>
@@ -370,7 +378,7 @@ function DashboardChecklistPage() {
                   <span>Checklist Baru</span>
                 </Button>
               </Link>
-              <Link to="/grinding">
+              <Link to="/grinding" search={{ action: undefined }}>
                 <Button size="sm" variant="outline" className="h-8 text-xs px-2.5">
                   Lihat →
                 </Button>
@@ -400,7 +408,7 @@ function DashboardChecklistPage() {
                   <span>Checklist Baru</span>
                 </Button>
               </Link>
-              <Link to="/roasting">
+              <Link to="/roasting" search={{ action: undefined }}>
                 <Button size="sm" variant="outline" className="h-8 text-xs px-2.5">
                   Lihat →
                 </Button>

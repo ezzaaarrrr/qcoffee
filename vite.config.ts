@@ -16,6 +16,11 @@ export default defineConfig({
     tailwindcss(),
   ],
 
+  server: {
+    watch: {
+      ignored: ["**/.output/**", "**/.vinxi/**", "**/dist/**"],
+    },
+  },
   resolve: {
     alias: {
       "@": "/src",

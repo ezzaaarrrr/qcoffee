@@ -10,7 +10,10 @@ import {
   ClipboardCheck,
   Settings,
   Package,
+  Boxes,
+  History,
   Shield,
+  ShieldAlert,
   PanelLeftClose,
   PanelLeftOpen,
   LogOut,
@@ -29,10 +32,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; adminOnly?: boolean };
+type NavItem = {
+  to: string;
+  search?: { tab?: string; action?: string; type?: "IN" | "OUT" };
+  label: string;
+  icon: typeof LayoutDashboard;
+  adminOnly?: boolean;
+};
 
 const OPERASIONAL: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard OBS Sparepart", icon: LayoutDashboard },
+  { to: "/dashboard", label: "DASHBOARD OVERVIEW", icon: LayoutDashboard },
   { to: "/checklists", label: "Dashboard Checklist", icon: ClipboardList },
   { to: "/formulasi", label: "Formulasi Mixing", icon: FlaskConical },
   { to: "/grinding", label: "Proses Grinding", icon: Grid2x2 },
@@ -41,7 +50,9 @@ const OPERASIONAL: NavItem[] = [
 
 const MANAJEMEN: NavItem[] = [
   { to: "/approvals", label: "Approval Center", icon: ClipboardCheck },
-  { to: "/products", label: "Gudang & Master Barang", icon: Package },
+  { to: "/products", search: { tab: "items" }, label: "OBS Sparepart", icon: Boxes },
+  { to: "/products", search: { tab: "buffer_stock" }, label: "Buffer Stok", icon: ShieldAlert },
+  { to: "/products", search: { tab: "transactions" }, label: "Riwayat Mutasi", icon: History },
   { to: "/profile", label: "Pengaturan Akun", icon: User },
   { to: "/settings", label: "Manajemen User", icon: Settings, adminOnly: true },
   { to: "/roles", label: "Hak Akses & Departemen", icon: Shield, adminOnly: true },
@@ -51,16 +62,20 @@ export function AppShell({
   breadcrumb,
   actions,
   children,
+  contentClassName,
 }: {
   breadcrumb: string;
   actions?: ReactNode;
   children: ReactNode;
+  contentClassName?: string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const { profile, roles, isAdmin } = useCurrentUser();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const routerLocation = useRouterState({ select: (s) => s.location });
+  const pathname = routerLocation.pathname;
+  const currentTab = (routerLocation.search as any)?.tab;
 
   const initials = (profile?.full_name || profile?.email || "??")
     .split(" ")
@@ -122,18 +137,28 @@ export function AppShell({
   );
 
   const renderNav = (items: NavItem[]) =>
-    items.map((item) => {
-      const active = pathname === item.to;
+    items.map((item, idx) => {
+      let active = pathname === item.to;
+      if (item.to === "/products") {
+        const itemTab = item.search?.tab;
+        if (itemTab) {
+          active = pathname === "/products" && (currentTab === itemTab || (!currentTab && itemTab === "items"));
+        } else {
+          active = pathname === "/products";
+        }
+      }
+
       const Icon = item.icon;
       return (
         <Link
-          key={item.to}
+          key={`${item.to}-${item.search?.tab || idx}`}
           to={item.to}
+          search={item.search as any}
           className={cn(
-            "flex items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors",
+            "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
             active
-              ? "bg-foreground font-medium text-background"
-              : "text-muted-foreground hover:bg-surface-muted hover:text-foreground",
+              ? "bg-white font-bold text-[#1268D9] shadow-sm"
+              : "text-blue-100 hover:bg-white/10 hover:text-white",
           )}
         >
           <Icon className="size-4 shrink-0" />
@@ -143,58 +168,57 @@ export function AppShell({
     });
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background font-sans text-foreground">
+    <div className="flex h-screen overflow-hidden bg-[#1268D9] font-sans text-foreground">
       <aside
         className={cn(
-          "flex h-screen shrink-0 flex-col border-r border-border bg-surface transition-[width] duration-200 sticky top-0 overflow-y-auto",
+          "flex h-screen shrink-0 flex-col border-r-2 border-blue-200/50 bg-[#1268D9] text-white transition-[width] duration-200 sticky top-0 overflow-y-auto shadow-md",
           collapsed ? "w-[68px]" : "w-64",
         )}
       >
-        <div className="border-b border-border p-4 shrink-0">
+        <div className="border-b-2 border-blue-200/50 p-4 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-sm bg-foreground">
-              <div className="size-4 bg-primary" />
+            <div className="flex size-14 shrink-0 items-center justify-center">
+              <img
+                src="/logo-sparepart.png"
+                alt="Logo Sparepart"
+                className="size-full object-contain drop-shadow-md hover:scale-105 transition-transform"
+              />
             </div>
             {!collapsed && (
-              <span className="text-xl font-bold uppercase tracking-tighter">
-                Q-Coffee <span className="text-primary">M2</span>
+              <span className="text-xl font-bold uppercase tracking-tighter leading-none text-white">
+                Gudang Sparepart <span className="text-amber-300">M2</span>
               </span>
             )}
           </div>
         </div>
 
         <nav className="flex-1 space-y-1 p-3 overflow-y-auto">
-          {visibleOperasional.length > 0 && (
-            <>
-              {!collapsed && <div className="label-caps mb-2 px-3">Operasional</div>}
-              {renderNav(visibleOperasional)}
-            </>
-          )}
+          {visibleOperasional.length > 0 && renderNav(visibleOperasional)}
 
           {visibleManajemen.length > 0 && (
             <>
               {!collapsed && (
                 <div
                   className={cn(
-                    "label-caps mb-2 px-3",
+                    "text-[10px] font-bold uppercase tracking-wider text-blue-200 mb-2 px-3",
                     visibleOperasional.length > 0 ? "mt-8" : "mt-2",
                   )}
                 >
-                  Manajemen
+                  MANAJEMENT GUDANG SPAREPART
                 </div>
               )}
               {collapsed && visibleOperasional.length > 0 && (
-                <div className="my-3 border-t border-border" />
+                <div className="my-3 border-t-2 border-blue-200/50" />
               )}
               {renderNav(visibleManajemen)}
             </>
           )}
         </nav>
 
-        <div className="border-t border-border p-3 shrink-0">
+        <div className="border-t-2 border-blue-200/50 p-3 shrink-0">
           <button
             onClick={() => setCollapsed((c) => !c)}
-            className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground"
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-blue-100 transition-colors hover:bg-white/10 hover:text-white"
           >
             {collapsed ? (
               <PanelLeftOpen className="size-4" />
@@ -205,15 +229,15 @@ export function AppShell({
             )}
           </button>
           {!collapsed && (
-            <Link to="/profile" className="mt-2 flex items-center gap-3 px-3 py-2 rounded hover:bg-surface-muted transition-colors">
-              <div className="grid size-8 shrink-0 place-items-center rounded-full bg-surface-muted font-mono text-xs">
+            <Link to="/profile" className="mt-2 flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/10 transition-colors">
+              <div className="grid size-8 shrink-0 place-items-center rounded-full bg-white/20 text-white font-mono text-xs font-bold">
                 {initials}
               </div>
               <div className="flex min-w-0 flex-col">
-                <span className="truncate text-xs font-semibold leading-tight">
+                <span className="truncate text-xs font-semibold leading-tight text-white">
                   {profile?.full_name || profile?.email || "Pengguna"}
                 </span>
-                <span className="truncate text-[10px] text-muted-foreground">
+                <span className="truncate text-[10px] text-blue-200">
                   {roles.map((r) => ROLE_LABELS[r]).join(", ") || "Tanpa Peran"}
                 </span>
               </div>
@@ -222,18 +246,18 @@ export function AppShell({
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col h-screen overflow-hidden">
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-surface px-8 sticky top-0 z-10">
+      <main className="flex min-w-0 flex-1 flex-col h-screen overflow-hidden bg-[#1268D9]">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b-2 border-blue-200/50 bg-[#1268D9] px-8 sticky top-0 z-10 text-white shadow-xs">
           <div className="flex items-center gap-4 text-sm">
-            <span className="text-muted-foreground">Dashboard</span>
-            <span className="text-muted-foreground">/</span>
-            <span className="font-medium">{breadcrumb}</span>
+            <span className="text-blue-200">Dashboard</span>
+            <span className="text-blue-300">/</span>
+            <span className="font-semibold text-white">{breadcrumb}</span>
           </div>
           <div className="flex items-center gap-3">
             {actions}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="grid size-8 place-items-center rounded-full bg-surface-muted font-mono text-xs transition-colors hover:bg-border">
+                <button className="grid size-8 place-items-center rounded-full bg-white/20 font-mono text-xs text-white font-bold transition-colors hover:bg-white/30 border border-white/30">
                   {initials}
                 </button>
               </DropdownMenuTrigger>
@@ -257,7 +281,7 @@ export function AppShell({
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-8">{children}</div>
+        <div className={cn("flex-1 overflow-y-auto p-8", contentClassName)}>{children}</div>
       </main>
     </div>
   );

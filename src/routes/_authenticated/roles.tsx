@@ -59,7 +59,7 @@ type AppRouteItem = {
 };
 
 const SYSTEM_ROUTES: AppRouteItem[] = [
-  { path: "/dashboard", label: "Dashboard OBS Sparepart", category: "Operasional" },
+  { path: "/dashboard", label: "DASHBOARD OVERVIEW", category: "Operasional" },
   { path: "/checklists", label: "Dashboard Checklist", category: "Operasional" },
   { path: "/formulasi", label: "Formulasi Mixing", category: "Operasional" },
   { path: "/grinding", label: "Proses Grinding", category: "Operasional" },

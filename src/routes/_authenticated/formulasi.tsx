@@ -33,7 +33,7 @@ import { useCurrentUser } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/_authenticated/formulasi")({
   validateSearch: (search: Record<string, unknown>) => ({
-    action: (search.action as string) || undefined,
+    action: (search["action"] as string) || undefined,
   }),
   head: () => ({
     meta: [

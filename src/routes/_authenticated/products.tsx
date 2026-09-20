@@ -319,6 +319,11 @@ function WarehouseAndProductsPage() {
         }
 
         const worksheet = workbook.Sheets[firstSheetName];
+        if (!worksheet) {
+          toast.error("Lembar kerja tidak ditemukan");
+          return;
+        }
+
         // Konversi ke format array baris
         const rawRows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: "" });
 
@@ -327,16 +332,18 @@ function WarehouseAndProductsPage() {
           return;
         }
 
-        // Cari baris header yang mengandung kata kunci kode/nama/qty
+        // Cari baris header yang mengandung kata kunci kolom
         let headerRowIdx = 0;
         for (let i = 0; i < Math.min(rawRows.length, 5); i++) {
-          const rowStr = rawRows[i].map((c: any) => String(c || "").toLowerCase()).join(" ");
+          const rowStr = (rawRows[i] || []).map((c: any) => String(c || "").toLowerCase()).join(" ");
           if (
             rowStr.includes("kode") ||
             rowStr.includes("material") ||
             rowStr.includes("nama") ||
             rowStr.includes("barang") ||
             rowStr.includes("part") ||
+            rowStr.includes("stok") ||
+            rowStr.includes("stock") ||
             rowStr.includes("qty") ||
             rowStr.includes("jumlah")
           ) {
@@ -345,41 +352,141 @@ function WarehouseAndProductsPage() {
           }
         }
 
-        const headers = rawRows[headerRowIdx].map((h: any) => String(h || "").toLowerCase().trim());
+        const selectedHeaderRow = rawRows[headerRowIdx] || [];
+        const headers = selectedHeaderRow.map((h: any) =>
+          String(h || "")
+            .toLowerCase()
+            .trim()
+            .replace(/\r?\n|\r/g, " ")
+            .replace(/\s+/g, " ")
+        );
 
-        // Cari index kolom: Kode Material, Nama Barang, dan Jumlah Quantity
-        const codeIdx = headers.findIndex((h: string) =>
-          h.includes("kode") || h.includes("material") || h.includes("sku") || h.includes("part")
+        // Pencocokan kolom spesifik (prioritaskan yang lebih spesifik agar tidak tertukar)
+        const safeStockIdx = headers.findIndex(
+          (h: string) =>
+            h.includes("batas minimal") ||
+            h.includes("batas min") ||
+            h.includes("safe stock") ||
+            h.includes("safety stock") ||
+            h.includes("safety") ||
+            h.includes("limit")
         );
-        const nameIdx = headers.findIndex((h: string) =>
-          h.includes("nama") || h.includes("deskripsi") || h.includes("description") || h.includes("barang") || h.includes("item")
+
+        const minStockIdx = headers.findIndex(
+          (h: string, idx: number) =>
+            idx !== safeStockIdx &&
+            (h.includes("minimal stok") ||
+              h.includes("min stok") ||
+              h.includes("minimal stock") ||
+              h.includes("min stock") ||
+              h === "min" ||
+              h === "minimum")
         );
-        const qtyIdx = headers.findIndex((h: string) =>
-          h.includes("qty") || h.includes("quantity") || h.includes("jumlah") || h.includes("stok") || h.includes("stock")
+
+        const maxStockIdx = headers.findIndex(
+          (h: string) =>
+            h.includes("maksimal") ||
+            h.includes("maks.") ||
+            h.includes("maks") ||
+            h.includes("max stock") ||
+            h.includes("max") ||
+            h.includes("maximum")
         );
+
+        const currentStockIdx = headers.findIndex(
+          (h: string, idx: number) =>
+            idx !== safeStockIdx &&
+            idx !== minStockIdx &&
+            idx !== maxStockIdx &&
+            (h.includes("saat ini") ||
+              h.includes("current") ||
+              h.includes("stok fisik") ||
+              h.includes("saldo") ||
+              h.includes("qty") ||
+              h.includes("quantity") ||
+              h.includes("jumlah") ||
+              h === "stok" ||
+              h === "stock")
+        );
+
+        const codeIdx = headers.findIndex(
+          (h: string) =>
+            h.includes("kode") ||
+            h.includes("code") ||
+            h.includes("sku") ||
+            h.includes("part no") ||
+            h.includes("part_no") ||
+            (h.includes("material") && !h.includes("nama"))
+        );
+
+        const nameIdx = headers.findIndex((h: string, idx: number) => {
+          if (idx === codeIdx) return false;
+          return (
+            h.includes("nama") ||
+            h.includes("material") ||
+            h.includes("deskripsi") ||
+            h.includes("description") ||
+            h.includes("barang") ||
+            h.includes("item")
+          );
+        });
 
         const parsedItems: any[] = [];
         for (let r = headerRowIdx + 1; r < rawRows.length; r++) {
           const row = rawRows[r];
           if (!row || row.length === 0) continue;
 
-          // Ambil nilai per kolom sesuai index yang terdeteksi
-          const rawCode = codeIdx >= 0 && row[codeIdx] !== undefined ? String(row[codeIdx]).trim() : "";
-          const rawName = nameIdx >= 0 && row[nameIdx] !== undefined ? String(row[nameIdx]).trim() : (row[0] ? String(row[0]).trim() : "");
-          const rawQty = qtyIdx >= 0 && row[qtyIdx] !== undefined ? parseFloat(String(row[qtyIdx]).replace(/[^0-9.-]/g, "")) : 0;
+          // Ambil nilai per kolom sesuai index yang terdeteksi atau fallback urutan kolom standar
+          let rawCode = codeIdx >= 0 && row[codeIdx] !== undefined ? String(row[codeIdx]).trim() : "";
+          let rawName = nameIdx >= 0 && row[nameIdx] !== undefined ? String(row[nameIdx]).trim() : "";
 
-          // Lewati baris jika nama barang kosong
-          if (!rawName) continue;
+          // Fallback cerdas jika header tidak terpetakan sempurna (misal: Col 0 = No, Col 1 = Kode, Col 2 = Material)
+          if (!rawCode && !rawName && row.length >= 3) {
+            if (/^\d+$/.test(String(row[0]).trim())) {
+              rawCode = String(row[1] || "").trim();
+              rawName = String(row[2] || "").trim();
+            } else {
+              rawCode = String(row[0] || "").trim();
+              rawName = String(row[1] || "").trim();
+            }
+          } else if (!rawName && row[1]) {
+            rawName = String(row[1]).trim();
+          } else if (!rawName && row[2]) {
+            rawName = String(row[2]).trim();
+          }
+
+          // Lewati baris jika tidak ada identitas barang (kode & nama kosong)
+          if (!rawName && !rawCode) continue;
+          if (!rawName && rawCode) {
+            rawName = `Item ${rawCode}`;
+          }
+
+          // Helper parsing angka
+          const parseNum = (val: any, fallback: number | null = null): number | null => {
+            if (val === undefined || val === null || String(val).trim() === "" || String(val).trim() === "—" || String(val).trim() === "-") {
+              return fallback;
+            }
+            const cleanStr = String(val).replace(/[^0-9.-]/g, "");
+            const num = parseFloat(cleanStr);
+            return !isNaN(num) ? num : fallback;
+          };
+
+          const rawCurrentStock = currentStockIdx >= 0 ? parseNum(row[currentStockIdx], 0) : 0;
+          const rawSafeStock = safeStockIdx >= 0 ? parseNum(row[safeStockIdx], 1) : 1;
+          const rawMinStock = minStockIdx >= 0 ? parseNum(row[minStockIdx], 10) : 10;
+          const rawMaxStock = maxStockIdx >= 0 ? parseNum(row[maxStockIdx], null) : null;
 
           parsedItems.push({
             name: rawName,
             code: rawCode || null,
-            current_stock: !isNaN(rawQty) && rawQty >= 0 ? rawQty : 0,
+            current_stock: rawCurrentStock ?? 0,
+            safe_stock: rawSafeStock ?? 1,
+            min_stock: rawMinStock ?? 10,
+            max_stock: rawMaxStock,
             category: "Sparepart & Tools",
             unit: "pcs",
             location: "Gudang Utama",
             shelf: "Rak A-1",
-            min_stock: 5,
             is_active: true,
           });
         }
@@ -400,19 +507,29 @@ function WarehouseAndProductsPage() {
     reader.readAsArrayBuffer(file);
   };
 
-  // Unduh Template Resmi Excel/CSV dengan 3 Kolom Inti: Kode Material, Nama Barang, Jumlah Quantity
+  // Unduh Template Resmi Excel/CSV Buffer Stok & OBS
   const downloadImportTemplate = () => {
     const templateData = [
-      ["Kode Material", "Nama Barang", "Jumlah Quantity"],
-      ["SP-BRG-6204", "Bearing 6204-2RS", 25],
-      ["SP-HTR-2000", "Heater Element 2000W", 10],
-      ["SP-VBL-050", "V-Belt B-50", 15],
-      ["SP-SL-35", "O-Ring Seal 35mm", 50],
+      ["No", "Kode", "Material", "Lokasi", "Rak", "Batas Minimal Stok", "Minimal Stok", "Maks. Stok", "Stok Saat Ini"],
+      [1, "7100110213", "BEARING 32004", "Gudang Utama", "Rak A-1", 1, 1, 10, 0],
+      [2, "7100110339", "BEARING 6001 2Z", "Gudang Utama", "Rak A-1", 10, 1, 40, 0],
+      [3, "7100110345", "BEARING 6003 2Z", "Gudang Utama", "Rak A-1", 20, 1, 40, 0],
+      [4, "7100110347", "BEARING 6004 2Z", "Gudang Utama", "Rak A-1", 12, 1, 60, 0],
+      [5, "7100110351", "BEARING 6005 2Z", "Gudang Utama", "Rak A-1", 18, 1, 50, 0],
     ];
 
     const worksheet = XLSX.utils.aoa_to_sheet(templateData);
-    // Atur lebar kolom agar rapi
-    worksheet["!cols"] = [{ wch: 18 }, { wch: 32 }, { wch: 18 }];
+    worksheet["!cols"] = [
+      { wch: 6 },
+      { wch: 18 },
+      { wch: 32 },
+      { wch: 16 },
+      { wch: 12 },
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 14 },
+    ];
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Template Master");
@@ -2692,22 +2809,18 @@ function WarehouseAndProductsPage() {
 
       {/* ── MODAL DIALOG: TAMBAH BARANG ───────────────────────────────────────── */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
-            <div className="flex items-center justify-between pr-6">
-              <div>
-                <DialogTitle>Tambah Data Barang Baru</DialogTitle>
-                <DialogDescription>
-                  Tambahkan data master secara manual atau upload file Excel / CSV sekaligus.
-                </DialogDescription>
-              </div>
-            </div>
+        <DialogContent className="sm:max-w-4xl w-full max-h-[90vh] flex flex-col p-6 overflow-hidden">
+          <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
+            <DialogTitle className="text-lg font-bold">Tambah Data Barang Baru</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Tambahkan data master secara manual atau upload file Excel / CSV sekaligus.
+            </DialogDescription>
           </DialogHeader>
 
           {/* Tab Mode: Manual vs Upload File Excel/CSV */}
-          <Tabs defaultValue="manual" className="w-full">
-            <div className="flex items-center justify-between border-b pb-2 mb-2">
-              <TabsList className="grid w-64 grid-cols-2">
+          <Tabs defaultValue="manual" className="w-full flex-1 flex flex-col min-h-0 overflow-hidden mt-3">
+            <div className="flex items-center justify-between border-b pb-2 mb-3 shrink-0">
+              <TabsList className="grid w-72 grid-cols-2">
                 <TabsTrigger value="manual" className="text-xs">Manual Input</TabsTrigger>
                 <TabsTrigger value="upload" className="text-xs gap-1.5">
                   <FileSpreadsheet className="size-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -2716,276 +2829,319 @@ function WarehouseAndProductsPage() {
               </TabsList>
             </div>
 
-            {/* TAB 1: FORM MANUAL */}
-            <TabsContent value="manual" className="mt-0 space-y-3">
-          <div className="grid grid-cols-2 gap-4 py-2 text-sm">
-            <div className="space-y-1.5 col-span-2 sm:col-span-1">
-              <Label htmlFor="add-name">Nama Barang *</Label>
-              <Input
-                id="add-name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="cth. Bearing 6204-2RS / Heater Element 2000W"
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1.5 col-span-2 sm:col-span-1">
-              <Label htmlFor="add-code">Kode Material</Label>
-              <Input
-                id="add-code"
-                value={formData.code}
-                onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                placeholder="cth. SP-BRG-6204"
-              />
-            </div>
+            {/* Container Scrollable Isi Tab */}
+            <div className="flex-1 overflow-y-auto pr-1">
+              {/* TAB 1: FORM MANUAL */}
+              <TabsContent value="manual" className="mt-0 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="add-name" className="text-xs font-semibold">Nama Barang *</Label>
+                    <Input
+                      id="add-name"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="cth. BEARING 6204-2RS / HEATER ELEMENT 2000W"
+                      className="h-9 text-xs"
+                      autoFocus
+                    />
+                  </div>
 
-            <div className="space-y-1.5">
-              <Label>Kategori Barang</Label>
-              <Select
-                value={formData.category}
-                onValueChange={(v) => setFormData({ ...formData, category: v })}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((c: any) => (
-                    <SelectItem key={c.id} value={c.name}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="add-code" className="text-xs font-semibold">Kode Material</Label>
+                    <Input
+                      id="add-code"
+                      value={formData.code}
+                      onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                      placeholder="cth. 7100110213 / SP-BRG-6204"
+                      className="h-9 text-xs font-mono"
+                    />
+                  </div>
 
-            <div className="space-y-1.5">
-              <Label>Satuan (UoM)</Label>
-              <Select
-                value={formData.unit}
-                onValueChange={(v) => setFormData({ ...formData, unit: v })}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {units.map((u: any) => (
-                    <SelectItem key={u.id} value={u.code}>
-                      {u.name} ({u.code})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Kategori Barang</Label>
+                    <Select
+                      value={formData.category}
+                      onValueChange={(v) => setFormData({ ...formData, category: v })}
+                    >
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((c: any) => (
+                          <SelectItem key={c.id} value={c.name} className="text-xs">
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-            <div className="space-y-1.5">
-              <Label>Lokasi Gudang</Label>
-              <Input
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                placeholder="Gudang Utama"
-              />
-            </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Satuan (UoM)</Label>
+                    <Select
+                      value={formData.unit}
+                      onValueChange={(v) => setFormData({ ...formData, unit: v })}
+                    >
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {units.map((u: any) => (
+                          <SelectItem key={u.id} value={u.code} className="text-xs">
+                            {u.name} ({u.code})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-            <div className="space-y-1.5">
-              <Label>Shelf / Rak</Label>
-              <Input
-                value={formData.shelf}
-                onChange={(e) => setFormData({ ...formData, shelf: e.target.value })}
-                placeholder="Rak A-1"
-              />
-            </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Lokasi Gudang</Label>
+                    <Input
+                      value={formData.location}
+                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                      placeholder="Gudang Utama"
+                      className="h-9 text-xs"
+                    />
+                  </div>
 
-            <div className="space-y-1.5">
-              <Label>Stok Awal</Label>
-              <Input
-                type="number"
-                value={formData.current_stock}
-                onChange={(e) => setFormData({ ...formData, current_stock: e.target.value })}
-                placeholder="0"
-              />
-            </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Shelf / Rak</Label>
+                    <Input
+                      value={formData.shelf}
+                      onChange={(e) => setFormData({ ...formData, shelf: e.target.value })}
+                      placeholder="Rak A-1"
+                      className="h-9 text-xs font-mono"
+                    />
+                  </div>
 
-            <div className="space-y-1.5">
-              <Label>Batas Minimum Stok (Alert)</Label>
-              <Input
-                type="number"
-                value={formData.min_stock}
-                onChange={(e) => setFormData({ ...formData, min_stock: e.target.value })}
-                placeholder="10"
-              />
-            </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Stok Awal / Saat Ini</Label>
+                    <Input
+                      type="number"
+                      value={formData.current_stock}
+                      onChange={(e) => setFormData({ ...formData, current_stock: e.target.value })}
+                      placeholder="0"
+                      className="h-9 text-xs font-mono"
+                    />
+                  </div>
 
-          </div>
-              <div className="flex items-center justify-end gap-2 pt-3 border-t">
-                <Button variant="outline" onClick={() => setIsAddOpen(false)}>
-                  Batal
-                </Button>
-                <Button onClick={() => addProduct.mutate()} disabled={addProduct.isPending || !formData.name.trim()}>
-                  {addProduct.isPending ? "Menyimpan..." : "Simpan Barang"}
-                </Button>
-              </div>
-            </TabsContent>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Batas Minimum Stok (Alert)</Label>
+                    <Input
+                      type="number"
+                      value={formData.min_stock}
+                      onChange={(e) => setFormData({ ...formData, min_stock: e.target.value })}
+                      placeholder="10"
+                      className="h-9 text-xs font-mono"
+                    />
+                  </div>
+                </div>
 
-            {/* TAB 2: UPLOAD FILE EXCEL / CSV */}
-            <TabsContent value="upload" className="mt-0 space-y-4">
-              <input
-                type="file"
-                ref={bulkFileInputRef}
-                accept=".csv,.xls,.xlsx,.txt"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleBulkFileSelect(f);
-                }}
-              />
+                <div className="flex items-center justify-end gap-2 pt-4 border-t mt-4">
+                  <Button variant="outline" size="sm" onClick={() => setIsAddOpen(false)}>
+                    Batal
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => addProduct.mutate()}
+                    disabled={addProduct.isPending || !formData.name.trim()}
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
+                  >
+                    {addProduct.isPending ? "Menyimpan..." : "Simpan Barang"}
+                  </Button>
+                </div>
+              </TabsContent>
 
-              {/* Tampilan Box Upload: Jika belum ada file tampilkan kotak upload, jika sudah diupload tutup dan tampilkan ringkasan kompak */}
-              {!importFile ? (
-                <div className="rounded-lg border-2 border-dashed border-border p-6 text-center bg-surface hover:bg-surface-muted transition-colors">
-                  <div className="flex flex-col items-center justify-center gap-2">
-                    <div className="flex size-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600">
-                      <FileSpreadsheet className="size-6" />
+              {/* TAB 2: UPLOAD FILE EXCEL / CSV */}
+              <TabsContent value="upload" className="mt-0 space-y-4">
+                <input
+                  type="file"
+                  ref={bulkFileInputRef}
+                  accept=".csv,.xls,.xlsx,.txt"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleBulkFileSelect(f);
+                  }}
+                />
+
+                {/* Tampilan Box Upload */}
+                {!importFile ? (
+                  <div className="rounded-xl border-2 border-dashed border-border p-6 text-center bg-surface hover:bg-surface-muted/60 transition-colors">
+                    <div className="flex flex-col items-center justify-center gap-2.5">
+                      <div className="flex size-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                        <FileSpreadsheet className="size-6" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">
+                          Pilih File Excel / CSV (.xlsx, .xls, .csv)
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Format kolom yang didukung: <strong>Kode</strong>, <strong>Material</strong>, <strong>Batas Minimal Stok</strong>, <strong>Minimal Stok</strong>, <strong>Maks. Stok</strong>, dan <strong>Stok Saat Ini</strong>
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-center gap-2.5 mt-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="default"
+                          onClick={() => bulkFileInputRef.current?.click()}
+                          className="gap-1.5 text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                        >
+                          <UploadCloud className="size-3.5" />
+                          Pilih File Dokumen
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={downloadImportTemplate}
+                          className="gap-1.5 text-xs h-8 text-primary hover:text-primary hover:bg-primary/10 border-primary/25"
+                        >
+                          <Download className="size-3.5" />
+                          Unduh Template Excel (.xlsx)
+                        </Button>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">
-                        Pilih File Excel / CSV (.xlsx, .xls, .csv)
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Format kolom yang diambil: <strong>Kode Material</strong>, <strong>Nama Barang</strong>, dan <strong>Jumlah Quantity</strong>
-                      </p>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs">
+                    <div className="flex items-center gap-3 min-w-0 pr-2">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600/20 text-emerald-600 dark:text-emerald-400">
+                        <FileSpreadsheet className="size-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 font-semibold text-emerald-800 dark:text-emerald-300 text-sm truncate">
+                          <Check className="size-4 shrink-0 text-emerald-600" />
+                          <span className="truncate">{importFile.name}</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Total {importPreview.length} item barang terdeteksi • Total Stok: {importPreview.reduce((acc, it) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
+                        </p>
+                      </div>
                     </div>
-
-                    <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="default"
-                        onClick={() => bulkFileInputRef.current?.click()}
-                        className="gap-1.5 text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white"
-                      >
-                        <UploadCloud className="size-3.5" />
-                        Pilih File Dokumen
-                      </Button>
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
                         onClick={downloadImportTemplate}
-                        className="gap-1.5 text-xs h-8 text-primary hover:text-primary hover:bg-primary/10 border-primary/20"
+                        className="h-7 px-2.5 text-xs gap-1 hover:bg-emerald-500/20"
+                        title="Unduh format template"
                       >
-                        <Download className="size-3.5" />
-                        Unduh Template Excel (.xlsx)
+                        <Download className="size-3" />
+                        Template
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => bulkFileInputRef.current?.click()}
+                        className="h-7 px-2.5 text-xs gap-1 hover:bg-emerald-500/20"
+                      >
+                        <UploadCloud className="size-3" />
+                        Ganti File
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setImportFile(null);
+                          setImportPreview([]);
+                        }}
+                        className="h-7 px-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        title="Hapus File"
+                      >
+                        <X className="size-3.5" />
                       </Button>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs">
-                  <div className="flex items-center gap-3 min-w-0 pr-2">
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded bg-emerald-600/20 text-emerald-600">
-                      <FileSpreadsheet className="size-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 font-semibold text-emerald-700 dark:text-emerald-300 text-sm truncate">
-                        <Check className="size-4 shrink-0 text-emerald-600" />
-                        <span className="truncate">{importFile.name}</span>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        Total {importPreview.length} item barang terdeteksi • Total Quantity: {importPreview.reduce((acc, it) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => bulkFileInputRef.current?.click()}
-                      className="h-7 px-2.5 text-xs gap-1 hover:bg-emerald-500/20"
-                    >
-                      <UploadCloud className="size-3" />
-                      Ganti File
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setImportFile(null);
-                        setImportPreview([]);
-                      }}
-                      className="h-7 px-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                      title="Hapus File"
-                    >
-                      <X className="size-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              )}
+                )}
 
-                            {/* Pratinjau Data yang Terbaca */}
-              {importPreview.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                      <Check className="size-3.5 text-emerald-600" />
-                      Pratinjau {importPreview.length} Barang Terdeteksi
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      Pastikan kolom sudah sesuai
-                    </span>
-                  </div>
-                  <div className="max-h-80 overflow-y-auto rounded border border-border text-xs divide-y divide-border/50 bg-background">
-                    <table className="w-full text-left">
-                      <thead className="bg-surface-muted text-[11px] font-semibold text-muted-foreground sticky top-0">
-                        <tr>
-                          <th className="p-2 w-10 text-center">No</th>
-                          <th className="p-2">Kode Material</th>
-                          <th className="p-2">Nama Barang</th>
-                          <th className="p-2 text-right">Jumlah Quantity</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/40">
-                        {importPreview.map((it, idx) => (
-                          <tr key={idx} className="hover:bg-surface-muted/50">
-                            <td className="p-2 text-center text-muted-foreground font-mono">{idx + 1}</td>
-                            <td className="p-2 font-mono text-primary font-medium">{it.code || "-"}</td>
-                            <td className="p-2 font-medium text-foreground">{it.name}</td>
-                            <td className="p-2 text-right font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                              +{it.current_stock} pcs
-                            </td>
+                {/* Pratinjau Data yang Terbaca */}
+                {importPreview.length > 0 && (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <Check className="size-3.5 text-emerald-600" />
+                        Pratinjau {importPreview.length} Barang Terdeteksi
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        Pastikan seluruh kolom sudah sesuai dengan data
+                      </span>
+                    </div>
+                    <div className="max-h-72 overflow-x-auto overflow-y-auto rounded-lg border border-border text-xs bg-background">
+                      <table className="w-full text-left border-collapse min-w-[700px]">
+                        <thead className="bg-surface-muted text-[11px] font-semibold text-muted-foreground sticky top-0 z-10 border-b border-border">
+                          <tr>
+                            <th className="p-2.5 w-12 text-center">No</th>
+                            <th className="p-2.5 w-32 text-center">Kode</th>
+                            <th className="p-2.5 min-w-[200px]">Material</th>
+                            <th className="p-2.5 text-center w-28">Stok Saat Ini</th>
+                            <th className="p-2.5 text-center w-24">Batas Min.</th>
+                            <th className="p-2.5 text-center w-24">Min. Stok</th>
+                            <th className="p-2.5 text-center w-24">Maks. Stok</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-border/60">
+                          {importPreview.map((it, idx) => (
+                            <tr key={idx} className="hover:bg-surface-muted/50 transition-colors">
+                              <td className="p-2.5 text-center text-muted-foreground font-mono">{idx + 1}</td>
+                              <td className="p-2.5 text-center font-mono text-primary font-medium">{it.code || "-"}</td>
+                              <td className="p-2.5 font-medium text-foreground">{it.name}</td>
+                              <td className="p-2.5 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                {it.current_stock ?? 0} pcs
+                              </td>
+                              <td className="p-2.5 text-center font-mono text-muted-foreground">
+                                {it.safe_stock !== null && it.safe_stock !== undefined ? `${it.safe_stock} pcs` : "-"}
+                              </td>
+                              <td className="p-2.5 text-center font-mono text-muted-foreground">
+                                {it.min_stock !== null && it.min_stock !== undefined ? `${it.min_stock} pcs` : "-"}
+                              </td>
+                              <td className="p-2.5 text-center font-mono text-muted-foreground">
+                                {it.max_stock !== null && it.max_stock !== undefined ? `${it.max_stock} pcs` : "-"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex items-center justify-between text-xs px-1 text-muted-foreground pt-1.5 border-t border-border/40">
+                      <span>Menampilkan seluruh <strong>{importPreview.length}</strong> barang yang siap ditambahkan</span>
+                      <span className="font-mono font-bold text-foreground">
+                        Total Stok: {importPreview.reduce((acc, it) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between text-xs px-1 text-muted-foreground pt-1.5 border-t border-border/40">
-                    <span>Menampilkan seluruh <strong>{importPreview.length}</strong> barang yang siap ditambahkan</span>
-                    <span className="font-mono font-bold text-foreground">
-                      Total Quantity: +{importPreview.reduce((acc, it) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
-                    </span>
-                  </div>
-                </div>
-              )}
+                )}
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t">
-                <Button variant="outline" onClick={() => {
-                  setImportFile(null);
-                  setImportPreview([]);
-                  setIsAddOpen(false);
-                }}>
-                  Batal
-                </Button>
-                <Button
-                  onClick={executeBulkImport}
-                  disabled={isImporting || importPreview.length === 0}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
-                >
-                  <FileSpreadsheet className="size-4" />
-                  {isImporting ? "Mengimport..." : "Import " + importPreview.length + " Barang"}
-                </Button>
-              </div>
-            </TabsContent>
+                <div className="flex items-center justify-end gap-2 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setImportFile(null);
+                      setImportPreview([]);
+                      setIsAddOpen(false);
+                    }}
+                  >
+                    Batal
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={executeBulkImport}
+                    disabled={isImporting || importPreview.length === 0}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 font-medium"
+                  >
+                    <FileSpreadsheet className="size-4" />
+                    {isImporting ? "Mengimport..." : "Import " + importPreview.length + " Barang"}
+                  </Button>
+                </div>
+              </TabsContent>
+            </div>
           </Tabs>
         </DialogContent>
       </Dialog>
