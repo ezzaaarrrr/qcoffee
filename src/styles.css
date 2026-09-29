@@ -1,8 +1,19 @@
-@import "tailwindcss" source(none);
-@source "../src";
-@import "tw-animate-css";
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Arvo:ital,wght@0,400;0,700;1,400;1,700&family=Montserrat:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&family=Poppins:wght@400;500;600;700;800&family=Roboto+Slab:wght@400;500;600;700;800;900&family=Sanchez&display=swap');
 
-@custom-variant dark (&:is(.dark *));
+@font-face {
+  font-family: 'Corduroy Slab';
+  src: local('Corduroy Slab'), local('Old Corduroy'), local('Corduroy-Regular'), local('Corduroy');
+  font-weight: 400 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Old Corduroy';
+  src: local('Old Corduroy'), local('Corduroy Slab'), local('Corduroy-Regular'), local('Corduroy');
+  font-weight: 400 900;
+  font-display: swap;
+}
 
 /*
  * Q-Coffee M2 — industrial checklist design system.
@@ -64,7 +75,7 @@
 :root {
   --radius: 0.125rem;
   --font-sans-stack: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono-stack: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-mono-stack: "Poppins", ui-sans-serif, system-ui, sans-serif;
 
   --background: oklch(0.984 0.003 247.9);
   --foreground: oklch(0.235 0.024 264.7);
@@ -176,4 +187,10 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--color-muted-foreground);
+}
+
+.font-mono {
+  font-family: var(--font-mono-stack);
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0.02em;
 }

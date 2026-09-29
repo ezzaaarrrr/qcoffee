@@ -303,6 +303,251 @@ function ProductSearchCombobox({
   );
 }
 
+interface ParsedExcelSheet {
+  name: string;
+  count: number;
+  items: any[];
+}
+
+function parseExcelWorkbookToSheets(
+  workbook: XLSX.WorkBook,
+  defaultCategory: string = "Sparepart & Tools"
+): ParsedExcelSheet[] {
+  const resultSheets: ParsedExcelSheet[] = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const worksheet = workbook.Sheets[sheetName];
+    if (!worksheet) continue;
+
+    const rawRows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: "" });
+    if (!rawRows || rawRows.length < 2) continue;
+
+    // Detect header row in first 8 rows
+    let headerRowIdx = -1;
+    for (let i = 0; i < Math.min(rawRows.length, 8); i++) {
+      const rowStr = (rawRows[i] || []).map((c: any) => String(c || "").toLowerCase()).join(" ");
+      if (
+        rowStr.includes("kode") ||
+        rowStr.includes("material") ||
+        rowStr.includes("nama") ||
+        rowStr.includes("barang") ||
+        rowStr.includes("part") ||
+        rowStr.includes("stok") ||
+        rowStr.includes("stock") ||
+        rowStr.includes("qty") ||
+        rowStr.includes("balance") ||
+        rowStr.includes("ending") ||
+        rowStr.includes("saldo") ||
+        rowStr.includes("jumlah")
+      ) {
+        headerRowIdx = i;
+        break;
+      }
+    }
+
+    if (headerRowIdx === -1) headerRowIdx = 0;
+
+    const selectedHeaderRow = rawRows[headerRowIdx] || [];
+    const headers = selectedHeaderRow.map((h: any) =>
+      String(h || "")
+        .toLowerCase()
+        .trim()
+        .replace(/\r?\n|\r/g, " ")
+        .replace(/\s+/g, " ")
+    );
+
+    const safeStockIdx = headers.findIndex((h: string) =>
+      h.includes("batas minimal") ||
+      h.includes("batas min") ||
+      h.includes("safe stock") ||
+      h.includes("safety stock") ||
+      h.includes("safety") ||
+      h.includes("limit")
+    );
+
+    const minStockIdx = headers.findIndex(
+      (h: string, idx: number) =>
+        idx !== safeStockIdx &&
+        (h.includes("minimal stok") ||
+          h.includes("min stok") ||
+          h.includes("minimal stock") ||
+          h.includes("min stock") ||
+          h === "min" ||
+          h === "minimum")
+    );
+
+    const maxStockIdx = headers.findIndex((h: string) =>
+      h.includes("maksimal") ||
+      h.includes("maks.") ||
+      h.includes("maks") ||
+      h.includes("max stock") ||
+      h.includes("max.stock") ||
+      h.includes("max") ||
+      h.includes("maximum")
+    );
+
+    const currentStockIdx = headers.findIndex(
+      (h: string, idx: number) =>
+        idx !== safeStockIdx &&
+        idx !== minStockIdx &&
+        idx !== maxStockIdx &&
+        (h.includes("ending balance") ||
+          h.includes("ending") ||
+          h.includes("saldo akhir") ||
+          h.includes("stok akhir") ||
+          h.includes("saat ini") ||
+          h.includes("current") ||
+          h.includes("stok fisik") ||
+          h.includes("saldo") ||
+          h.includes("balance") ||
+          h.includes("qty stock") ||
+          h.includes("qty") ||
+          h.includes("quantity") ||
+          h.includes("jumlah") ||
+          h === "stok" ||
+          h === "stock")
+    );
+
+    let codeIdx = headers.findIndex((h: string) =>
+      h.includes("kode") ||
+      h.includes("code") ||
+      h.includes("sku") ||
+      h.includes("part no") ||
+      h.includes("part_no") ||
+      (h.includes("material") && !h.includes("nama") && !h.includes("type") && !h.includes("desc"))
+    );
+
+    let nameIdx = headers.findIndex(
+      (h: string, idx: number) =>
+        idx !== codeIdx &&
+        (h.includes("nama") ||
+          h.includes("material") ||
+          h.includes("deskripsi") ||
+          h.includes("description") ||
+          h.includes("barang") ||
+          h.includes("item"))
+    );
+
+    const uomIdx = headers.findIndex((h: string) =>
+      h.includes("satuan") ||
+      h.includes("uom") ||
+      h.includes("u.o.m") ||
+      h.includes("unit") ||
+      h.includes("meins") ||
+      h.includes("bunn") ||
+      h === "sat" ||
+      h === "sat."
+    );
+    const locIdx = headers.findIndex((h: string) =>
+      h.includes("lokasi") || h.includes("location") || h.includes("gudang")
+    );
+    const shelfIdx = headers.findIndex((h: string) =>
+      h.includes("rak") || h.includes("shelf") || h.includes("bin")
+    );
+
+    const parseNum = (val: any, fallback: number | null = null): number | null => {
+      if (val === undefined || val === null || String(val).trim() === "" || String(val).trim() === "—" || String(val).trim() === "-") {
+        return fallback;
+      }
+      const normalized = String(val).trim().replace(",", ".");
+      const cleanStr = normalized.replace(/[^0-9.-]/g, "");
+      const num = parseFloat(cleanStr);
+      return !isNaN(num) ? num : fallback;
+    };
+
+    const parsedItems: any[] = [];
+    for (let r = headerRowIdx + 1; r < rawRows.length; r++) {
+      const row = rawRows[r];
+      if (!row || row.length === 0) continue;
+
+      let rawCode = codeIdx >= 0 && row[codeIdx] !== undefined ? String(row[codeIdx]).trim() : "";
+      let rawName = nameIdx >= 0 && row[nameIdx] !== undefined ? String(row[nameIdx]).trim() : "";
+
+      // Fallback if headers were absent or columns merged
+      if ((codeIdx < 0 || nameIdx < 0) && row.length >= 2) {
+        const c0 = String(row[0] || "").trim();
+        const c1 = String(row[1] || "").trim();
+        const c2 = String(row[2] || "").trim();
+
+        // Sequence number check (1, 2, 3...)
+        const isSequenceNo = /^\d{1,4}$/.test(c0) && parseInt(c0, 10) === parsedItems.length + 1;
+        if (isSequenceNo) {
+          rawCode = c1;
+          rawName = c2;
+        } else {
+          if (c0 && c1 && isNaN(Number(c1))) {
+            rawCode = c0;
+            rawName = c1;
+          } else if (c0 && !rawCode) {
+            rawCode = c0;
+          }
+        }
+      }
+
+      // Ignore subheaders and invalid lines
+      const lowerCode = rawCode.toLowerCase();
+      const lowerName = rawName.toLowerCase();
+      if (
+        lowerCode === "material type" ||
+        lowerCode === "kode" ||
+        lowerCode === "material" ||
+        lowerCode === "no" ||
+        lowerName === "material type" ||
+        lowerName === "material" ||
+        lowerName === "nama barang" ||
+        lowerName === "%" ||
+        lowerName === "item material type"
+      ) {
+        continue;
+      }
+
+      if (!rawName && !rawCode) continue;
+
+      // Clean SAP 18-digit material numbers: 000000007100111044 -> 7100111044
+      if (/^00000000\d+$/.test(rawCode)) {
+        rawCode = rawCode.replace(/^0+/, "");
+      }
+
+      if (!rawName && rawCode) {
+        rawName = `Item ${rawCode}`;
+      }
+
+      // Determine Unit
+      let unit = "pcs";
+      if (uomIdx >= 0 && row[uomIdx]) {
+        unit = String(row[uomIdx]).trim().toLowerCase();
+      } else if (row[2] && typeof row[2] === "string" && ["pcs", "unit", "set", "rol", "mtr", "kg", "btg", "pack", "box"].includes(row[2].trim().toLowerCase())) {
+        unit = row[2].trim().toLowerCase();
+      }
+
+      parsedItems.push({
+        name: rawName,
+        code: rawCode || null,
+        current_stock: currentStockIdx >= 0 ? parseNum(row[currentStockIdx], 0) ?? 0 : 0,
+        safe_stock: safeStockIdx >= 0 ? parseNum(row[safeStockIdx], 1) ?? 1 : 1,
+        min_stock: minStockIdx >= 0 ? parseNum(row[minStockIdx], 10) ?? 10 : 10,
+        max_stock: maxStockIdx >= 0 ? parseNum(row[maxStockIdx], null) : null,
+        category: defaultCategory,
+        unit: unit || "pcs",
+        location: locIdx >= 0 && row[locIdx] ? String(row[locIdx]).trim() : "Gudang Utama",
+        shelf: shelfIdx >= 0 && row[shelfIdx] ? String(row[shelfIdx]).trim() : "Rak A-1",
+        is_active: true,
+        sheet_source: sheetName,
+      });
+    }
+
+    if (parsedItems.length > 0) {
+      resultSheets.push({
+        name: sheetName,
+        count: parsedItems.length,
+        items: parsedItems,
+      });
+    }
+  }
+
+  return resultSheets;
+}
+
 function WarehouseAndProductsPage() {
   const { profile, roles, isAdmin } = useCurrentUser();
   const queryClient = useQueryClient();
@@ -326,6 +571,9 @@ function WarehouseAndProductsPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<Array<any>>([]);
+  const [importSheets, setImportSheets] = useState<ParsedExcelSheet[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<string>("ALL");
+  const [importSortOption, setImportSortOption] = useState<string>("DEFAULT");
   const [isImporting, setIsImporting] = useState(false);
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -347,14 +595,79 @@ function WarehouseAndProductsPage() {
   const [deletingBufferItem, setDeletingBufferItem] = useState<BufferStockItem | null>(null);
   const [bufferSearchQuery, setBufferSearchQuery] = useState("");
   const [bufferStatusFilter, setBufferStatusFilter] = useState<string>("ALL");
+  const [bufferDateFilter, setBufferDateFilter] = useState<string>("");
+  const [bufferSortOption, setBufferSortOption] = useState<string>("RECENT_MUTATION");
 
   // State Import File Buffer Stok (terpisah dari OBS)
   const [bufferImportFile, setBufferImportFile] = useState<File | null>(null);
   const [bufferImportPreview, setBufferImportPreview] = useState<Array<any>>([]);
+  const [bufferImportSheets, setBufferImportSheets] = useState<ParsedExcelSheet[]>([]);
+  const [bufferSelectedSheet, setBufferSelectedSheet] = useState<string>("ALL");
+  const [bufferImportSortOption, setBufferImportSortOption] = useState<string>("DEFAULT");
   const [isBufferImporting, setIsBufferImporting] = useState(false);
   const bufferBulkFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Helper membaca file Excel (.xlsx / .xls) dan CSV dengan pustaka XLSX
+  // Sorting pratinjau barang OBS (angka terkecil-terbesar, nama, stok)
+  const sortedImportPreview = useMemo(() => {
+    if (!importPreview || importPreview.length === 0) return [];
+    if (importSortOption === "DEFAULT") return importPreview;
+
+    const copy = [...importPreview];
+    copy.sort((a, b) => {
+      if (importSortOption === "CODE_ASC") {
+        return String(a.code || "").localeCompare(String(b.code || ""), undefined, { numeric: true });
+      }
+      if (importSortOption === "CODE_DESC") {
+        return String(b.code || "").localeCompare(String(a.code || ""), undefined, { numeric: true });
+      }
+      if (importSortOption === "STOCK_ASC") {
+        return (a.current_stock ?? 0) - (b.current_stock ?? 0);
+      }
+      if (importSortOption === "STOCK_DESC") {
+        return (b.current_stock ?? 0) - (a.current_stock ?? 0);
+      }
+      if (importSortOption === "NAME_ASC") {
+        return String(a.name || "").localeCompare(String(b.name || ""));
+      }
+      if (importSortOption === "NAME_DESC") {
+        return String(b.name || "").localeCompare(String(a.name || ""));
+      }
+      return 0;
+    });
+    return copy;
+  }, [importPreview, importSortOption]);
+
+  // Sorting pratinjau barang Buffer Stok
+  const sortedBufferImportPreview = useMemo(() => {
+    if (!bufferImportPreview || bufferImportPreview.length === 0) return [];
+    if (bufferImportSortOption === "DEFAULT") return bufferImportPreview;
+
+    const copy = [...bufferImportPreview];
+    copy.sort((a, b) => {
+      if (bufferImportSortOption === "CODE_ASC") {
+        return String(a.code || "").localeCompare(String(b.code || ""), undefined, { numeric: true });
+      }
+      if (bufferImportSortOption === "CODE_DESC") {
+        return String(b.code || "").localeCompare(String(a.code || ""), undefined, { numeric: true });
+      }
+      if (bufferImportSortOption === "STOCK_ASC") {
+        return (a.current_stock ?? 0) - (b.current_stock ?? 0);
+      }
+      if (bufferImportSortOption === "STOCK_DESC") {
+        return (b.current_stock ?? 0) - (a.current_stock ?? 0);
+      }
+      if (bufferImportSortOption === "NAME_ASC") {
+        return String(a.name || "").localeCompare(String(b.name || ""));
+      }
+      if (bufferImportSortOption === "NAME_DESC") {
+        return String(b.name || "").localeCompare(String(a.name || ""));
+      }
+      return 0;
+    });
+    return copy;
+  }, [bufferImportPreview, bufferImportSortOption]);
+
+  // Helper membaca file Excel (.xlsx / .xls) dan CSV dengan dukungan Multi-Sheet
   const handleBulkFileSelect = (file: File) => {
     setImportFile(file);
     const reader = new FileReader();
@@ -364,196 +677,60 @@ function WarehouseAndProductsPage() {
         const buffer = e.target?.result;
         if (!buffer) return;
 
-        // Baca file menggunakan pustaka XLSX (mendukung format biner Excel .xlsx, .xls, dan CSV)
         const workbook = XLSX.read(buffer, { type: "array" });
-        const firstSheetName = workbook.SheetNames[0];
-        if (!firstSheetName) {
-          toast.error("File tidak memiliki sheet/halaman data");
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          toast.error("File tidak memiliki lembar kerja (sheet)");
           return;
         }
 
-        const worksheet = workbook.Sheets[firstSheetName];
-        if (!worksheet) {
-          toast.error("Lembar kerja tidak ditemukan");
+        const sheets = parseExcelWorkbookToSheets(workbook, "Sparepart & Tools");
+
+        if (sheets.length === 0) {
+          toast.error("Tidak ada baris data barang yang valid ditemukan dalam file");
+          setImportSheets([]);
+          setImportPreview([]);
           return;
         }
 
-        // Konversi ke format array baris
-        const rawRows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: "" });
+        setImportSheets(sheets);
 
-        if (!rawRows || rawRows.length < 2) {
-          toast.error("File kosong atau hanya memiliki baris judul");
-          return;
-        }
-
-        // Cari baris header yang mengandung kata kunci kolom
-        let headerRowIdx = 0;
-        for (let i = 0; i < Math.min(rawRows.length, 5); i++) {
-          const rowStr = (rawRows[i] || []).map((c: any) => String(c || "").toLowerCase()).join(" ");
-          if (
-            rowStr.includes("kode") ||
-            rowStr.includes("material") ||
-            rowStr.includes("nama") ||
-            rowStr.includes("barang") ||
-            rowStr.includes("part") ||
-            rowStr.includes("stok") ||
-            rowStr.includes("stock") ||
-            rowStr.includes("qty") ||
-            rowStr.includes("jumlah")
-          ) {
-            headerRowIdx = i;
-            break;
-          }
-        }
-
-        const selectedHeaderRow = rawRows[headerRowIdx] || [];
-        const headers = selectedHeaderRow.map((h: any) =>
-          String(h || "")
-            .toLowerCase()
-            .trim()
-            .replace(/\r?\n|\r/g, " ")
-            .replace(/\s+/g, " ")
-        );
-
-        // Pencocokan kolom spesifik (prioritaskan yang lebih spesifik agar tidak tertukar)
-        const safeStockIdx = headers.findIndex(
-          (h: string) =>
-            h.includes("batas minimal") ||
-            h.includes("batas min") ||
-            h.includes("safe stock") ||
-            h.includes("safety stock") ||
-            h.includes("safety") ||
-            h.includes("limit")
-        );
-
-        const minStockIdx = headers.findIndex(
-          (h: string, idx: number) =>
-            idx !== safeStockIdx &&
-            (h.includes("minimal stok") ||
-              h.includes("min stok") ||
-              h.includes("minimal stock") ||
-              h.includes("min stock") ||
-              h === "min" ||
-              h === "minimum")
-        );
-
-        const maxStockIdx = headers.findIndex(
-          (h: string) =>
-            h.includes("maksimal") ||
-            h.includes("maks.") ||
-            h.includes("maks") ||
-            h.includes("max stock") ||
-            h.includes("max") ||
-            h.includes("maximum")
-        );
-
-        const currentStockIdx = headers.findIndex(
-          (h: string, idx: number) =>
-            idx !== safeStockIdx &&
-            idx !== minStockIdx &&
-            idx !== maxStockIdx &&
-            (h.includes("saat ini") ||
-              h.includes("current") ||
-              h.includes("stok fisik") ||
-              h.includes("saldo") ||
-              h.includes("qty") ||
-              h.includes("quantity") ||
-              h.includes("jumlah") ||
-              h === "stok" ||
-              h === "stock")
-        );
-
-        const codeIdx = headers.findIndex(
-          (h: string) =>
-            h.includes("kode") ||
-            h.includes("code") ||
-            h.includes("sku") ||
-            h.includes("part no") ||
-            h.includes("part_no") ||
-            (h.includes("material") && !h.includes("nama"))
-        );
-
-        const nameIdx = headers.findIndex((h: string, idx: number) => {
-          if (idx === codeIdx) return false;
-          return (
-            h.includes("nama") ||
-            h.includes("material") ||
-            h.includes("deskripsi") ||
-            h.includes("description") ||
-            h.includes("barang") ||
-            h.includes("item")
-          );
-        });
-
-        const parsedItems: any[] = [];
-        for (let r = headerRowIdx + 1; r < rawRows.length; r++) {
-          const row = rawRows[r];
-          if (!row || row.length === 0) continue;
-
-          // Ambil nilai per kolom sesuai index yang terdeteksi atau fallback urutan kolom standar
-          let rawCode = codeIdx >= 0 && row[codeIdx] !== undefined ? String(row[codeIdx]).trim() : "";
-          let rawName = nameIdx >= 0 && row[nameIdx] !== undefined ? String(row[nameIdx]).trim() : "";
-
-          // Fallback cerdas jika header tidak terpetakan sempurna (misal: Col 0 = No, Col 1 = Kode, Col 2 = Material)
-          if (!rawCode && !rawName && row.length >= 3) {
-            if (/^\d+$/.test(String(row[0]).trim())) {
-              rawCode = String(row[1] || "").trim();
-              rawName = String(row[2] || "").trim();
-            } else {
-              rawCode = String(row[0] || "").trim();
-              rawName = String(row[1] || "").trim();
+        const deduplicateParsedItems = (items: any[]) => {
+          const seen = new Set<string>();
+          const result: any[] = [];
+          for (const it of items) {
+            const nName = String(it.name || "")
+              .replace(/\u00a0/g, " ")
+              .replace(/\s+/g, " ")
+              .trim()
+              .toLowerCase();
+            const nCode = String(it.code || "")
+              .replace(/\u00a0/g, " ")
+              .replace(/\s+/g, " ")
+              .trim()
+              .toLowerCase();
+            const key = nName ? `n_${nName}` : (nCode ? `c_${nCode}` : "");
+            if (!key || !seen.has(key)) {
+              if (key) seen.add(key);
+              result.push(it);
             }
-          } else if (!rawName && row[1]) {
-            rawName = String(row[1]).trim();
-          } else if (!rawName && row[2]) {
-            rawName = String(row[2]).trim();
           }
+          return result;
+        };
 
-          // Lewati baris jika tidak ada identitas barang (kode & nama kosong)
-          if (!rawName && !rawCode) continue;
-          if (!rawName && rawCode) {
-            rawName = `Item ${rawCode}`;
-          }
-
-          // Helper parsing angka (mendukung format desimal titik maupun koma seperti 1,5 atau 1.5)
-          const parseNum = (val: any, fallback: number | null = null): number | null => {
-            if (val === undefined || val === null || String(val).trim() === "" || String(val).trim() === "—" || String(val).trim() === "-") {
-              return fallback;
-            }
-            // Ganti koma dengan titik untuk desimal, buang huruf/satuan (cth: "1,5 pcs" -> "1.5")
-            const normalized = String(val).trim().replace(",", ".");
-            const cleanStr = normalized.replace(/[^0-9.-]/g, "");
-            const num = parseFloat(cleanStr);
-            return !isNaN(num) ? num : fallback;
-          };
-
-          const rawCurrentStock = currentStockIdx >= 0 ? parseNum(row[currentStockIdx], 0) : 0;
-          const rawSafeStock = safeStockIdx >= 0 ? parseNum(row[safeStockIdx], 1) : 1;
-          const rawMinStock = minStockIdx >= 0 ? parseNum(row[minStockIdx], 10) : 10;
-          const rawMaxStock = maxStockIdx >= 0 ? parseNum(row[maxStockIdx], null) : null;
-
-          parsedItems.push({
-            name: rawName,
-            code: rawCode || null,
-            current_stock: rawCurrentStock ?? 0,
-            safe_stock: rawSafeStock ?? 1,
-            min_stock: rawMinStock ?? 10,
-            max_stock: rawMaxStock,
-            category: "Sparepart & Tools",
-            unit: "pcs",
-            location: "Gudang Utama",
-            shelf: "Rak A-1",
-            is_active: true,
-          });
+        const firstSheet = sheets[0];
+        if (sheets.length === 1 && firstSheet) {
+          const uniqueFirstSheetItems = deduplicateParsedItems(firstSheet.items);
+          setSelectedSheet(firstSheet.name);
+          setImportPreview(uniqueFirstSheetItems);
+          toast.success(`Berhasil membaca ${uniqueFirstSheetItems.length} barang dari sheet "${firstSheet.name}"`);
+        } else {
+          // Gabungkan semua sheet dengan deduplikasi
+          const allItems = sheets.flatMap((s) => s.items);
+          const uniqueItems = deduplicateParsedItems(allItems);
+          setSelectedSheet("ALL");
+          setImportPreview(uniqueItems);
+          toast.success(`Berhasil membaca ${uniqueItems.length} barang dari ${sheets.length} sheet`);
         }
-
-        if (parsedItems.length === 0) {
-          toast.error("Tidak ada baris data barang yang valid ditemukan");
-          return;
-        }
-
-        setImportPreview(parsedItems);
-        toast.success("Berhasil membaca " + parsedItems.length + " barang dari file Excel/CSV");
       } catch (err: any) {
         console.error("Error reading file:", err);
         toast.error("Gagal membaca file: " + err.message);
@@ -605,181 +782,58 @@ function WarehouseAndProductsPage() {
         if (!buffer) return;
 
         const workbook = XLSX.read(buffer, { type: "array" });
-        const firstSheetName = workbook.SheetNames[0];
-        if (!firstSheetName) {
-          toast.error("File tidak memiliki sheet/halaman data");
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          toast.error("File tidak memiliki lembar kerja (sheet)");
           return;
         }
 
-        const worksheet = workbook.Sheets[firstSheetName];
-        if (!worksheet) {
-          toast.error("Lembar kerja tidak ditemukan");
+        const sheets = parseExcelWorkbookToSheets(workbook, "Buffer Stok");
+
+        if (sheets.length === 0) {
+          toast.error("Tidak ada baris data barang buffer yang valid ditemukan dalam file");
+          setBufferImportSheets([]);
+          setBufferImportPreview([]);
           return;
         }
 
-        const rawRows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: "" });
+        setBufferImportSheets(sheets);
 
-        if (!rawRows || rawRows.length < 2) {
-          toast.error("File kosong atau hanya memiliki baris judul");
-          return;
-        }
-
-        // Cari baris header
-        let headerRowIdx = 0;
-        for (let i = 0; i < Math.min(rawRows.length, 5); i++) {
-          const rowStr = (rawRows[i] || []).map((c: any) => String(c || "").toLowerCase()).join(" ");
-          if (
-            rowStr.includes("kode") ||
-            rowStr.includes("material") ||
-            rowStr.includes("nama") ||
-            rowStr.includes("barang") ||
-            rowStr.includes("part") ||
-            rowStr.includes("stok") ||
-            rowStr.includes("stock") ||
-            rowStr.includes("qty") ||
-            rowStr.includes("jumlah")
-          ) {
-            headerRowIdx = i;
-            break;
+        const deduplicateParsedBufItems = (items: any[]) => {
+          const seen = new Set<string>();
+          const result: any[] = [];
+          for (const it of items) {
+            const nName = String(it.name || "")
+              .replace(/\u00a0/g, " ")
+              .replace(/\s+/g, " ")
+              .trim()
+              .toLowerCase();
+            const nCode = String(it.code || "")
+              .replace(/\u00a0/g, " ")
+              .replace(/\s+/g, " ")
+              .trim()
+              .toLowerCase();
+            const key = nName ? `n_${nName}` : (nCode ? `c_${nCode}` : "");
+            if (!key || !seen.has(key)) {
+              if (key) seen.add(key);
+              result.push(it);
+            }
           }
-        }
-
-        const selectedHeaderRow = rawRows[headerRowIdx] || [];
-        const headers = selectedHeaderRow.map((h: any) =>
-          String(h || "")
-            .toLowerCase()
-            .trim()
-            .replace(/\r?\n|\r/g, " ")
-            .replace(/\s+/g, " ")
-        );
-
-        const safeStockIdx = headers.findIndex(
-          (h: string) =>
-            h.includes("batas minimal") ||
-            h.includes("batas min") ||
-            h.includes("safe stock") ||
-            h.includes("safety stock") ||
-            h.includes("safety") ||
-            h.includes("limit")
-        );
-
-        const minStockIdx = headers.findIndex(
-          (h: string, idx: number) =>
-            idx !== safeStockIdx &&
-            (h.includes("minimal stok") ||
-              h.includes("min stok") ||
-              h.includes("minimal stock") ||
-              h.includes("min stock") ||
-              h === "min" ||
-              h === "minimum")
-        );
-
-        const maxStockIdx = headers.findIndex(
-          (h: string) =>
-            h.includes("maksimal") ||
-            h.includes("maks.") ||
-            h.includes("maks") ||
-            h.includes("max stock") ||
-            h.includes("max") ||
-            h.includes("maximum")
-        );
-
-        const currentStockIdx = headers.findIndex(
-          (h: string, idx: number) =>
-            idx !== safeStockIdx &&
-            idx !== minStockIdx &&
-            idx !== maxStockIdx &&
-            (h.includes("saat ini") ||
-              h.includes("current") ||
-              h.includes("stok fisik") ||
-              h.includes("saldo") ||
-              h.includes("qty") ||
-              h.includes("quantity") ||
-              h.includes("jumlah") ||
-              h === "stok" ||
-              h === "stock")
-        );
-
-        const codeIdx = headers.findIndex(
-          (h: string) =>
-            h.includes("kode") ||
-            h.includes("code") ||
-            h.includes("sku") ||
-            h.includes("part no") ||
-            h.includes("part_no") ||
-            (h.includes("material") && !h.includes("nama"))
-        );
-
-        const nameIdx = headers.findIndex((h: string, idx: number) => {
-          if (idx === codeIdx) return false;
-          return (
-            h.includes("nama") ||
-            h.includes("material") ||
-            h.includes("deskripsi") ||
-            h.includes("description") ||
-            h.includes("barang") ||
-            h.includes("item")
-          );
-        });
-
-        const parseNum = (val: any, fallback: number | null = null): number | null => {
-          if (val === undefined || val === null || String(val).trim() === "" || String(val).trim() === "\u2014" || String(val).trim() === "-") {
-            return fallback;
-          }
-          const normalized = String(val).trim().replace(",", ".");
-          const cleanStr = normalized.replace(/[^0-9.-]/g, "");
-          const num = parseFloat(cleanStr);
-          return !isNaN(num) ? num : fallback;
+          return result;
         };
 
-        const parsedItems: any[] = [];
-        for (let r = headerRowIdx + 1; r < rawRows.length; r++) {
-          const row = rawRows[r];
-          if (!row || row.length === 0) continue;
-
-          let rawCode = codeIdx >= 0 && row[codeIdx] !== undefined ? String(row[codeIdx]).trim() : "";
-          let rawName = nameIdx >= 0 && row[nameIdx] !== undefined ? String(row[nameIdx]).trim() : "";
-
-          if (!rawCode && !rawName && row.length >= 3) {
-            if (/^\d+$/.test(String(row[0]).trim())) {
-              rawCode = String(row[1] || "").trim();
-              rawName = String(row[2] || "").trim();
-            } else {
-              rawCode = String(row[0] || "").trim();
-              rawName = String(row[1] || "").trim();
-            }
-          } else if (!rawName && row[1]) {
-            rawName = String(row[1]).trim();
-          } else if (!rawName && row[2]) {
-            rawName = String(row[2]).trim();
-          }
-
-          if (!rawName && !rawCode) continue;
-          if (!rawName && rawCode) {
-            rawName = `Item ${rawCode}`;
-          }
-
-          parsedItems.push({
-            name: rawName,
-            code: rawCode || null,
-            current_stock: parseNum(currentStockIdx >= 0 ? row[currentStockIdx] : undefined, 0) ?? 0,
-            safe_stock: parseNum(safeStockIdx >= 0 ? row[safeStockIdx] : undefined, 1) ?? 1,
-            min_stock: parseNum(minStockIdx >= 0 ? row[minStockIdx] : undefined, 10) ?? 10,
-            max_stock: parseNum(maxStockIdx >= 0 ? row[maxStockIdx] : undefined, null),
-            unit: "pcs",
-            location: "Gudang Utama",
-            shelf: "Rak A-1",
-            is_active: true,
-          });
+        const firstBufSheet = sheets[0];
+        if (sheets.length === 1 && firstBufSheet) {
+          const uniqueFirstBufItems = deduplicateParsedBufItems(firstBufSheet.items);
+          setBufferSelectedSheet(firstBufSheet.name);
+          setBufferImportPreview(uniqueFirstBufItems);
+          toast.success(`Berhasil membaca ${uniqueFirstBufItems.length} barang buffer dari sheet "${firstBufSheet.name}"`);
+        } else {
+          const allItems = sheets.flatMap((s) => s.items);
+          const uniqueItems = deduplicateParsedBufItems(allItems);
+          setBufferSelectedSheet("ALL");
+          setBufferImportPreview(uniqueItems);
+          toast.success(`Berhasil membaca ${uniqueItems.length} barang buffer dari ${sheets.length} sheet`);
         }
-
-        if (parsedItems.length === 0) {
-          toast.error("Tidak ada baris data barang buffer yang valid ditemukan");
-          return;
-        }
-
-        setBufferImportPreview(parsedItems);
-        toast.success("Berhasil membaca " + parsedItems.length + " barang buffer dari file Excel/CSV");
       } catch (err: any) {
         console.error("Error reading buffer file:", err);
         toast.error("Gagal membaca file: " + err.message);
@@ -818,7 +872,7 @@ function WarehouseAndProductsPage() {
     toast.success("Template Buffer Stok berhasil diunduh");
   };
 
-  // Eksekusi Import Batch Data Buffer Stok (Smart Upsert)
+  // Eksekusi Import Batch Data Buffer Stok (Smart Upsert Batch)
   const executeBufferBulkImport = async () => {
     if (bufferImportPreview.length === 0) {
       toast.error("Tidak ada data barang buffer yang akan diimport");
@@ -826,59 +880,135 @@ function WarehouseAndProductsPage() {
     }
     setIsBufferImporting(true);
     try {
-      // 1. Coba lakukan upsert langsung
-      const { error: upsertErr } = await (supabase as any)
+      const { data: existingItems, error: fetchErr } = await (supabase as any)
         .from("buffer_stock")
-        .upsert(bufferImportPreview, { onConflict: "name" });
+        .select("id, name, code, unit, location, shelf, min_stock, safe_stock, max_stock, current_stock");
 
-      if (upsertErr) {
-        // 2. Fallback: sinkronisasi per baris
-        console.warn("Direct buffer upsert failed, falling back to row-by-row sync:", upsertErr.message);
+      if (fetchErr) {
+        console.warn("Could not fetch existing buffer items:", fetchErr.message);
+      }
 
-        const { data: existingItems } = await (supabase as any)
-          .from("buffer_stock")
-          .select("id, name, code, current_stock");
+      const normStr = (s: any) =>
+        String(s || "")
+          .replace(/\u00a0/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .toLowerCase();
 
-        const existingMap = new Map<string, any>();
-        (existingItems || []).forEach((p: any) => {
-          if (p.name) existingMap.set(p.name.trim().toLowerCase(), p);
-          if (p.code) existingMap.set(p.code.trim().toLowerCase(), p);
-        });
+      const existingByName = new Map<string, any>();
+      const existingByCode = new Map<string, any>();
 
-        for (const item of bufferImportPreview) {
-          const itemKey = (item.name || "").trim().toLowerCase();
-          const codeKey = (item.code || "").trim().toLowerCase();
-          const found = existingMap.get(itemKey) || (codeKey ? existingMap.get(codeKey) : null);
+      (existingItems || []).forEach((p: any) => {
+        const nName = normStr(p.name);
+        const nCode = normStr(p.code);
+        if (nName) existingByName.set(nName, p);
+        if (nCode) existingByCode.set(nCode, p);
+      });
 
-          if (found) {
-            const { error: updErr } = await (supabase as any)
-              .from("buffer_stock")
-              .update({
-                current_stock: item.current_stock ?? 0,
-                safe_stock: item.safe_stock ?? 1,
-                min_stock: item.min_stock ?? 10,
-                max_stock: item.max_stock ?? null,
-                code: item.code || found.code || null,
-                unit: item.unit || "pcs",
-                is_active: true,
-              })
-              .eq("id", found.id);
-            if (updErr) throw updErr;
-          } else {
-            const { error: insErr } = await (supabase as any)
-              .from("buffer_stock")
-              .insert(item);
-            if (insErr) throw insErr;
+      const toUpdate: any[] = [];
+      const toInsert: any[] = [];
+      const seenNamesInBatch = new Set<string>();
+      const seenCodesInBatch = new Set<string>();
+
+      for (const item of bufferImportPreview) {
+        const cleanName = String(item.name || "")
+          .replace(/\u00a0/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        const cleanCode = item.code
+          ? String(item.code)
+              .replace(/\u00a0/g, " ")
+              .replace(/\s+/g, " ")
+              .trim()
+          : null;
+
+        if (!cleanName && !cleanCode) continue;
+
+        const finalName = cleanName || (cleanCode ? `Item ${cleanCode}` : "Unnamed Item");
+        const normName = normStr(finalName);
+        const normCode = cleanCode ? normStr(cleanCode) : "";
+
+        // Cegah duplikasi di dalam batch
+        if (normName && seenNamesInBatch.has(normName)) continue;
+        if (normCode && seenCodesInBatch.has(normCode)) continue;
+
+        if (normName) seenNamesInBatch.add(normName);
+        if (normCode) seenCodesInBatch.add(normCode);
+
+        // Cocokkan data di database: cek nama atau kode
+        const found = (normName ? existingByName.get(normName) : null) || (normCode ? existingByCode.get(normCode) : null);
+
+        if (found) {
+          toUpdate.push({
+            id: found.id,
+            name: found.name || finalName,
+            code: cleanCode || found.code || null,
+            unit: item.unit || found.unit || "pcs",
+            location: item.location || found.location || "Gudang Utama",
+            shelf: item.shelf || found.shelf || "Rak A-1",
+            current_stock: item.current_stock ?? found.current_stock ?? 0,
+            safe_stock: item.safe_stock ?? found.safe_stock ?? 1,
+            min_stock: item.min_stock ?? found.min_stock ?? 10,
+            max_stock: item.max_stock ?? found.max_stock ?? null,
+            is_active: true,
+          });
+        } else {
+          toInsert.push({
+            name: finalName,
+            code: cleanCode || null,
+            unit: item.unit || "pcs",
+            location: item.location || "Gudang Utama",
+            shelf: item.shelf || "Rak A-1",
+            current_stock: item.current_stock ?? 0,
+            safe_stock: item.safe_stock ?? 1,
+            min_stock: item.min_stock ?? 10,
+            max_stock: item.max_stock ?? null,
+            is_active: true,
+          });
+        }
+      }
+
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < toUpdate.length; i += CHUNK_SIZE) {
+        const chunk = toUpdate.slice(i, i + CHUNK_SIZE);
+        const { error: updErr } = await (supabase as any).from("buffer_stock").upsert(chunk, { onConflict: "id" });
+        if (updErr) {
+          console.warn("Buffer batch upsert on ID fallback due to:", updErr.message);
+          for (const it of chunk) {
+            const { error: singleErr } = await (supabase as any).from("buffer_stock").upsert(it, { onConflict: "id" });
+            if (singleErr) {
+              console.error("Failed to upsert buffer item:", it.name, singleErr.message);
+            }
           }
         }
       }
 
-      await recordActivity("IMPORT_BUFFER", "Mengimport / memperbarui " + bufferImportPreview.length + " data buffer stok via Excel/CSV");
-      toast.success("Berhasil mengimport " + bufferImportPreview.length + " data buffer stok!");
+      for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
+        const chunk = toInsert.slice(i, i + CHUNK_SIZE);
+        const { error: insErr } = await (supabase as any).from("buffer_stock").upsert(chunk, { onConflict: "name" });
+        if (insErr) {
+          console.warn("Buffer batch upsert fallback due to:", insErr.message);
+          for (const it of chunk) {
+            const { error: singleErr } = await (supabase as any).from("buffer_stock").upsert(it, { onConflict: "name" });
+            if (singleErr) {
+              console.error("Failed to upsert buffer item:", it.name, singleErr.message);
+            }
+          }
+        }
+      }
+
+      const totalCount = toInsert.length + toUpdate.length;
+      if (typeof recordActivity === "function") {
+        await recordActivity("IMPORT_BUFFER", `Mengimport ${toInsert.length} buffer baru & memperbarui ${toUpdate.length} buffer via Excel/CSV`);
+      }
+      toast.success(`Berhasil mengimport ${totalCount} data buffer stok (${toInsert.length} baru, ${toUpdate.length} diperbarui)!`);
       queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
       setBufferImportPreview([]);
       setBufferImportFile(null);
+      setBufferImportSheets([]);
+      setBufferSelectedSheet("ALL");
+      setBufferImportSortOption("DEFAULT");
       setIsBufferAddOpen(false);
     } catch (err: any) {
       console.error("Buffer bulk import error:", err);
@@ -888,7 +1018,7 @@ function WarehouseAndProductsPage() {
     }
   };
 
-  // Eksekusi Import Batch Data Barang (Smart Upsert: Simpan Barang Baru & Update Stok jika Barang Sudah Ada)
+  // Eksekusi Import Batch Data Barang OBS Sparepart (Smart Upsert Batch)
   const executeBulkImport = async () => {
     if (importPreview.length === 0) {
       toast.error("Tidak ada data barang yang akan diimport");
@@ -896,63 +1026,143 @@ function WarehouseAndProductsPage() {
     }
     setIsImporting(true);
     try {
-      // 1. Coba lakukan upsert langsung berdasarkan constraint "name"
-      const { error: upsertErr } = await supabase
+      const { data: existingProducts, error: fetchErr } = await supabase
         .from("products")
-        .upsert(importPreview as any, { onConflict: "name" });
+        .select("id, name, code, category, unit, location, shelf, min_stock, safe_stock, max_stock, current_stock")
+        .range(0, 4999);
 
-      if (upsertErr) {
-        // 2. Fallback cerdas: Jika upsert onConflict gagal karena schema constraint, lakukan sinkronisasi per baris
-        console.warn("Direct upsert failed, falling back to smart row-by-row sync:", upsertErr.message);
-        
-        // Ambil data produk yang sudah ada di database
-        const { data: existingProducts } = await supabase
-          .from("products")
-          .select("id, name, code, current_stock");
-        
-        const existingMap = new Map<string, any>();
-        (existingProducts || []).forEach((p: any) => {
-          if (p.name) existingMap.set(p.name.trim().toLowerCase(), p);
-          if (p.code) existingMap.set(p.code.trim().toLowerCase(), p);
-        });
+      if (fetchErr) {
+        console.warn("Could not fetch existing products:", fetchErr.message);
+      }
 
-        for (const item of importPreview) {
-          const itemKey = (item.name || "").trim().toLowerCase();
-          const codeKey = (item.code || "").trim().toLowerCase();
-          const found = existingMap.get(itemKey) || (codeKey ? existingMap.get(codeKey) : null);
+      const normStr = (s: any) =>
+        String(s || "")
+          .replace(/\u00a0/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .toLowerCase();
 
-          if (found) {
-            // Update barang yang sudah ada dengan stok dan informasi terbaru
-            const { error: updErr } = await supabase
-              .from("products")
-              .update({
-                current_stock: item.current_stock ?? 0,
-                safe_stock: item.safe_stock ?? 1,
-                min_stock: item.min_stock ?? 10,
-                max_stock: item.max_stock ?? null,
-                code: item.code || found.code || null,
-                unit: item.unit || "pcs",
-                is_active: true,
-              } as any)
-              .eq("id", found.id);
-            if (updErr) throw updErr;
-          } else {
-            // Insert data barang baru
-            const { error: insErr } = await supabase
-              .from("products")
-              .insert(item as any);
-            if (insErr) throw insErr;
+      const existingByName = new Map<string, any>();
+      const existingByCode = new Map<string, any>();
+
+      (existingProducts || []).forEach((p: any) => {
+        const nName = normStr(p.name);
+        const nCode = normStr(p.code);
+        if (nName) existingByName.set(nName, p);
+        if (nCode) existingByCode.set(nCode, p);
+      });
+
+      const toUpdate: any[] = [];
+      const toInsert: any[] = [];
+      const seenNamesInBatch = new Set<string>();
+      const seenCodesInBatch = new Set<string>();
+
+      for (const item of importPreview) {
+        const cleanName = String(item.name || "")
+          .replace(/\u00a0/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        const cleanCode = item.code
+          ? String(item.code)
+              .replace(/\u00a0/g, " ")
+              .replace(/\s+/g, " ")
+              .trim()
+          : null;
+
+        if (!cleanName && !cleanCode) continue;
+
+        const finalName = cleanName || (cleanCode ? `Item ${cleanCode}` : "Unnamed Item");
+        const normName = normStr(finalName);
+        const normCode = cleanCode ? normStr(cleanCode) : "";
+
+        // Cegah duplikasi di dalam batch (hindari error PostgreSQL: cannot affect row a second time)
+        if (normName && seenNamesInBatch.has(normName)) continue;
+        if (normCode && seenCodesInBatch.has(normCode)) continue;
+
+        if (normName) seenNamesInBatch.add(normName);
+        if (normCode) seenCodesInBatch.add(normCode);
+
+        // Cari di database: cek nama terlebih dahulu (karena unique constraint ada pada name), lalu cek code
+        const found = (normName ? existingByName.get(normName) : null) || (normCode ? existingByCode.get(normCode) : null);
+
+        if (found) {
+          // Data master barang: sertakan nama agar memenuhi NOT NULL constraint PostgreSQL saat upsert
+          toUpdate.push({
+            id: found.id,
+            name: found.name || finalName,
+            code: cleanCode || found.code || null,
+            category: found.category || item.category || "Sparepart & Tools",
+            unit: item.unit || found.unit || "pcs",
+            location: item.location || found.location || "Gudang Utama",
+            shelf: item.shelf || found.shelf || "Rak A-1",
+            current_stock: item.current_stock ?? found.current_stock ?? 0,
+            safe_stock: item.safe_stock ?? found.safe_stock ?? 1,
+            min_stock: item.min_stock ?? found.min_stock ?? 10,
+            max_stock: item.max_stock ?? found.max_stock ?? null,
+            is_active: true,
+          });
+        } else {
+          toInsert.push({
+            name: finalName,
+            code: cleanCode || null,
+            category: item.category || "Sparepart & Tools",
+            unit: item.unit || "pcs",
+            location: item.location || "Gudang Utama",
+            shelf: item.shelf || "Rak A-1",
+            current_stock: item.current_stock ?? 0,
+            safe_stock: item.safe_stock ?? 1,
+            min_stock: item.min_stock ?? 10,
+            max_stock: item.max_stock ?? null,
+            is_active: true,
+          });
+        }
+      }
+
+      const CHUNK_SIZE = 100;
+      // 1. Eksekusi update untuk barang yang sudah ada berdasarkan ID
+      for (let i = 0; i < toUpdate.length; i += CHUNK_SIZE) {
+        const chunk = toUpdate.slice(i, i + CHUNK_SIZE);
+        const { error: updErr } = await supabase.from("products").upsert(chunk as any, { onConflict: "id" });
+        if (updErr) {
+          console.warn("Products batch upsert on ID fallback due to:", updErr.message);
+          for (const it of chunk) {
+            const { error: singleErr } = await supabase.from("products").upsert(it as any, { onConflict: "id" });
+            if (singleErr) {
+              console.error("Failed to upsert existing product item:", it.name, singleErr.message);
+            }
           }
         }
       }
 
-      await recordActivity("IMPORT_BARANG", "Mengimport / memperbarui " + importPreview.length + " data barang via Excel/CSV");
-      toast.success("Berhasil mengimport & menyimpan " + importPreview.length + " data barang!");
+      // 2. Eksekusi insert/upsert untuk barang baru dengan onConflict "name"
+      // Ini mencegah crash "duplicate key value violates unique constraint products_name_key"
+      for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
+        const chunk = toInsert.slice(i, i + CHUNK_SIZE);
+        const { error: insErr } = await supabase.from("products").upsert(chunk as any, { onConflict: "name" });
+        if (insErr) {
+          console.warn("Products batch upsert on name fallback due to:", insErr.message);
+          for (const it of chunk) {
+            const { error: singleErr } = await supabase.from("products").upsert(it as any, { onConflict: "name" });
+            if (singleErr) {
+              console.error("Failed to upsert product item:", it.name, singleErr.message);
+            }
+          }
+        }
+      }
+
+      const totalCount = toInsert.length + toUpdate.length;
+      if (typeof recordActivity === "function") {
+        await recordActivity("IMPORT_BARANG", `Mengimport ${toInsert.length} barang baru & memperbarui ${toUpdate.length} stok via Excel/CSV`);
+      }
+      toast.success(`Berhasil mengimport ${totalCount} data barang (${toInsert.length} baru, ${toUpdate.length} diperbarui)!`);
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
       setImportPreview([]);
       setImportFile(null);
+      setImportSheets([]);
+      setSelectedSheet("ALL");
+      setImportSortOption("DEFAULT");
       setIsAddOpen(false);
     } catch (err: any) {
       console.error("Bulk import error:", err);
@@ -1006,7 +1216,7 @@ function WarehouseAndProductsPage() {
     { productId: "", quantity: "1", unit: "kg" },
   ]);
   const [txHeader, setTxHeader] = useState({
-    batchNumber: "",
+    batchNumber: new Date().toISOString().split("T")[0],
     referenceNo: "",
     supplierOrDest: "",
     notes: "",
@@ -1499,10 +1709,10 @@ function WarehouseAndProductsPage() {
           product_name: targetProduct.name,
           quantity: qty,
           unit: targetProduct.unit || it.unit,
-          batch_number: txHeader.batchNumber.trim() || null,
-          reference_no: txHeader.referenceNo.trim() || null,
-          supplier_or_dest: txHeader.supplierOrDest.trim() || null,
-          notes: txHeader.notes.trim() || null,
+          batch_number: txHeader.batchNumber?.trim() || new Date().toISOString().split("T")[0],
+          reference_no: txHeader.referenceNo?.trim() || null,
+          supplier_or_dest: txHeader.supplierOrDest?.trim() || null,
+          notes: txHeader.notes?.trim() || null,
           document_url: txHeader.docUrl || null,
           created_by: profile?.id,
           created_by_name: profile?.full_name || profile?.email || "Admin Gudang",
@@ -1536,7 +1746,7 @@ function WarehouseAndProductsPage() {
       setIsTxOpen(false);
       setTxItems([{ productId: "", quantity: "1", unit: "kg" }]);
       setTxHeader({
-        batchNumber: "",
+        batchNumber: new Date().toISOString().split("T")[0],
         referenceNo: "",
         supplierOrDest: "",
         notes: "",
@@ -2471,6 +2681,12 @@ function WarehouseAndProductsPage() {
         return a.name.localeCompare(b.name);
       }
 
+      if (sortOption === "CODE_ASC") {
+        return String(a.code || "").localeCompare(String(b.code || ""), undefined, { numeric: true });
+      }
+      if (sortOption === "CODE_DESC") {
+        return String(b.code || "").localeCompare(String(a.code || ""), undefined, { numeric: true });
+      }
       if (sortOption === "NAME_ASC") {
         return a.name.localeCompare(b.name);
       }
@@ -2544,24 +2760,41 @@ function WarehouseAndProductsPage() {
   }, [products]);
 
   return (
-    <AppShell breadcrumb="Gudang & Master Barang">
+    <AppShell breadcrumb={
+      activeTab === "buffer_stock"
+        ? "Buffer Stock"
+        : activeTab === "transactions"
+        ? "Riwayat Mutasi"
+        : activeTab === "logs"
+        ? "Aktivitas Seluruh Kegiatan"
+        : "Majemen & Master Barang"
+    }>
       {/* Header Halaman */}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-white">
+            <h1
+              className="text-2xl font-bold tracking-[0.5em] text-white"
+              style={{
+                fontFamily: "'Montserrat', sans-serif",
+                fontWeight: 700,
+                letterSpacing: "0.5em",
+              }}
+            >
               {activeTab === "buffer_stock"
-                ? "Buffer Stok"
+                ? "Buffer Stock"
                 : activeTab === "transactions"
                 ? "Riwayat Mutasi"
-                : "Manajemen Gudang & Master Barang"}
+                : activeTab === "logs"
+                ? "Aktivitas Seluruh Kegiatan"
+                : "Majemen & Master Barang"}
             </h1>
-          </div>
-          <p className="mt-1 text-sm text-white/80">
+          <p className="mt-1 text-sm text-white/80" style={{ fontFamily: "'Inter', sans-serif" }}>
             {activeTab === "buffer_stock"
-              ? "Stok cadangan mandiri — data buffer stok tidak terhubung ke tabel OBS Sparepart."
+              ? "Memantau dan mengelola stok cadangan sparepart untuk menjaga ketersediaan dan mendukung kebutuhan operasional."
               : activeTab === "transactions"
               ? "Mencatat riwayat mutasi masuk dan keluar"
+              : activeTab === "logs"
+              ? "Rekap jejak audit dan riwayat seluruh aktivitas operasional gudang."
               : "Kelola data master barang, pencatatan masuk/keluar, audit stok, kategori, rak, dan dokumen."}
           </p>
         </div>
@@ -2787,6 +3020,12 @@ function WarehouseAndProductsPage() {
                     <SelectItem value="RECENT_MUTATION" className="text-xs font-semibold text-primary">
                       ✦ Baru Ditambah / Mutasi
                     </SelectItem>
+                    <SelectItem value="CODE_ASC" className="text-xs">
+                      Kode Barang (Angka Terkecil ke Terbesar)
+                    </SelectItem>
+                    <SelectItem value="CODE_DESC" className="text-xs">
+                      Kode Barang (Angka Terbesar ke Terkecil)
+                    </SelectItem>
                     <SelectItem value="NAME_ASC" className="text-xs">
                       Nama Barang (A - Z)
                     </SelectItem>
@@ -2975,10 +3214,10 @@ function WarehouseAndProductsPage() {
                     <th className="label-caps px-3 py-3 text-center w-12 whitespace-nowrap text-white font-semibold">No</th>
                     <th className="label-caps px-3 py-3 text-left min-w-[130px] whitespace-nowrap text-white font-semibold">Kode</th>
                     <th className="label-caps px-3 py-3 text-left min-w-[220px] whitespace-nowrap text-white font-semibold">Material</th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[130px] whitespace-nowrap text-white font-semibold">Batas Minimum Stok</th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[85px] whitespace-nowrap text-white font-semibold">Satuan</th>
                     <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Minimal Stok</th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Maksimal Stok</th>
                     <th className="label-caps px-3 py-3 text-right min-w-[110px] whitespace-nowrap text-white font-semibold">Stok Saat Ini</th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Maksimal Stok</th>
                     <th className="label-caps px-3 py-3 text-center min-w-[120px] whitespace-nowrap text-white font-semibold">Kondisi</th>
                     <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Aksi</th>
                   </tr>
@@ -2987,7 +3226,6 @@ function WarehouseAndProductsPage() {
                   {filteredProducts.map((p, index) => {
                     const current = p.current_stock ?? 0;
                     const minStock = p.min_stock ?? 10;
-                    const safeStock = (p as any).safe_stock ?? 1;
                     const rawMax = (p as any).max_stock;
                     const maxStock = rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
 
@@ -3042,22 +3280,19 @@ function WarehouseAndProductsPage() {
                           </div>
                         </td>
 
-                        {/* 4. Batas Minimum Stok */}
-                        <td className="px-3 py-3 text-center font-mono text-muted-foreground whitespace-nowrap">
-                          {safeStock ? `${safeStock} ${p.unit || "pcs"}` : "—"}
+                        {/* 4. Satuan */}
+                        <td className="px-3 py-3 text-center whitespace-nowrap">
+                          <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 uppercase">
+                            {p.unit || "pcs"}
+                          </span>
                         </td>
 
                         {/* 5. Minimal Stok */}
                         <td className="px-3 py-3 text-center font-mono text-muted-foreground whitespace-nowrap">
-                          {minStock.toLocaleString("id-ID")} {p.unit || "pcs"}
+                          {minStock.toLocaleString("id-ID")}
                         </td>
 
-                        {/* 6. Maksimal Stok */}
-                        <td className="px-3 py-3 text-center font-mono text-muted-foreground whitespace-nowrap">
-                          {maxStock !== null && !isNaN(maxStock) ? `${maxStock} ${p.unit || "pcs"}` : "—"}
-                        </td>
-
-                        {/* 7. Stok saat ini */}
+                        {/* 6. Stok saat ini */}
                         <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap">
                           <span
                             className={cn(
@@ -3069,8 +3304,13 @@ function WarehouseAndProductsPage() {
                                   : "text-emerald-600 dark:text-emerald-400"
                             )}
                           >
-                            {current.toLocaleString("id-ID")} {p.unit || "pcs"}
+                            {current.toLocaleString("id-ID")}
                           </span>
+                        </td>
+
+                        {/* 7. Maksimal Stok */}
+                        <td className="px-3 py-3 text-center font-mono text-muted-foreground whitespace-nowrap">
+                          {maxStock !== null && !isNaN(maxStock) ? maxStock.toLocaleString("id-ID") : "—"}
                         </td>
 
                         {/* 8. Kondisi */}
@@ -3085,9 +3325,9 @@ function WarehouseAndProductsPage() {
                           </span>
                         </td>
 
-                        {/* 9. Aksi (detail, unduhan) */}
+                        {/* 9. Aksi (detail, delete) */}
                         <td className="px-3 py-3 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
-                          <div className="flex items-center justify-center gap-1">
+                          <div className="flex items-center justify-center gap-1.5">
                             {/* Tombol Detail */}
                             <Button
                               size="sm"
@@ -3100,37 +3340,12 @@ function WarehouseAndProductsPage() {
                               <span>Detail</span>
                             </Button>
 
-                            {/* Tombol Unduhan (PDF Kartu Kontrol & Dokumen) */}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2 text-xs gap-1 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
-                              onClick={() => downloadProductPDF(p)}
-                              title="Unduh Lembar Kontrol Buffer Stok (PDF)"
-                            >
-                              <Download className="size-3" />
-                              <span>PDF</span>
-                            </Button>
-
-                            {p.doc_url && (
-                              <a
-                                href={p.doc_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                download
-                                className="inline-flex items-center justify-center size-7 rounded border border-border bg-surface hover:bg-surface-muted text-muted-foreground hover:text-foreground"
-                                title="Unduh File Dokumen Fisik Terlampir"
-                              >
-                                <FileText className="size-3.5 text-blue-500" />
-                              </a>
-                            )}
-
                             {/* Tombol Hapus (Khusus Admin/Authorized) */}
                             {canDeleteMaster && (
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 ml-0.5"
+                                className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
                                 onClick={() => setDeletingItem(p)}
                                 title="Hapus Barang"
                               >
@@ -3443,9 +3658,10 @@ function WarehouseAndProductsPage() {
                     <th className="px-3 py-3 whitespace-nowrap text-white">Tanggal</th>
                     <th className="px-3 py-3 whitespace-nowrap text-white w-28 text-center">Tipe Mutasi (In/Out)</th>
                     <th className="px-3 py-3 whitespace-nowrap text-white min-w-[120px]">KODE</th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[240px]">MATERIAL</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[220px]">MATERIAL</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[110px] text-center">QTY</th>
                     <th className="px-3 py-3 whitespace-nowrap text-white min-w-[160px]">Vendor / Tujuan</th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px]">No. Ref</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[130px]">No. PO</th>
                     <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px]">User</th>
                     <th className="px-3 py-3 whitespace-nowrap text-white text-center w-28">Aksi</th>
                   </tr>
@@ -3508,27 +3724,16 @@ function WarehouseAndProductsPage() {
                           </div>
                         </td>
 
-                        {/* 4. MATERIAL & Jumlah */}
+                        {/* 4. MATERIAL */}
                         <td className="px-3 py-3">
-                          <div className="space-y-1">
+                          <div className="space-y-1.5">
                             {tx.items.map((it, idx) => (
                               <div
                                 key={it.id || idx}
-                                className="flex items-center justify-between gap-3 text-xs bg-surface-muted/40 hover:bg-surface-muted px-2 py-1 rounded border border-border/50 transition-colors"
+                                className="flex items-center text-xs bg-surface-muted/40 hover:bg-surface-muted px-2.5 py-1 rounded border border-border/50 transition-colors"
                               >
-                                <span className="font-medium text-foreground leading-snug truncate">
+                                <span className="font-medium text-foreground leading-snug">
                                   {it.product_name}
-                                </span>
-                                <span
-                                  className={cn(
-                                    "font-mono font-bold text-xs shrink-0 px-1.5 py-0.5 rounded text-right whitespace-nowrap",
-                                    isMasuk
-                                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                                      : "bg-rose-500/10 text-rose-600 dark:text-rose-400",
-                                  )}
-                                >
-                                  {isMasuk ? "+" : "-"}
-                                  {it.quantity.toLocaleString("id-ID")} {it.unit || "pcs"}
                                 </span>
                               </div>
                             ))}
@@ -3540,7 +3745,28 @@ function WarehouseAndProductsPage() {
                           </div>
                         </td>
 
-                        {/* 5. Vendor / Tujuan */}
+                        {/* 5. QTY */}
+                        <td className="px-3 py-3 text-center whitespace-nowrap">
+                          <div className="space-y-1.5">
+                            {tx.items.map((it, idx) => (
+                              <div key={it.id || idx} className="py-0.5">
+                                <span
+                                  className={cn(
+                                    "font-mono font-bold text-xs inline-block px-2 py-0.5 rounded border",
+                                    isMasuk
+                                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                                      : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
+                                  )}
+                                >
+                                  {isMasuk ? "+" : "-"}
+                                  {it.quantity.toLocaleString("id-ID")} {it.unit || "pcs"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+
+                        {/* 6. Vendor / Tujuan */}
                         <td className="px-3 py-3 text-xs">
                           <span className="font-medium text-foreground block">
                             {tx.supplier_or_dest || "—"}
@@ -3550,10 +3776,10 @@ function WarehouseAndProductsPage() {
                           </span>
                         </td>
 
-                        {/* 6. No. Ref */}
+                        {/* 7. No. PO */}
                         <td className="px-3 py-3 text-xs">
                           {tx.reference_no ? (
-                            <span className="font-mono text-xs text-foreground bg-surface-muted px-1.5 py-0.5 rounded border border-border/40 inline-block">
+                            <span className="font-mono text-xs text-foreground bg-surface-muted px-1.5 py-0.5 rounded border border-border/40 inline-block font-semibold">
                               {tx.reference_no}
                             </span>
                           ) : tx.batch_number ? (
@@ -3565,7 +3791,7 @@ function WarehouseAndProductsPage() {
                           )}
                         </td>
 
-                        {/* 7. User */}
+                        {/* 8. User */}
                         <td className="px-3 py-3 text-xs">
                           <span className="font-medium text-foreground block">
                             {tx.created_by_name || "Petugas Gudang"}
@@ -3580,7 +3806,7 @@ function WarehouseAndProductsPage() {
                           )}
                         </td>
 
-                        {/* 8. Aksi */}
+                        {/* 9. Aksi */}
                         <td className="px-3 py-3 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
                           <div className="flex items-center justify-center gap-1">
                             <Button
@@ -3811,30 +4037,76 @@ function WarehouseAndProductsPage() {
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={bufferStatusFilter} onValueChange={setBufferStatusFilter}>
-                <SelectTrigger className="w-48 h-9 text-xs">
-                  <SelectValue placeholder="Kondisi Stok" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL" className="text-xs">Semua Kondisi</SelectItem>
-                  <SelectItem value="ORDER" className="text-xs font-semibold text-rose-600">⚠ ORDER (≤ Minimal)</SelectItem>
-                  <SelectItem value="SAFETY" className="text-xs font-semibold text-emerald-600">✓ SAFETY STOK (&gt; Minimal)</SelectItem>
-                  <SelectItem value="OUT_OF_STOCK" className="text-xs font-semibold text-amber-600">⚡ OUT OF STOK (&gt; Maksimal)</SelectItem>
-                </SelectContent>
-              </Select>
-              {canManageWarehouse && (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setBufferFormData({ name: "", code: "", unit: "pcs", location: "Gudang Utama", shelf: "Rak A-1", min_stock: "10", safe_stock: "1", max_stock: "", current_stock: "0", description: "" });
-                    setIsBufferAddOpen(true);
-                  }}
-                  className="gap-1.5 bg-white text-slate-900 font-semibold shadow-sm hover:bg-slate-100 active:scale-[0.98] transition-all h-9 text-xs px-3"
-                >
-                  <Plus className="size-3.5 text-slate-900" />
-                  Tambah Barang Buffer
-                </Button>
-              )}
+              {/* Filter Kondisi Stok */}
+              <div className="flex items-center gap-1.5">
+                <Filter className="size-3.5 text-muted-foreground" />
+                <Select value={bufferStatusFilter} onValueChange={setBufferStatusFilter}>
+                  <SelectTrigger className="w-48 h-9 text-xs">
+                    <SelectValue placeholder="Kondisi Stok" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL" className="text-xs">Semua Kondisi</SelectItem>
+                    <SelectItem value="ORDER" className="text-xs font-semibold text-rose-600">⚠ ORDER (≤ Minimal Stok)</SelectItem>
+                    <SelectItem value="SAFETY" className="text-xs font-semibold text-emerald-600">✓ SAFETY STOK (&gt; Minimal Stok)</SelectItem>
+                    <SelectItem value="OUT_OF_STOCK" className="text-xs font-semibold text-amber-600">⚡ OUT OF STOK (&gt; Maksimal Stok)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Filter Kalender Tanggal Tarik Data */}
+              <div className="flex items-center gap-1.5 bg-background border border-input rounded-md px-2.5 h-9 text-xs shadow-sm hover:border-primary/50 transition-colors">
+                <CalendarIcon className="size-3.5 text-muted-foreground shrink-0" />
+                <input
+                  type="date"
+                  value={bufferDateFilter}
+                  onChange={(e) => setBufferDateFilter(e.target.value)}
+                  className="bg-transparent text-xs text-foreground focus:outline-none cursor-pointer font-medium"
+                  title="Tarik data berdasarkan tanggal kalender"
+                />
+                {bufferDateFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setBufferDateFilter("")}
+                    className="text-muted-foreground hover:text-foreground p-0.5 rounded-full hover:bg-muted transition-colors"
+                    title="Reset filter tanggal"
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* Urutan List Barang Buffer */}
+              <div className="flex items-center gap-1.5">
+                <ArrowUpDown className="size-3.5 text-muted-foreground" />
+                <Select value={bufferSortOption} onValueChange={setBufferSortOption}>
+                  <SelectTrigger className="w-48 h-9 text-xs font-medium">
+                    <SelectValue placeholder="Urutkan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="RECENT_MUTATION" className="text-xs font-semibold text-primary">
+                      ✦ Baru Ditambah / Mutasi
+                    </SelectItem>
+                    <SelectItem value="CODE_ASC" className="text-xs">
+                      Kode Barang (Angka Terkecil ke Terbesar)
+                    </SelectItem>
+                    <SelectItem value="CODE_DESC" className="text-xs">
+                      Kode Barang (Angka Terbesar ke Terkecil)
+                    </SelectItem>
+                    <SelectItem value="NAME_ASC" className="text-xs">
+                      Nama Barang (A - Z)
+                    </SelectItem>
+                    <SelectItem value="NAME_DESC" className="text-xs">
+                      Nama Barang (Z - A)
+                    </SelectItem>
+                    <SelectItem value="STOCK_DESC" className="text-xs">
+                      Stok Terbanyak
+                    </SelectItem>
+                    <SelectItem value="STOCK_ASC" className="text-xs">
+                      Stok Paling Sedikit
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
@@ -4051,23 +4323,72 @@ function WarehouseAndProductsPage() {
                   (bufferStatusFilter === "ORDER" && isOrder) ||
                   (bufferStatusFilter === "SAFETY" && isSafety) ||
                   (bufferStatusFilter === "OUT_OF_STOCK" && isOutOfStock);
-                return matchSearch && matchStock;
+
+                const matchDate =
+                  !bufferDateFilter ||
+                  (() => {
+                    const pDate = item.created_at ? item.created_at.slice(0, 10) : "";
+                    const nameKey = item.name ? item.name.trim().toLowerCase() : "";
+                    const tx = latestInTxMap[item.id] || (nameKey ? latestInTxMap[nameKey] : undefined);
+                    const txDate = tx?.created_at ? tx.created_at.slice(0, 10) : "";
+                    return pDate === bufferDateFilter || txDate === bufferDateFilter;
+                  })();
+
+                return matchSearch && matchStock && matchDate;
               });
 
-              if (filtered.length === 0) return (
+              // Urutkan list barang buffer
+              const sortedFiltered = [...filtered].sort((a, b) => {
+                if (bufferSortOption === "RECENT_MUTATION") {
+                  const nameA = a.name ? a.name.trim().toLowerCase() : "";
+                  const nameB = b.name ? b.name.trim().toLowerCase() : "";
+
+                  const txAIn = latestInTxMap[a.id] || (nameA ? latestInTxMap[nameA] : undefined);
+                  const txBIn = latestInTxMap[b.id] || (nameB ? latestInTxMap[nameB] : undefined);
+
+                  const timeA = txAIn ? new Date(txAIn.created_at).getTime() : a.created_at ? new Date(a.created_at).getTime() : 0;
+                  const timeB = txBIn ? new Date(txBIn.created_at).getTime() : b.created_at ? new Date(b.created_at).getTime() : 0;
+
+                  if (timeA !== timeB) {
+                    return timeB - timeA;
+                  }
+                  return a.name.localeCompare(b.name);
+                }
+                if (bufferSortOption === "CODE_ASC") {
+                  return String(a.code || "").localeCompare(String(b.code || ""), undefined, { numeric: true });
+                }
+                if (bufferSortOption === "CODE_DESC") {
+                  return String(b.code || "").localeCompare(String(a.code || ""), undefined, { numeric: true });
+                }
+                if (bufferSortOption === "NAME_ASC") {
+                  return a.name.localeCompare(b.name);
+                }
+                if (bufferSortOption === "NAME_DESC") {
+                  return b.name.localeCompare(a.name);
+                }
+                if (bufferSortOption === "STOCK_DESC") {
+                  return (b.current_stock ?? 0) - (a.current_stock ?? 0);
+                }
+                if (bufferSortOption === "STOCK_ASC") {
+                  return (a.current_stock ?? 0) - (b.current_stock ?? 0);
+                }
+                return 0;
+              });
+
+              if (sortedFiltered.length === 0) return (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <Package className="mb-3 size-10 text-muted-foreground/40" />
                   <p className="text-sm font-medium">
-                    {bufferSearchQuery || bufferStatusFilter !== "ALL"
+                    {bufferSearchQuery || bufferStatusFilter !== "ALL" || bufferDateFilter
                       ? "Tidak ada item buffer stok yang cocok"
                       : "Belum ada data buffer stok"}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground max-w-sm">
-                    {bufferSearchQuery || bufferStatusFilter !== "ALL"
+                    {bufferSearchQuery || bufferStatusFilter !== "ALL" || bufferDateFilter
                       ? "Coba ubah kata kunci atau reset filter."
                       : "Klik \"Tambah Barang Buffer\" untuk menambahkan item baru ke buffer stok (tidak akan muncul di OBS Sparepart)."}
                   </p>
-                  {canManageWarehouse && !bufferSearchQuery && bufferStatusFilter === "ALL" && (
+                  {canManageWarehouse && !bufferSearchQuery && bufferStatusFilter === "ALL" && !bufferDateFilter && (
                     <Button
                       size="sm"
                       onClick={() => { setBufferFormData({ name: "", code: "", unit: "pcs", location: "Gudang Utama", shelf: "Rak A-1", min_stock: "10", safe_stock: "1", max_stock: "", current_stock: "0", description: "" }); setIsBufferAddOpen(true); }}
@@ -4096,7 +4417,7 @@ function WarehouseAndProductsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                    {filtered.map((item, index) => {
+                    {sortedFiltered.map((item, index) => {
                       const current = item.current_stock ?? 0;
                       const minStock = item.min_stock ?? 10;
                       const maxStock = item.max_stock ? Number(item.max_stock) : null;
@@ -4339,6 +4660,8 @@ function WarehouseAndProductsPage() {
                         onClick={() => {
                           setBufferImportFile(null);
                           setBufferImportPreview([]);
+                          setBufferImportSheets([]);
+                          setBufferSelectedSheet("ALL");
                         }}
                         className="h-7 px-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                         title="Hapus File"
@@ -4349,48 +4672,168 @@ function WarehouseAndProductsPage() {
                   </div>
                 )}
 
+                {/* Pemilih Sheet jika file memiliki banyak lembar kerja */}
+                {bufferImportSheets.length > 1 && (
+                  <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                    <div className="flex items-center gap-2">
+                      <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                        <Layers className="size-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">
+                          Pilih Lembar Kerja (Sheet)
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          File memiliki {bufferImportSheets.length} sheet dengan data yang siap diimport
+                        </p>
+                      </div>
+                    </div>
+                    <Select
+                      value={bufferSelectedSheet}
+                      onValueChange={(val) => {
+                        setBufferSelectedSheet(val);
+                        const deduplicateBuf = (items: any[]) => {
+                          const seen = new Set<string>();
+                          const result: any[] = [];
+                          for (const it of items) {
+                            const nName = String(it.name || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+                            const nCode = String(it.code || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+                            const key = nName ? `n_${nName}` : (nCode ? `c_${nCode}` : "");
+                            if (!key || !seen.has(key)) {
+                              if (key) seen.add(key);
+                              result.push(it);
+                            }
+                          }
+                          return result;
+                        };
+                        if (val === "ALL") {
+                          const allItems = bufferImportSheets.flatMap((s) => s.items);
+                          setBufferImportPreview(deduplicateBuf(allItems));
+                        } else {
+                          const target = bufferImportSheets.find((s) => s.name === val);
+                          setBufferImportPreview(deduplicateBuf(target?.items || []));
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs min-w-[240px] bg-background">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60">
+                        <SelectItem value="ALL" className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                          ✨ Gabungkan Semua Sheet ({bufferImportSheets.reduce((a, b) => a + b.count, 0)} barang)
+                        </SelectItem>
+                        {bufferImportSheets.map((s) => (
+                          <SelectItem key={s.name} value={s.name} className="text-xs">
+                            {s.name} ({s.count} barang)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 {/* Pratinjau Data yang Terbaca */}
                 {bufferImportPreview.length > 0 && (
                   <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                         <Check className="size-3.5 text-emerald-600" />
-                        Pratinjau {bufferImportPreview.length} Barang Buffer Terdeteksi
+                        Pratinjau {sortedBufferImportPreview.length} Barang Buffer Terdeteksi
                       </span>
-                      <span className="text-[11px] text-muted-foreground">
-                        Pastikan seluruh kolom sudah sesuai dengan data
-                      </span>
+
+                      {/* Urutan Pratinjau Angka / Teks */}
+                      <div className="flex items-center gap-1.5">
+                        <ArrowUpDown className="size-3.5 text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">Urutkan:</span>
+                        <Select value={bufferImportSortOption} onValueChange={setBufferImportSortOption}>
+                          <SelectTrigger className="h-8 text-xs min-w-[220px] bg-background font-medium">
+                            <SelectValue placeholder="Urutkan..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="DEFAULT" className="text-xs">
+                              Sesuai File Excel (Default)
+                            </SelectItem>
+                            <SelectItem value="CODE_ASC" className="text-xs font-medium">
+                              Kode (Angka Terkecil ke Terbesar)
+                            </SelectItem>
+                            <SelectItem value="CODE_DESC" className="text-xs font-medium">
+                              Kode (Angka Terbesar ke Terkecil)
+                            </SelectItem>
+                            <SelectItem value="STOCK_ASC" className="text-xs">
+                              Stok (Angka Terkecil ke Terbesar)
+                            </SelectItem>
+                            <SelectItem value="STOCK_DESC" className="text-xs">
+                              Stok (Angka Terbesar ke Terkecil)
+                            </SelectItem>
+                            <SelectItem value="NAME_ASC" className="text-xs">
+                              Nama Barang (A - Z)
+                            </SelectItem>
+                            <SelectItem value="NAME_DESC" className="text-xs">
+                              Nama Barang (Z - A)
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                     <div className="max-h-72 overflow-x-auto overflow-y-auto rounded-lg border border-border text-xs bg-background">
-                      <table className="w-full text-left border-collapse min-w-[700px]">
+                      <table className="w-full text-left border-collapse min-w-[600px]">
                         <thead className="bg-surface-muted text-[11px] font-semibold text-muted-foreground sticky top-0 z-10 border-b border-border">
                           <tr>
-                            <th className="p-2.5 w-12 text-center">No</th>
-                            <th className="p-2.5 w-32 text-center">Kode</th>
-                            <th className="p-2.5 min-w-[200px]">Material</th>
-                            <th className="p-2.5 text-center w-28">Stok Saat Ini</th>
-                            <th className="p-2.5 text-center w-24">Batas Min.</th>
+                            <th 
+                              className="p-2.5 w-12 text-center cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
+                              onClick={() => setBufferImportSortOption("DEFAULT")}
+                              title="Reset ke urutan asli file"
+                            >
+                              No
+                            </th>
+                            <th 
+                              className="p-2.5 w-36 text-center cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
+                              onClick={() => setBufferImportSortOption(bufferImportSortOption === "CODE_ASC" ? "CODE_DESC" : "CODE_ASC")}
+                              title="Urutkan kode angka terkecil / terbesar"
+                            >
+                              <div className="flex items-center justify-center gap-1">
+                                <span>Kode</span>
+                                <ArrowUpDown className={`size-3 ${bufferImportSortOption.startsWith("CODE") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
+                              </div>
+                            </th>
+                            <th 
+                              className="p-2.5 min-w-[200px] cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
+                              onClick={() => setBufferImportSortOption(bufferImportSortOption === "NAME_ASC" ? "NAME_DESC" : "NAME_ASC")}
+                              title="Urutkan nama A-Z / Z-A"
+                            >
+                              <div className="flex items-center gap-1">
+                                <span>Material</span>
+                                <ArrowUpDown className={`size-3 ${bufferImportSortOption.startsWith("NAME") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
+                              </div>
+                            </th>
+                            <th 
+                              className="p-2.5 text-center w-28 cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
+                              onClick={() => setBufferImportSortOption(bufferImportSortOption === "STOCK_ASC" ? "STOCK_DESC" : "STOCK_ASC")}
+                              title="Urutkan stok angka terkecil / terbesar"
+                            >
+                              <div className="flex items-center justify-center gap-1">
+                                <span>Stok Saat Ini</span>
+                                <ArrowUpDown className={`size-3 ${bufferImportSortOption.startsWith("STOCK") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
+                              </div>
+                            </th>
                             <th className="p-2.5 text-center w-24">Min. Stok</th>
                             <th className="p-2.5 text-center w-24">Maks. Stok</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border/60">
-                          {bufferImportPreview.map((it: any, idx: number) => (
+                          {sortedBufferImportPreview.slice(0, 100).map((it: any, idx: number) => (
                             <tr key={idx} className="hover:bg-surface-muted/50 transition-colors">
                               <td className="p-2.5 text-center text-muted-foreground font-mono">{idx + 1}</td>
                               <td className="p-2.5 text-center font-mono text-primary font-medium">{it.code || "-"}</td>
                               <td className="p-2.5 font-medium text-foreground">{it.name}</td>
                               <td className="p-2.5 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                                {it.current_stock ?? 0} pcs
+                                {it.current_stock ?? 0} {it.unit || "pcs"}
                               </td>
                               <td className="p-2.5 text-center font-mono text-muted-foreground">
-                                {it.safe_stock !== null && it.safe_stock !== undefined ? `${it.safe_stock} pcs` : "-"}
+                                {it.min_stock !== null && it.min_stock !== undefined ? `${it.min_stock} ${it.unit || "pcs"}` : "-"}
                               </td>
                               <td className="p-2.5 text-center font-mono text-muted-foreground">
-                                {it.min_stock !== null && it.min_stock !== undefined ? `${it.min_stock} pcs` : "-"}
-                              </td>
-                              <td className="p-2.5 text-center font-mono text-muted-foreground">
-                                {it.max_stock !== null && it.max_stock !== undefined ? `${it.max_stock} pcs` : "-"}
+                                {it.max_stock !== null && it.max_stock !== undefined ? `${it.max_stock} ${it.unit || "pcs"}` : "-"}
                               </td>
                             </tr>
                           ))}
@@ -4398,9 +4841,9 @@ function WarehouseAndProductsPage() {
                       </table>
                     </div>
                     <div className="flex items-center justify-between text-xs px-1 text-muted-foreground pt-1.5 border-t border-border/40">
-                      <span>Menampilkan seluruh <strong>{bufferImportPreview.length}</strong> barang buffer yang siap ditambahkan</span>
+                      <span>Menampilkan {Math.min(sortedBufferImportPreview.length, 100)} dari seluruh <strong>{sortedBufferImportPreview.length}</strong> barang buffer yang siap ditambahkan</span>
                       <span className="font-mono font-bold text-foreground">
-                        Total Stok: {bufferImportPreview.reduce((acc: number, it: any) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
+                        Total Stok: {sortedBufferImportPreview.reduce((acc: number, it: any) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
                       </span>
                     </div>
                   </div>
@@ -4413,6 +4856,9 @@ function WarehouseAndProductsPage() {
                     onClick={() => {
                       setBufferImportFile(null);
                       setBufferImportPreview([]);
+                      setBufferImportSheets([]);
+                      setBufferSelectedSheet("ALL");
+                      setBufferImportSortOption("DEFAULT");
                       setIsBufferAddOpen(false);
                     }}
                   >
@@ -4787,6 +5233,8 @@ function WarehouseAndProductsPage() {
                         onClick={() => {
                           setImportFile(null);
                           setImportPreview([]);
+                          setImportSheets([]);
+                          setSelectedSheet("ALL");
                         }}
                         className="h-7 px-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                         title="Hapus File"
@@ -4797,48 +5245,174 @@ function WarehouseAndProductsPage() {
                   </div>
                 )}
 
+                {/* Pemilih Sheet jika file memiliki banyak lembar kerja */}
+                {importSheets.length > 1 && (
+                  <div className="flex flex-wrap items-center justify-between gap-2.5 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                    <div className="flex items-center gap-2">
+                      <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                        <Layers className="size-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">
+                          Pilih Lembar Kerja (Sheet)
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          File memiliki {importSheets.length} sheet dengan data yang siap diimport
+                        </p>
+                      </div>
+                    </div>
+                    <Select
+                      value={selectedSheet}
+                      onValueChange={(val) => {
+                        setSelectedSheet(val);
+                        const deduplicateProd = (items: any[]) => {
+                          const seen = new Set<string>();
+                          const result: any[] = [];
+                          for (const it of items) {
+                            const nName = String(it.name || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+                            const nCode = String(it.code || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+                            const key = nName ? `n_${nName}` : (nCode ? `c_${nCode}` : "");
+                            if (!key || !seen.has(key)) {
+                              if (key) seen.add(key);
+                              result.push(it);
+                            }
+                          }
+                          return result;
+                        };
+                        if (val === "ALL") {
+                          const allItems = importSheets.flatMap((s) => s.items);
+                          setImportPreview(deduplicateProd(allItems));
+                        } else {
+                          const target = importSheets.find((s) => s.name === val);
+                          setImportPreview(deduplicateProd(target?.items || []));
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs min-w-[240px] bg-background">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60">
+                        <SelectItem value="ALL" className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                          ✨ Gabungkan Semua Sheet ({importSheets.reduce((a, b) => a + b.count, 0)} barang)
+                        </SelectItem>
+                        {importSheets.map((s) => (
+                          <SelectItem key={s.name} value={s.name} className="text-xs">
+                            {s.name} ({s.count} barang)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 {/* Pratinjau Data yang Terbaca */}
                 {importPreview.length > 0 && (
                   <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                         <Check className="size-3.5 text-emerald-600" />
-                        Pratinjau {importPreview.length} Barang Terdeteksi
+                        Pratinjau {sortedImportPreview.length} Barang Terdeteksi
                       </span>
-                      <span className="text-[11px] text-muted-foreground">
-                        Pastikan seluruh kolom sudah sesuai dengan data
-                      </span>
+
+                      {/* Urutan Pratinjau Angka / Teks */}
+                      <div className="flex items-center gap-1.5">
+                        <ArrowUpDown className="size-3.5 text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">Urutkan:</span>
+                        <Select value={importSortOption} onValueChange={setImportSortOption}>
+                          <SelectTrigger className="h-8 text-xs min-w-[220px] bg-background font-medium">
+                            <SelectValue placeholder="Urutkan..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="DEFAULT" className="text-xs">
+                              Sesuai File Excel (Default)
+                            </SelectItem>
+                            <SelectItem value="CODE_ASC" className="text-xs font-medium">
+                              Kode (Angka Terkecil ke Terbesar)
+                            </SelectItem>
+                            <SelectItem value="CODE_DESC" className="text-xs font-medium">
+                              Kode (Angka Terbesar ke Terkecil)
+                            </SelectItem>
+                            <SelectItem value="STOCK_ASC" className="text-xs">
+                              Stok (Angka Terkecil ke Terbesar)
+                            </SelectItem>
+                            <SelectItem value="STOCK_DESC" className="text-xs">
+                              Stok (Angka Terbesar ke Terkecil)
+                            </SelectItem>
+                            <SelectItem value="NAME_ASC" className="text-xs">
+                              Nama Barang (A - Z)
+                            </SelectItem>
+                            <SelectItem value="NAME_DESC" className="text-xs">
+                              Nama Barang (Z - A)
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                     <div className="max-h-72 overflow-x-auto overflow-y-auto rounded-lg border border-border text-xs bg-background">
-                      <table className="w-full text-left border-collapse min-w-[700px]">
+                      <table className="w-full text-left border-collapse min-w-[600px]">
                         <thead className="bg-surface-muted text-[11px] font-semibold text-muted-foreground sticky top-0 z-10 border-b border-border">
                           <tr>
-                            <th className="p-2.5 w-12 text-center">No</th>
-                            <th className="p-2.5 w-32 text-center">Kode</th>
-                            <th className="p-2.5 min-w-[200px]">Material</th>
-                            <th className="p-2.5 text-center w-28">Stok Saat Ini</th>
-                            <th className="p-2.5 text-center w-24">Batas Min.</th>
+                            <th 
+                              className="p-2.5 w-12 text-center cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
+                              onClick={() => setImportSortOption("DEFAULT")}
+                              title="Reset ke urutan asli file"
+                            >
+                              No
+                            </th>
+                            <th 
+                              className="p-2.5 w-36 text-center cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
+                              onClick={() => setImportSortOption(importSortOption === "CODE_ASC" ? "CODE_DESC" : "CODE_ASC")}
+                              title="Urutkan kode angka terkecil / terbesar"
+                            >
+                              <div className="flex items-center justify-center gap-1">
+                                <span>Kode</span>
+                                <ArrowUpDown className={`size-3 ${importSortOption.startsWith("CODE") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
+                              </div>
+                            </th>
+                            <th 
+                              className="p-2.5 min-w-[200px] cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
+                              onClick={() => setImportSortOption(importSortOption === "NAME_ASC" ? "NAME_DESC" : "NAME_ASC")}
+                              title="Urutkan nama A-Z / Z-A"
+                            >
+                              <div className="flex items-center gap-1">
+                                <span>Material</span>
+                                <ArrowUpDown className={`size-3 ${importSortOption.startsWith("NAME") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
+                              </div>
+                            </th>
+                            <th className="p-2.5 text-center w-20 font-semibold">Satuan</th>
+                            <th 
+                              className="p-2.5 text-center w-28 cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
+                              onClick={() => setImportSortOption(importSortOption === "STOCK_ASC" ? "STOCK_DESC" : "STOCK_ASC")}
+                              title="Urutkan stok angka terkecil / terbesar"
+                            >
+                              <div className="flex items-center justify-center gap-1">
+                                <span>Stok Saat Ini</span>
+                                <ArrowUpDown className={`size-3 ${importSortOption.startsWith("STOCK") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
+                              </div>
+                            </th>
                             <th className="p-2.5 text-center w-24">Min. Stok</th>
                             <th className="p-2.5 text-center w-24">Maks. Stok</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border/60">
-                          {importPreview.map((it, idx) => (
+                          {sortedImportPreview.slice(0, 100).map((it, idx) => (
                             <tr key={idx} className="hover:bg-surface-muted/50 transition-colors">
                               <td className="p-2.5 text-center text-muted-foreground font-mono">{idx + 1}</td>
                               <td className="p-2.5 text-center font-mono text-primary font-medium">{it.code || "-"}</td>
                               <td className="p-2.5 font-medium text-foreground">{it.name}</td>
+                              <td className="p-2.5 text-center font-mono font-semibold uppercase text-slate-700 dark:text-slate-300">
+                                <span className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[11px] border border-slate-200 dark:border-slate-700">
+                                  {it.unit || "pcs"}
+                                </span>
+                              </td>
                               <td className="p-2.5 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                                {it.current_stock ?? 0} pcs
+                                {it.current_stock ?? 0}
                               </td>
                               <td className="p-2.5 text-center font-mono text-muted-foreground">
-                                {it.safe_stock !== null && it.safe_stock !== undefined ? `${it.safe_stock} pcs` : "-"}
+                                {it.min_stock !== null && it.min_stock !== undefined ? it.min_stock : "-"}
                               </td>
                               <td className="p-2.5 text-center font-mono text-muted-foreground">
-                                {it.min_stock !== null && it.min_stock !== undefined ? `${it.min_stock} pcs` : "-"}
-                              </td>
-                              <td className="p-2.5 text-center font-mono text-muted-foreground">
-                                {it.max_stock !== null && it.max_stock !== undefined ? `${it.max_stock} pcs` : "-"}
+                                {it.max_stock !== null && it.max_stock !== undefined ? it.max_stock : "-"}
                               </td>
                             </tr>
                           ))}
@@ -4846,9 +5420,9 @@ function WarehouseAndProductsPage() {
                       </table>
                     </div>
                     <div className="flex items-center justify-between text-xs px-1 text-muted-foreground pt-1.5 border-t border-border/40">
-                      <span>Menampilkan seluruh <strong>{importPreview.length}</strong> barang yang siap ditambahkan</span>
+                      <span>Menampilkan {Math.min(sortedImportPreview.length, 100)} dari seluruh <strong>{sortedImportPreview.length}</strong> barang yang siap ditambahkan</span>
                       <span className="font-mono font-bold text-foreground">
-                        Total Stok: {importPreview.reduce((acc, it) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
+                        Total Stok: {sortedImportPreview.reduce((acc, it) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
                       </span>
                     </div>
                   </div>
@@ -4861,6 +5435,8 @@ function WarehouseAndProductsPage() {
                     onClick={() => {
                       setImportFile(null);
                       setImportPreview([]);
+                      setImportSheets([]);
+                      setSelectedSheet("ALL");
                       setIsAddOpen(false);
                     }}
                   >
@@ -4955,23 +5531,34 @@ function WarehouseAndProductsPage() {
                   onChange={(e) => setEditingItem({ ...editingItem, shelf: e.target.value })}
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label>Batas Minimum Stok</Label>
-                <Input
-                  type="number"
-                  value={editingItem.min_stock ?? 10}
-                  onChange={(e) => setEditingItem({ ...editingItem, min_stock: Number(e.target.value) })}
-                  placeholder="Contoh: 10"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Batas Maksimal Stok</Label>
-                <Input
-                  type="number"
-                  value={editingItem.max_stock ?? ""}
-                  onChange={(e) => setEditingItem({ ...editingItem, max_stock: e.target.value ? Number(e.target.value) : null })}
-                  placeholder="Contoh: 50 (opsional)"
-                />
+              <div className="col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Batas Minimum Stok</Label>
+                  <Input
+                    type="number"
+                    value={editingItem.min_stock ?? 10}
+                    onChange={(e) => setEditingItem({ ...editingItem, min_stock: Number(e.target.value) })}
+                    placeholder="Contoh: 10"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Maksimal Stok</Label>
+                  <Input
+                    type="number"
+                    value={editingItem.max_stock ?? ""}
+                    onChange={(e) => setEditingItem({ ...editingItem, max_stock: e.target.value ? Number(e.target.value) : null })}
+                    placeholder="Contoh: 50 (opsional)"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Stok Saat Ini</Label>
+                  <Input
+                    type="number"
+                    value={editingItem.current_stock ?? ""}
+                    onChange={(e) => setEditingItem({ ...editingItem, current_stock: e.target.value !== "" ? Number(e.target.value) : 0 })}
+                    placeholder="Contoh: 0"
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -5231,28 +5818,38 @@ function WarehouseAndProductsPage() {
               <div className="rounded-lg border border-border bg-surface-muted/40 p-3.5 space-y-3">
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <span className="text-muted-foreground block text-[11px]">Tanggal Pencatatan:</span>
-                    <span className="font-mono font-bold text-foreground text-sm">{formatDate(selectedTx.created_at)}</span>
+                    <span className="text-muted-foreground block text-[11px]">
+                      {selectedTx.tx_type === "IN" ? "Tanggal Terima:" : "Tanggal Keluar:"}
+                    </span>
+                    <span className="font-mono font-bold text-foreground text-sm">
+                      {selectedTx.batch_number ? formatDate(selectedTx.batch_number) : formatDate(selectedTx.created_at)}
+                    </span>
                   </div>
                   <div>
                     <span className="text-muted-foreground block text-[11px]">User:</span>
                     <span className="font-medium text-foreground">
-                      Warehouse Sparepart
+                      {selectedTx.created_by_name || "Warehouse Sparepart"}
                     </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Alasan Permintaan:</span>
-                    <span className="font-medium text-foreground">{selectedTx.supplier_or_dest || "—"}</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground block text-[11px]">
-                      {selectedTx.tx_type === "IN" ? "Tanggal Terima:" : "Tanggal Keluar:"}
+                      {selectedTx.tx_type === "IN" ? "Vendor / Supplier:" : "Alasan Permintaan / Tujuan:"}
                     </span>
-                    <span className="font-mono text-foreground">{selectedTx.batch_number || "—"}</span>
+                    <span className="font-medium text-foreground">{selectedTx.supplier_or_dest || "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">Tanggal Pencatatan:</span>
+                    <span className="font-mono font-bold text-foreground text-sm">
+                      {formatDate(selectedTx.created_at)}
+                    </span>
                   </div>
                   <div>
                     <span className="text-muted-foreground block text-[11px]">Petugas Sparepart Shift 1/2/3:</span>
                     <span className="font-medium text-foreground">{selectedTx.notes || selectedTx.reference_no || "—"}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">No. PO / Referensi:</span>
+                    <span className="font-mono font-semibold text-foreground">{selectedTx.reference_no || "—"}</span>
                   </div>
                 </div>
               </div>
@@ -5355,17 +5952,6 @@ function WarehouseAndProductsPage() {
               stokSaatIniBoxClass = "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400";
             }
 
-            const isOrder = kondisiText === "ORDER";
-
-            const prNumber = isOrder
-              ? ((selectedProduct as any).pr_number || (() => {
-                  const str = String(selectedProduct.id || selectedProduct.code || selectedProduct.name || "");
-                  let hash = 0;
-                  for (let i = 0; i < str.length; i++) hash = (hash << 5) - hash + str.charCodeAt(i);
-                  return `3110${Math.abs(hash % 900000) + 100000}`;
-                })())
-              : null;
-
             const formattedDate = selectedProduct.created_at
               ? new Date(selectedProduct.created_at).toLocaleDateString("id-ID", {
                   day: "numeric",
@@ -5378,19 +5964,13 @@ function WarehouseAndProductsPage() {
               <div className="space-y-4 py-2 text-xs">
                 {/* Info Utama Layout Baru */}
                 <div className="rounded-lg border border-border bg-surface-muted/40 p-3.5 space-y-3">
-                  {/* 1. Tanggal Input & No. PR Header (Hanya untuk kondisi ORDER) */}
+                  {/* 1. Tanggal Input Header */}
                   <div className="flex items-center justify-between border-b border-border/60 pb-2 text-[11px]">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <CalendarIcon className="size-3.5 text-primary shrink-0" />
                       <span>Tanggal Input:</span>
                       <span className="font-semibold text-foreground">{formattedDate}</span>
                     </div>
-                    {isOrder && prNumber && (
-                      <div className="flex items-center gap-1.5 text-muted-foreground">
-                        <span>No. PR:</span>
-                        <span className="font-mono font-bold text-foreground bg-primary/10 px-1.5 py-0.5 rounded text-[10px] text-primary">{prNumber}</span>
-                      </div>
-                    )}
                   </div>
 
                   {/* 2. Nama Material > Kode Material */}
@@ -5405,8 +5985,8 @@ function WarehouseAndProductsPage() {
                     </div>
                   </div>
 
-                  {/* 3. Status Kondisi (No. PR hanya untuk status ORDER, no.spb dihilangkan) */}
-                  <div className={cn("gap-3 pt-2 border-t border-border/60", isOrder ? "grid grid-cols-2" : "flex items-center")}>
+                  {/* 3. Status Kondisi */}
+                  <div className="flex items-center gap-3 pt-2 border-t border-border/60">
                     <div>
                       <span className="text-muted-foreground block text-[11px]">Status Kondisi:</span>
                       <div className="mt-1">
@@ -5415,12 +5995,6 @@ function WarehouseAndProductsPage() {
                         </Badge>
                       </div>
                     </div>
-                    {isOrder && prNumber && (
-                      <div>
-                        <span className="text-muted-foreground block text-[11px]">No. PR (Procurement):</span>
-                        <span className="font-mono font-semibold text-foreground block mt-1">{prNumber}</span>
-                      </div>
-                    )}
                   </div>
 
                   {/* 4. Kategori > Nomor Rak */}

@@ -129,7 +129,7 @@ type BufferStockItem = {
 function DashboardPage() {
   const { profile, roles, isAdmin } = useCurrentUser();
   const [selectedTx, setSelectedTx] = useState<any | null>(null);
-  const [stockStatusTab, setStockStatusTab] = useState<"limit" | "habis" | "aman" | "all">("limit");
+  const [stockStatusTab, setStockStatusTab] = useState<"all" | "critical" | "limit" | "habis" | "aman">("all");
 
   // Queries
   const formulasi = useQuery({ queryKey: ["formulasi"], queryFn: fetchFormulasi });
@@ -235,6 +235,12 @@ function DashboardPage() {
   const availableItemsCount = totalActiveProducts - zeroProductsCount;
   const availablePct = totalActiveProducts > 0 ? Math.round((availableItemsCount / totalActiveProducts) * 100) : 0;
 
+  // KPI Sparepart (Stok Aman):
+  // Standar: Jika persentase <= 91.99% status "MISS", jika >= 92.00% status "HIT"
+  const kpiExactPct = totalActiveProducts > 0 ? (nonLimitProductsCount / totalActiveProducts) * 100 : 0;
+  const isKpiHit = kpiExactPct >= 92.0;
+  const kpiStatus: "HIT" | "MISS" = isKpiHit ? "HIT" : "MISS";
+
   // Diagram SVG Donat Status Stok
   const renderStockDonut = () => {
     if (totalActiveProducts === 0) {
@@ -284,14 +290,14 @@ function DashboardPage() {
               className="transition-all duration-700"
             />
           )}
-          {/* Sektor Limit / Kritis (Amber) */}
+          {/* Sektor Limit / Kritis (Orange) */}
           {limitOnlyPct > 0 && (
             <circle
               cx="50"
               cy="50"
               r={radius}
               fill="transparent"
-              stroke="#f59e0b"
+              stroke="#f97316"
               strokeWidth={strokeWidth}
               strokeDasharray={`${limitDash} ${circumference}`}
               strokeDashoffset={limitOffset}
@@ -299,7 +305,7 @@ function DashboardPage() {
               className="transition-all duration-700"
             />
           )}
-          {/* Sektor Stok Habis (Rose) */}
+          {/* Sektor Stok Habis / Critical (Merah Menyala) */}
           {zeroPct > 0 && (
             <circle
               cx="50"
@@ -316,11 +322,23 @@ function DashboardPage() {
           )}
         </svg>
         <div className="absolute flex flex-col items-center justify-center text-center">
-          <span className="font-mono text-base font-bold leading-tight text-emerald-600 dark:text-emerald-400">
-            {safePct}%
+          <span
+            className={cn(
+              "font-mono text-base font-bold leading-tight",
+              isKpiHit ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"
+            )}
+          >
+            {kpiExactPct.toFixed(2)}%
           </span>
-          <span className="text-[8.5px] font-semibold text-muted-foreground uppercase tracking-wider">
-            Stok Aman
+          <span
+            className={cn(
+              "text-[9.5px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider mt-1 border shadow-xs",
+              isKpiHit
+                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                : "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/40"
+            )}
+          >
+            {kpiStatus}
           </span>
         </div>
       </div>
@@ -331,21 +349,29 @@ function DashboardPage() {
   const renderStockAnalysisCard = () => {
     const getDisplayedList = () => {
       switch (stockStatusTab) {
+        case "critical":
+          return {
+            items: limitProductsList,
+            label: "Barang Critical (Habis & Limit)",
+            colorClass: "text-red-600 dark:text-red-500",
+            badgeClass: "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/30",
+            emptyText: "✓ Tidak ada barang critical (stok habis atau limit).",
+          };
         case "habis":
           return {
             items: zeroProductsList,
-            label: "Barang Stok Habis",
-            colorClass: "text-rose-600 dark:text-rose-400",
-            badgeClass: "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30",
-            emptyText: "✓ Tidak ada barang stok kosong (0 pcs).",
+            label: "Barang Critical / Habis",
+            colorClass: "text-red-600 dark:text-red-500",
+            badgeClass: "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/30",
+            emptyText: "✓ Tidak ada barang stok kosong / critical (0 pcs).",
           };
         case "limit":
           return {
             items: limitOnlyProductsList,
-            label: "Barang Stok Limit / Kritis",
-            colorClass: "text-amber-600 dark:text-amber-400",
-            badgeClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
-            emptyText: "✓ Tidak ada barang stok limit / kritis.",
+            label: "Barang Stok Limit",
+            colorClass: "text-orange-600 dark:text-orange-400",
+            badgeClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30",
+            emptyText: "✓ Tidak ada barang stok limit.",
           };
         case "aman":
           return {
@@ -370,7 +396,10 @@ function DashboardPage() {
     const currentTabInfo = getDisplayedList();
 
     return (
-      <div className="rise-in border border-border bg-surface p-5 flex flex-col justify-between h-full shadow-xs space-y-4">
+      <div
+        id="diagram-analisis-status-sparepart"
+        className="rise-in border border-border bg-surface p-5 flex flex-col justify-between h-full shadow-xs space-y-4 scroll-mt-20"
+      >
         <div>
           {/* Header & Donut */}
           <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-border pb-3.5 gap-4">
@@ -378,12 +407,23 @@ function DashboardPage() {
               {/* Diagram Donat Persentase Status All Barang */}
               {renderStockDonut()}
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-semibold tracking-tight flex items-center gap-2">
                     <span className="label-caps !p-0">Diagram & Analisis Status Barang & Sparepart</span>
                   </h3>
                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-surface-muted border border-border text-muted-foreground">
                     {totalActiveProducts} Total Item
+                  </span>
+                  <span
+                    className={cn(
+                      "text-[10px] font-bold px-2 py-0.5 rounded border inline-flex items-center gap-1",
+                      isKpiHit
+                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                        : "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/40"
+                    )}
+                    title="Target KPI Sparepart: ≥ 92.00% (HIT) | ≤ 91.99% (MISS)"
+                  >
+                    KPI Sparepart: {kpiStatus} ({kpiExactPct.toFixed(2)}%)
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -395,13 +435,24 @@ function DashboardPage() {
                     <span className="size-2 rounded-full bg-emerald-500" />
                     Aman: {nonLimitProductsCount} ({safePct}%)
                   </span>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                    <span className="size-2 rounded-full bg-amber-500" />
-                    Limit / Kritis: {limitOnlyCount} ({limitOnlyPct}%)
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20">
+                    <span className="size-2 rounded-full bg-orange-500" />
+                    Limit: {limitOnlyCount} ({limitOnlyPct}%)
                   </span>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
-                    <span className="size-2 rounded-full bg-rose-500" />
-                    Habis (0): {zeroProductsCount} ({zeroPct}%)
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-500 border border-red-500/20">
+                    <span className="size-2 rounded-full bg-red-600" />
+                    Critical / Habis (0): {zeroProductsCount} ({zeroPct}%)
+                  </span>
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border",
+                      isKpiHit
+                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                        : "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/40"
+                    )}
+                    title="Standar KPI Sparepart: Target ≥ 92.00% = HIT, ≤ 91.99% = MISS"
+                  >
+                    KPI: {kpiStatus} (Target ≥ 92.00%)
                   </span>
                 </div>
               </div>
@@ -418,95 +469,106 @@ function DashboardPage() {
               />
               <div
                 style={{ width: `${limitOnlyPct}%` }}
-                className="bg-amber-500 h-full transition-all"
+                className="bg-orange-500 h-full transition-all"
                 title={`Limit: ${limitOnlyCount} (${limitOnlyPct}%)`}
               />
               <div
                 style={{ width: `${zeroPct}%` }}
-                className="bg-rose-500 h-full transition-all"
-                title={`Habis: ${zeroProductsCount} (${zeroPct}%)`}
+                className="bg-red-600 h-full transition-all"
+                title={`Critical / Habis: ${zeroProductsCount} (${zeroPct}%)`}
               />
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-0.5">
+              <span>0%</span>
+              <span className="font-medium flex items-center gap-1">
+                Target KPI Sparepart: <strong className="font-mono text-foreground font-semibold">&ge; 92.00% (HIT)</strong> &bull; Aktual:{" "}
+                <span className={cn("font-mono font-bold", isKpiHit ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500")}>
+                  {kpiExactPct.toFixed(2)}% ({kpiStatus})
+                </span>
+              </span>
+              <span>100%</span>
             </div>
           </div>
         </div>
 
         {/* Tab Filter Button & Daftar Barang Rapi & Terbaca Jelas */}
         <div className="pt-2 border-t border-border space-y-2.5 flex-1 flex flex-col justify-between">
-          {/* Tab Button Group */}
-          <div className="flex flex-wrap items-center justify-between gap-1.5 bg-surface-muted/60 p-1 rounded-lg border border-border">
-            <div className="flex flex-wrap items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setStockStatusTab("limit")}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
-                  stockStatusTab === "limit"
-                    ? "bg-amber-500 text-white shadow-xs"
-                    : "text-muted-foreground hover:bg-surface hover:text-foreground"
-                )}
-              >
-                <AlertTriangle className="size-3 shrink-0" />
-                <span>Limit / Kritis</span>
-                <span className={cn(
-                  "font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold",
-                  stockStatusTab === "limit" ? "bg-amber-700/60 text-white" : "bg-surface border border-border text-amber-600 dark:text-amber-400"
-                )}>
-                  {limitOnlyCount}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setStockStatusTab("habis")}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
-                  stockStatusTab === "habis"
-                    ? "bg-rose-500 text-white shadow-xs"
-                    : "text-muted-foreground hover:bg-surface hover:text-foreground"
-                )}
-              >
-                <AlertCircle className="size-3 shrink-0" />
-                <span>Habis (0)</span>
-                <span className={cn(
-                  "font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold",
-                  stockStatusTab === "habis" ? "bg-rose-700/60 text-white" : "bg-surface border border-border text-rose-600 dark:text-rose-400"
-                )}>
-                  {zeroProductsCount}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setStockStatusTab("aman")}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
-                  stockStatusTab === "aman"
-                    ? "bg-emerald-600 text-white shadow-xs"
-                    : "text-muted-foreground hover:bg-surface hover:text-foreground"
-                )}
-              >
-                <CheckCircle2 className="size-3 shrink-0" />
-                <span>Aman</span>
-                <span className={cn(
-                  "font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold",
-                  stockStatusTab === "aman" ? "bg-emerald-800/60 text-white" : "bg-surface border border-border text-emerald-600 dark:text-emerald-400"
-                )}>
-                  {nonLimitProductsCount}
-                </span>
-              </button>
-            </div>
-
+          {/* Tab Button Group: Semua, Critical, Aman */}
+          <div className="flex items-center gap-1.5 bg-surface-muted/60 p-1 rounded-lg border border-border">
+            {/* 1. Tab Semua */}
             <button
               type="button"
               onClick={() => setStockStatusTab("all")}
               className={cn(
-                "flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-all cursor-pointer",
+                "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer",
                 stockStatusTab === "all"
-                  ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                  ? "bg-primary text-primary-foreground shadow-xs"
                   : "text-muted-foreground hover:bg-surface hover:text-foreground"
               )}
             >
-              <span>Semua ({totalActiveProducts})</span>
+              <Package className="size-3.5 shrink-0" />
+              <span>Semua</span>
+              <span
+                className={cn(
+                  "font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+                  stockStatusTab === "all"
+                    ? "bg-primary-foreground/20 text-primary-foreground"
+                    : "bg-surface border border-border text-foreground"
+                )}
+              >
+                {totalActiveProducts}
+              </span>
+            </button>
+
+            {/* 2. Tab Critical (Gabungan Kosong & Limit) */}
+            <button
+              type="button"
+              onClick={() => setStockStatusTab("critical")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                stockStatusTab === "critical" || stockStatusTab === "habis" || stockStatusTab === "limit"
+                  ? "bg-red-600 text-white shadow-xs"
+                  : "text-muted-foreground hover:bg-surface hover:text-foreground"
+              )}
+              title="Barang Critical: Gabungan Stok Kosong (0 pcs) & Stok Limit"
+            >
+              <AlertTriangle className="size-3.5 shrink-0" />
+              <span>Critical</span>
+              <span
+                className={cn(
+                  "font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+                  stockStatusTab === "critical" || stockStatusTab === "habis" || stockStatusTab === "limit"
+                    ? "bg-red-800/80 text-white"
+                    : "bg-surface border border-border text-red-600 dark:text-red-500"
+                )}
+              >
+                {limitProductsCount}
+              </span>
+            </button>
+
+            {/* 3. Tab Aman */}
+            <button
+              type="button"
+              onClick={() => setStockStatusTab("aman")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                stockStatusTab === "aman"
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "text-muted-foreground hover:bg-surface hover:text-foreground"
+              )}
+            >
+              <CheckCircle2 className="size-3.5 shrink-0" />
+              <span>Aman</span>
+              <span
+                className={cn(
+                  "font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+                  stockStatusTab === "aman"
+                    ? "bg-emerald-800/80 text-white"
+                    : "bg-surface border border-border text-emerald-600 dark:text-emerald-400"
+                )}
+              >
+                {nonLimitProductsCount}
+              </span>
             </button>
           </div>
 
@@ -539,9 +601,9 @@ function DashboardPage() {
                         className={cn(
                           "font-mono text-xs font-bold px-2 py-0.5 rounded border",
                           isZero
-                            ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30"
+                            ? "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/30"
                             : isLow
-                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                            ? "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30"
                             : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
                         )}
                       >
@@ -612,9 +674,9 @@ function DashboardPage() {
 
     // Pie chart data: status OBS Sparepart
     const obsStatusData = [
-      { name: "Aman", value: nonLimitProductsCount, color: "#10b981", pct: safePct },
-      { name: "Limit / Kritis", value: limitOnlyCount, color: "#f59e0b", pct: limitOnlyPct },
-      { name: "Habis (0)", value: zeroProductsCount, color: "#ef4444", pct: zeroPct },
+      { name: "Aman", value: nonLimitProductsCount, color: "#10b981", pct: safePct, statusKey: "aman" as const },
+      { name: "Limit", value: limitOnlyCount, color: "#f97316", pct: limitOnlyPct, statusKey: "limit" as const },
+      { name: "Critical / Habis (0)", value: zeroProductsCount, color: "#ef4444", pct: zeroPct, statusKey: "habis" as const },
     ].filter((d) => d.value > 0);
 
     // Horizontal bar chart data: perbandingan OBS vs Buffer per status
@@ -776,65 +838,153 @@ function DashboardPage() {
           </div>
 
           {/* Pie Chart: Status Stok OBS Sparepart */}
-          <div className="bg-surface-muted/30 border border-border rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <BarChart3 className="size-3.5 text-emerald-500" />
-              <h4 className="text-xs font-bold uppercase text-foreground">Status Stok OBS Sparepart</h4>
-            </div>
-            <div className="h-52 relative flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={ca.obsStatusData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={48}
-                    outerRadius={75}
-                    paddingAngle={3}
-                    dataKey="value"
-                    labelLine={false}
-                    label={renderCustomLabel}
+          <div className="bg-surface-muted/30 border border-border rounded-lg p-4 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="size-3.5 text-emerald-500" />
+                  <h4 className="text-xs font-bold uppercase text-foreground">Status Stok OBS Sparepart</h4>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={cn(
+                      "text-[10px] font-bold px-1.5 py-0.5 rounded border inline-flex items-center gap-1",
+                      isKpiHit
+                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                        : "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/40"
+                    )}
+                    title="Target KPI Sparepart: ≥ 92.00% (HIT) | ≤ 91.99% (MISS)"
                   >
-                    {ca.obsStatusData.map((entry, index) => (
-                      <Cell key={`status-${index}`} fill={entry.color} stroke="none" />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip
-                    content={({ active, payload }) => {
-                      if (active && payload && payload.length && payload[0]?.payload) {
-                        const d = payload[0].payload;
-                        return (
-                          <div className="rounded border border-border bg-surface p-2 shadow-md text-xs space-y-0.5">
-                            <p className="font-bold" style={{ color: d.color }}>{d.name}</p>
-                            <p className="text-foreground font-mono">{d.value} item ({d.pct}% dari {totalActiveProducts} item OBS)</p>
-                          </div>
-                        );
-                      }
-                      return null;
+                    KPI: {kpiStatus} ({kpiExactPct.toFixed(2)}%)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      document.getElementById("diagram-analisis-status-sparepart")?.scrollIntoView({ behavior: "smooth", block: "start" });
                     }}
-                  />
-                  <Legend
-                    verticalAlign="bottom"
-                    height={36}
-                    formatter={(value: string) => {
-                      const item = ca.obsStatusData.find((s) => s.name === value);
-                      return (
-                        <span className="text-xs text-foreground font-medium">
-                          {value} {item ? `(${item.value} item · ${item.pct}%)` : ""}
-                        </span>
-                      );
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center text-center pointer-events-none">
-                <span className="font-mono text-base font-bold leading-tight text-emerald-600 dark:text-emerald-400">
-                  {safePct}%
-                </span>
-                <span className="text-[8.5px] font-semibold text-muted-foreground uppercase tracking-wider">
-                  Stok Aman
-                </span>
+                    className="text-[11px] font-medium text-primary hover:underline inline-flex items-center gap-0.5 cursor-pointer ml-1"
+                    title="Buka Diagram & Analisis Status Barang & Sparepart"
+                  >
+                    Lihat Detail <ExternalLink className="size-3" />
+                  </button>
+                </div>
               </div>
+
+              <div className="h-52 relative flex items-center justify-center">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={ca.obsStatusData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={48}
+                      outerRadius={75}
+                      paddingAngle={3}
+                      dataKey="value"
+                      labelLine={false}
+                      label={renderCustomLabel}
+                      className="cursor-pointer"
+                      onClick={(entry: any) => {
+                        if (entry?.statusKey) {
+                          setStockStatusTab(entry.statusKey);
+                        }
+                        document.getElementById("diagram-analisis-status-sparepart")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
+                    >
+                      {ca.obsStatusData.map((entry, index) => (
+                        <Cell
+                          key={`status-${index}`}
+                          fill={entry.color}
+                          stroke="none"
+                          className="cursor-pointer hover:opacity-85 transition-opacity"
+                        />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length && payload[0]?.payload) {
+                          const d = payload[0].payload;
+                          return (
+                            <div className="rounded border border-border bg-surface p-2 shadow-md text-xs space-y-0.5">
+                              <p className="font-bold" style={{ color: d.color }}>{d.name}</p>
+                              <p className="text-foreground font-mono">{d.value} item ({d.pct}% dari {totalActiveProducts} item OBS)</p>
+                              <p className="text-[10px] text-muted-foreground pt-0.5">Klik untuk lihat rincian barang ↑</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="bottom"
+                      height={36}
+                      onClick={(e: any) => {
+                        const item = ca.obsStatusData.find((s) => s.name === e.value);
+                        if (item?.statusKey) {
+                          setStockStatusTab(item.statusKey);
+                        }
+                        document.getElementById("diagram-analisis-status-sparepart")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
+                      formatter={(value: string) => {
+                        const item = ca.obsStatusData.find((s) => s.name === value);
+                        return (
+                          <span
+                            className="text-xs text-foreground font-medium cursor-pointer hover:underline"
+                            title="Klik untuk melihat & memfilter barang"
+                          >
+                            {value} {item ? `(${item.value} item · ${item.pct}%)` : ""}
+                          </span>
+                        );
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                {/* Center Donut KPI & Persentase (Sinkron & Ngelink dengan Diagram Analisis Status Barang & Sparepart) */}
+                <div
+                  onClick={() => {
+                    document.getElementById("diagram-analisis-status-sparepart")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center text-center cursor-pointer group"
+                  title="Klik untuk membuka Diagram & Analisis Status Barang & Sparepart"
+                >
+                  <span
+                    className={cn(
+                      "font-mono text-base font-bold leading-tight group-hover:scale-105 transition-transform",
+                      isKpiHit ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"
+                    )}
+                  >
+                    {kpiExactPct.toFixed(2)}%
+                  </span>
+                  <span
+                    className={cn(
+                      "text-[8.5px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider mt-0.5 border shadow-xs",
+                      isKpiHit
+                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                        : "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/40"
+                    )}
+                  >
+                    {kpiStatus}
+                  </span>
+                  <span className="text-[7.5px] font-semibold text-muted-foreground uppercase tracking-wider mt-0.5 group-hover:text-foreground">
+                    Target ≥ 92%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Target KPI Sparepart Bar Ringkas */}
+            <div className="mt-3 pt-2.5 border-t border-border flex items-center justify-between text-[11px]">
+              <span className="text-muted-foreground">
+                Target KPI: <span className="font-semibold text-foreground">≥ 92.00% (HIT)</span>
+              </span>
+              <span
+                className={cn(
+                  "font-bold font-mono",
+                  isKpiHit ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"
+                )}
+              >
+                Aktual: {kpiExactPct.toFixed(2)}% ({kpiStatus})
+              </span>
             </div>
           </div>
         </div>
@@ -2494,9 +2644,11 @@ function DashboardPage() {
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
                     <span className="text-muted-foreground">
-                      {selectedTx.tx_type === "IN" ? "Tanggal Terima:" : "No. Batch:"}
+                      {selectedTx.tx_type === "IN" ? "Tanggal Terima:" : "Tanggal Keluar:"}
                     </span>{" "}
-                    <span className="font-mono font-medium text-foreground">{selectedTx.batch_number || "—"}</span>
+                    <span className="font-mono font-medium text-foreground">
+                      {selectedTx.batch_number ? formatDate(selectedTx.batch_number) : formatDate(selectedTx.created_at)}
+                    </span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">No. Referensi:</span>{" "}
