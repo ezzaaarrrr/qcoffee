@@ -414,17 +414,6 @@ function DashboardPage() {
                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-surface-muted border border-border text-muted-foreground">
                     {totalActiveProducts} Total Item
                   </span>
-                  <span
-                    className={cn(
-                      "text-[10px] font-bold px-2 py-0.5 rounded border inline-flex items-center gap-1",
-                      isKpiHit
-                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                        : "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/40"
-                    )}
-                    title="Target KPI Sparepart: ≥ 92.00% (HIT) | ≤ 91.99% (MISS)"
-                  >
-                    KPI Sparepart: {kpiStatus} ({kpiExactPct.toFixed(2)}%)
-                  </span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Tingkat ketersediaan & proporsi status stok sparepart aktif di lini gudang
@@ -442,17 +431,6 @@ function DashboardPage() {
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-500 border border-red-500/20">
                     <span className="size-2 rounded-full bg-red-600" />
                     Critical / Habis (0): {zeroProductsCount} ({zeroPct}%)
-                  </span>
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border",
-                      isKpiHit
-                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                        : "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/40"
-                    )}
-                    title="Standar KPI Sparepart: Target ≥ 92.00% = HIT, ≤ 91.99% = MISS"
-                  >
-                    KPI: {kpiStatus} (Target ≥ 92.00%)
                   </span>
                 </div>
               </div>
