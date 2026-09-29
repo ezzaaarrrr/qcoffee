@@ -34,6 +34,12 @@ import {
   Printer,
   Eye,
   ArrowUpDown,
+  Calendar as CalendarIcon,
+  ShieldCheck,
+  BoxSelect,
+  TrendingDown,
+  CircleAlert,
+  Boxes,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
@@ -112,10 +118,10 @@ export const Route = createFileRoute("/_authenticated/products")({
   },
   head: () => ({
     meta: [
-      { title: "Gudang & Master Barang — Q-Coffee M2" },
+      { title: "Buffer Stok — Q-Coffee M2" },
       {
         name: "description",
-        content: "Kelola data master barang, stok gudang, transaksi masuk/keluar, kategori, rak, dan dokumen barang.",
+        content: "Memantau stok cadangan untuk menjaga ketersediaan barang dan mengantisipasi kebutuhan yang tidak terduga.",
       },
     ],
   }),
@@ -131,10 +137,31 @@ type ProductItem = {
   location?: string | null;
   shelf?: string | null;
   min_stock?: number | null;
+  safe_stock?: number | null;
+  max_stock?: number | null;
   current_stock?: number | null;
   image_url?: string | null;
   doc_url?: string | null;
   description?: string | null;
+  is_active: boolean;
+  created_at?: string;
+};
+
+// Tipe data Buffer Stok — tabel terpisah dari OBS Sparepart
+type BufferStockItem = {
+  id: string;
+  name: string;
+  code: string | null;
+  unit?: string | null;
+  location?: string | null;
+  shelf?: string | null;
+  min_stock?: number | null;
+  safe_stock?: number | null;
+  max_stock?: number | null;
+  current_stock?: number | null;
+  description?: string | null;
+  image_url?: string | null;
+  doc_url?: string | null;
   is_active: boolean;
   created_at?: string;
 };
@@ -287,18 +314,45 @@ function WarehouseAndProductsPage() {
   const canDeleteMaster = isAdmin || roles.includes("prod_process_uh");
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<string>(search.tab || "items");
+  const [activeTab, setActiveTab] = useState<string>(
+    search.tab || "items"
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [stockStatusFilter, setStockStatusFilter] = useState<string>("ALL");
-  const [activeStatusFilter, setActiveStatusFilter] = useState<string>("ALL");
+  const [productDateFilter, setProductDateFilter] = useState<string>("");
   const [sortOption, setSortOption] = useState<string>("RECENT_MUTATION");
 
-  // State Modal Tambah Barang
+  // State Modal Tambah Barang (OBS Sparepart)
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<Array<any>>([]);
   const [isImporting, setIsImporting] = useState(false);
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
+
+  // State Modal Buffer Stok (tabel sendiri, independen)
+  const [isBufferAddOpen, setIsBufferAddOpen] = useState(false);
+  const [bufferFormData, setBufferFormData] = useState({
+    name: "",
+    code: "",
+    unit: "pcs",
+    location: "Gudang Utama",
+    shelf: "Rak A-1",
+    min_stock: "10",
+    safe_stock: "1",
+    max_stock: "",
+    current_stock: "0",
+    description: "",
+  });
+  const [editingBufferItem, setEditingBufferItem] = useState<BufferStockItem | null>(null);
+  const [deletingBufferItem, setDeletingBufferItem] = useState<BufferStockItem | null>(null);
+  const [bufferSearchQuery, setBufferSearchQuery] = useState("");
+  const [bufferStatusFilter, setBufferStatusFilter] = useState<string>("ALL");
+
+  // State Import File Buffer Stok (terpisah dari OBS)
+  const [bufferImportFile, setBufferImportFile] = useState<File | null>(null);
+  const [bufferImportPreview, setBufferImportPreview] = useState<Array<any>>([]);
+  const [isBufferImporting, setIsBufferImporting] = useState(false);
+  const bufferBulkFileInputRef = useRef<HTMLInputElement>(null);
 
   // Helper membaca file Excel (.xlsx / .xls) dan CSV dengan pustaka XLSX
   const handleBulkFileSelect = (file: File) => {
@@ -461,12 +515,14 @@ function WarehouseAndProductsPage() {
             rawName = `Item ${rawCode}`;
           }
 
-          // Helper parsing angka
+          // Helper parsing angka (mendukung format desimal titik maupun koma seperti 1,5 atau 1.5)
           const parseNum = (val: any, fallback: number | null = null): number | null => {
             if (val === undefined || val === null || String(val).trim() === "" || String(val).trim() === "—" || String(val).trim() === "-") {
               return fallback;
             }
-            const cleanStr = String(val).replace(/[^0-9.-]/g, "");
+            // Ganti koma dengan titik untuk desimal, buang huruf/satuan (cth: "1,5 pcs" -> "1.5")
+            const normalized = String(val).trim().replace(",", ".");
+            const cleanStr = normalized.replace(/[^0-9.-]/g, "");
             const num = parseFloat(cleanStr);
             return !isNaN(num) ? num : fallback;
           };
@@ -538,7 +594,301 @@ function WarehouseAndProductsPage() {
     toast.success("Template Excel berhasil diunduh");
   };
 
-  // Eksekusi Import Batch Data Barang
+  // ── IMPORT FILE BUFFER STOK (EXCEL / CSV) ─────────────────────────────────────
+  const handleBufferBulkFileSelect = (file: File) => {
+    setBufferImportFile(file);
+    const reader = new FileReader();
+
+    reader.onload = (e) => {
+      try {
+        const buffer = e.target?.result;
+        if (!buffer) return;
+
+        const workbook = XLSX.read(buffer, { type: "array" });
+        const firstSheetName = workbook.SheetNames[0];
+        if (!firstSheetName) {
+          toast.error("File tidak memiliki sheet/halaman data");
+          return;
+        }
+
+        const worksheet = workbook.Sheets[firstSheetName];
+        if (!worksheet) {
+          toast.error("Lembar kerja tidak ditemukan");
+          return;
+        }
+
+        const rawRows = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: "" });
+
+        if (!rawRows || rawRows.length < 2) {
+          toast.error("File kosong atau hanya memiliki baris judul");
+          return;
+        }
+
+        // Cari baris header
+        let headerRowIdx = 0;
+        for (let i = 0; i < Math.min(rawRows.length, 5); i++) {
+          const rowStr = (rawRows[i] || []).map((c: any) => String(c || "").toLowerCase()).join(" ");
+          if (
+            rowStr.includes("kode") ||
+            rowStr.includes("material") ||
+            rowStr.includes("nama") ||
+            rowStr.includes("barang") ||
+            rowStr.includes("part") ||
+            rowStr.includes("stok") ||
+            rowStr.includes("stock") ||
+            rowStr.includes("qty") ||
+            rowStr.includes("jumlah")
+          ) {
+            headerRowIdx = i;
+            break;
+          }
+        }
+
+        const selectedHeaderRow = rawRows[headerRowIdx] || [];
+        const headers = selectedHeaderRow.map((h: any) =>
+          String(h || "")
+            .toLowerCase()
+            .trim()
+            .replace(/\r?\n|\r/g, " ")
+            .replace(/\s+/g, " ")
+        );
+
+        const safeStockIdx = headers.findIndex(
+          (h: string) =>
+            h.includes("batas minimal") ||
+            h.includes("batas min") ||
+            h.includes("safe stock") ||
+            h.includes("safety stock") ||
+            h.includes("safety") ||
+            h.includes("limit")
+        );
+
+        const minStockIdx = headers.findIndex(
+          (h: string, idx: number) =>
+            idx !== safeStockIdx &&
+            (h.includes("minimal stok") ||
+              h.includes("min stok") ||
+              h.includes("minimal stock") ||
+              h.includes("min stock") ||
+              h === "min" ||
+              h === "minimum")
+        );
+
+        const maxStockIdx = headers.findIndex(
+          (h: string) =>
+            h.includes("maksimal") ||
+            h.includes("maks.") ||
+            h.includes("maks") ||
+            h.includes("max stock") ||
+            h.includes("max") ||
+            h.includes("maximum")
+        );
+
+        const currentStockIdx = headers.findIndex(
+          (h: string, idx: number) =>
+            idx !== safeStockIdx &&
+            idx !== minStockIdx &&
+            idx !== maxStockIdx &&
+            (h.includes("saat ini") ||
+              h.includes("current") ||
+              h.includes("stok fisik") ||
+              h.includes("saldo") ||
+              h.includes("qty") ||
+              h.includes("quantity") ||
+              h.includes("jumlah") ||
+              h === "stok" ||
+              h === "stock")
+        );
+
+        const codeIdx = headers.findIndex(
+          (h: string) =>
+            h.includes("kode") ||
+            h.includes("code") ||
+            h.includes("sku") ||
+            h.includes("part no") ||
+            h.includes("part_no") ||
+            (h.includes("material") && !h.includes("nama"))
+        );
+
+        const nameIdx = headers.findIndex((h: string, idx: number) => {
+          if (idx === codeIdx) return false;
+          return (
+            h.includes("nama") ||
+            h.includes("material") ||
+            h.includes("deskripsi") ||
+            h.includes("description") ||
+            h.includes("barang") ||
+            h.includes("item")
+          );
+        });
+
+        const parseNum = (val: any, fallback: number | null = null): number | null => {
+          if (val === undefined || val === null || String(val).trim() === "" || String(val).trim() === "\u2014" || String(val).trim() === "-") {
+            return fallback;
+          }
+          const normalized = String(val).trim().replace(",", ".");
+          const cleanStr = normalized.replace(/[^0-9.-]/g, "");
+          const num = parseFloat(cleanStr);
+          return !isNaN(num) ? num : fallback;
+        };
+
+        const parsedItems: any[] = [];
+        for (let r = headerRowIdx + 1; r < rawRows.length; r++) {
+          const row = rawRows[r];
+          if (!row || row.length === 0) continue;
+
+          let rawCode = codeIdx >= 0 && row[codeIdx] !== undefined ? String(row[codeIdx]).trim() : "";
+          let rawName = nameIdx >= 0 && row[nameIdx] !== undefined ? String(row[nameIdx]).trim() : "";
+
+          if (!rawCode && !rawName && row.length >= 3) {
+            if (/^\d+$/.test(String(row[0]).trim())) {
+              rawCode = String(row[1] || "").trim();
+              rawName = String(row[2] || "").trim();
+            } else {
+              rawCode = String(row[0] || "").trim();
+              rawName = String(row[1] || "").trim();
+            }
+          } else if (!rawName && row[1]) {
+            rawName = String(row[1]).trim();
+          } else if (!rawName && row[2]) {
+            rawName = String(row[2]).trim();
+          }
+
+          if (!rawName && !rawCode) continue;
+          if (!rawName && rawCode) {
+            rawName = `Item ${rawCode}`;
+          }
+
+          parsedItems.push({
+            name: rawName,
+            code: rawCode || null,
+            current_stock: parseNum(currentStockIdx >= 0 ? row[currentStockIdx] : undefined, 0) ?? 0,
+            safe_stock: parseNum(safeStockIdx >= 0 ? row[safeStockIdx] : undefined, 1) ?? 1,
+            min_stock: parseNum(minStockIdx >= 0 ? row[minStockIdx] : undefined, 10) ?? 10,
+            max_stock: parseNum(maxStockIdx >= 0 ? row[maxStockIdx] : undefined, null),
+            unit: "pcs",
+            location: "Gudang Utama",
+            shelf: "Rak A-1",
+            is_active: true,
+          });
+        }
+
+        if (parsedItems.length === 0) {
+          toast.error("Tidak ada baris data barang buffer yang valid ditemukan");
+          return;
+        }
+
+        setBufferImportPreview(parsedItems);
+        toast.success("Berhasil membaca " + parsedItems.length + " barang buffer dari file Excel/CSV");
+      } catch (err: any) {
+        console.error("Error reading buffer file:", err);
+        toast.error("Gagal membaca file: " + err.message);
+      }
+    };
+
+    reader.readAsArrayBuffer(file);
+  };
+
+  // Unduh Template Excel/CSV khusus Buffer Stok
+  const downloadBufferImportTemplate = () => {
+    const templateData = [
+      ["No", "Kode", "Material", "Lokasi", "Rak", "Batas Minimal Stok", "Minimal Stok", "Maks. Stok", "Stok Saat Ini"],
+      [1, "BUF-001", "BEARING 6204-2RS", "Gudang Utama", "Rak A-1", 1, 10, 50, 0],
+      [2, "BUF-002", "HEATER ELEMENT 2000W", "Gudang Utama", "Rak A-2", 1, 5, 20, 0],
+      [3, "BUF-003", "V-BELT A-52", "Gudang Utama", "Rak B-1", 2, 8, 30, 0],
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(templateData);
+    worksheet["!cols"] = [
+      { wch: 6 },
+      { wch: 18 },
+      { wch: 32 },
+      { wch: 16 },
+      { wch: 12 },
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 14 },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Template Buffer Stok");
+
+    XLSX.writeFile(workbook, "template_import_buffer_stok.xlsx");
+    toast.success("Template Buffer Stok berhasil diunduh");
+  };
+
+  // Eksekusi Import Batch Data Buffer Stok (Smart Upsert)
+  const executeBufferBulkImport = async () => {
+    if (bufferImportPreview.length === 0) {
+      toast.error("Tidak ada data barang buffer yang akan diimport");
+      return;
+    }
+    setIsBufferImporting(true);
+    try {
+      // 1. Coba lakukan upsert langsung
+      const { error: upsertErr } = await (supabase as any)
+        .from("buffer_stock")
+        .upsert(bufferImportPreview, { onConflict: "name" });
+
+      if (upsertErr) {
+        // 2. Fallback: sinkronisasi per baris
+        console.warn("Direct buffer upsert failed, falling back to row-by-row sync:", upsertErr.message);
+
+        const { data: existingItems } = await (supabase as any)
+          .from("buffer_stock")
+          .select("id, name, code, current_stock");
+
+        const existingMap = new Map<string, any>();
+        (existingItems || []).forEach((p: any) => {
+          if (p.name) existingMap.set(p.name.trim().toLowerCase(), p);
+          if (p.code) existingMap.set(p.code.trim().toLowerCase(), p);
+        });
+
+        for (const item of bufferImportPreview) {
+          const itemKey = (item.name || "").trim().toLowerCase();
+          const codeKey = (item.code || "").trim().toLowerCase();
+          const found = existingMap.get(itemKey) || (codeKey ? existingMap.get(codeKey) : null);
+
+          if (found) {
+            const { error: updErr } = await (supabase as any)
+              .from("buffer_stock")
+              .update({
+                current_stock: item.current_stock ?? 0,
+                safe_stock: item.safe_stock ?? 1,
+                min_stock: item.min_stock ?? 10,
+                max_stock: item.max_stock ?? null,
+                code: item.code || found.code || null,
+                unit: item.unit || "pcs",
+                is_active: true,
+              })
+              .eq("id", found.id);
+            if (updErr) throw updErr;
+          } else {
+            const { error: insErr } = await (supabase as any)
+              .from("buffer_stock")
+              .insert(item);
+            if (insErr) throw insErr;
+          }
+        }
+      }
+
+      await recordActivity("IMPORT_BUFFER", "Mengimport / memperbarui " + bufferImportPreview.length + " data buffer stok via Excel/CSV");
+      toast.success("Berhasil mengimport " + bufferImportPreview.length + " data buffer stok!");
+      queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
+      setBufferImportPreview([]);
+      setBufferImportFile(null);
+      setIsBufferAddOpen(false);
+    } catch (err: any) {
+      console.error("Buffer bulk import error:", err);
+      toast.error("Gagal mengimport data buffer: " + err.message);
+    } finally {
+      setIsBufferImporting(false);
+    }
+  };
+
+  // Eksekusi Import Batch Data Barang (Smart Upsert: Simpan Barang Baru & Update Stok jika Barang Sudah Ada)
   const executeBulkImport = async () => {
     if (importPreview.length === 0) {
       toast.error("Tidak ada data barang yang akan diimport");
@@ -546,16 +896,66 @@ function WarehouseAndProductsPage() {
     }
     setIsImporting(true);
     try {
-      const { error } = await supabase.from("products").insert(importPreview as any);
-      if (error) throw error;
+      // 1. Coba lakukan upsert langsung berdasarkan constraint "name"
+      const { error: upsertErr } = await supabase
+        .from("products")
+        .upsert(importPreview as any, { onConflict: "name" });
 
-      await recordActivity("IMPORT_BARANG", "Mengimport " + importPreview.length + " data barang via Excel/CSV");
-      toast.success("Berhasil mengimport " + importPreview.length + " data barang baru!");
+      if (upsertErr) {
+        // 2. Fallback cerdas: Jika upsert onConflict gagal karena schema constraint, lakukan sinkronisasi per baris
+        console.warn("Direct upsert failed, falling back to smart row-by-row sync:", upsertErr.message);
+        
+        // Ambil data produk yang sudah ada di database
+        const { data: existingProducts } = await supabase
+          .from("products")
+          .select("id, name, code, current_stock");
+        
+        const existingMap = new Map<string, any>();
+        (existingProducts || []).forEach((p: any) => {
+          if (p.name) existingMap.set(p.name.trim().toLowerCase(), p);
+          if (p.code) existingMap.set(p.code.trim().toLowerCase(), p);
+        });
+
+        for (const item of importPreview) {
+          const itemKey = (item.name || "").trim().toLowerCase();
+          const codeKey = (item.code || "").trim().toLowerCase();
+          const found = existingMap.get(itemKey) || (codeKey ? existingMap.get(codeKey) : null);
+
+          if (found) {
+            // Update barang yang sudah ada dengan stok dan informasi terbaru
+            const { error: updErr } = await supabase
+              .from("products")
+              .update({
+                current_stock: item.current_stock ?? 0,
+                safe_stock: item.safe_stock ?? 1,
+                min_stock: item.min_stock ?? 10,
+                max_stock: item.max_stock ?? null,
+                code: item.code || found.code || null,
+                unit: item.unit || "pcs",
+                is_active: true,
+              } as any)
+              .eq("id", found.id);
+            if (updErr) throw updErr;
+          } else {
+            // Insert data barang baru
+            const { error: insErr } = await supabase
+              .from("products")
+              .insert(item as any);
+            if (insErr) throw insErr;
+          }
+        }
+      }
+
+      await recordActivity("IMPORT_BARANG", "Mengimport / memperbarui " + importPreview.length + " data barang via Excel/CSV");
+      toast.success("Berhasil mengimport & menyimpan " + importPreview.length + " data barang!");
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
       setImportPreview([]);
       setImportFile(null);
       setIsAddOpen(false);
     } catch (err: any) {
+      console.error("Bulk import error:", err);
       toast.error("Gagal mengimport data: " + err.message);
     } finally {
       setIsImporting(false);
@@ -570,6 +970,8 @@ function WarehouseAndProductsPage() {
     location: "Gudang Utama",
     shelf: "Rak A-1",
     min_stock: "10",
+    safe_stock: "1",
+    max_stock: "",
     current_stock: "0",
     description: "",
     image_url: "",
@@ -578,6 +980,9 @@ function WarehouseAndProductsPage() {
 
   // State Modal Edit Barang
   const [editingItem, setEditingItem] = useState<ProductItem | null>(null);
+
+  // State Modal Detail Barang
+  const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null);
 
   // State Modal Hapus Barang
   const [deletingItem, setDeletingItem] = useState<ProductItem | null>(null);
@@ -593,6 +998,7 @@ function WarehouseAndProductsPage() {
       setIsTxOpen(true);
     }
     if (search.tab) {
+      // buffer_stock sekarang adalah tab tersendiri, tidak perlu redirect ke "items"
       setActiveTab(search.tab);
     }
   }, [search.action, search.type, search.tab]);
@@ -608,9 +1014,10 @@ function WarehouseAndProductsPage() {
   });
   const [selectedTx, setSelectedTx] = useState<GroupedTransaction | null>(null);
 
-  // State Filter Tab Mutasi (In/Out)
+  // State Filter Tab Mutasi (In/Out & Tanggal)
   const [txSearchQuery, setTxSearchQuery] = useState("");
   const [txFilterType, setTxFilterType] = useState<"ALL" | "IN" | "OUT">("ALL");
+  const [txDateFilter, setTxDateFilter] = useState<string>("");
 
   // Upload file refs
   const [isUploading, setIsUploading] = useState(false);
@@ -698,6 +1105,100 @@ function WarehouseAndProductsPage() {
     },
   });
 
+  // ── QUERY DATA BUFFER STOK (TABEL SENDIRI, INDEPENDEN) ────────────────────────
+  const { data: bufferItems = [], isLoading: loadingBuffer } = useQuery({
+    queryKey: ["buffer_stock"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("buffer_stock")
+        .select("*")
+        .order("name");
+      if (error) {
+        // Jika tabel belum ada, kembalikan array kosong tanpa error
+        if (error.message?.includes("does not exist") || error.code === "42P01") return [];
+        throw error;
+      }
+      return (data ?? []) as BufferStockItem[];
+    },
+  });
+
+  // ── MUTATION: TAMBAH BUFFER STOK ─────────────────────────────────────────────
+  const addBufferItem = useMutation({
+    mutationFn: async () => {
+      if (!bufferFormData.name.trim()) throw new Error("Nama barang wajib diisi");
+      const { error } = await (supabase as any).from("buffer_stock").insert({
+        name: bufferFormData.name.trim(),
+        code: bufferFormData.code.trim() || null,
+        unit: bufferFormData.unit,
+        location: bufferFormData.location,
+        shelf: bufferFormData.shelf,
+        min_stock: Number(bufferFormData.min_stock) || 10,
+        safe_stock: Number(bufferFormData.safe_stock) || 1,
+        max_stock: bufferFormData.max_stock ? Number(bufferFormData.max_stock) : null,
+        current_stock: Number(bufferFormData.current_stock) || 0,
+        description: bufferFormData.description.trim() || null,
+        is_active: true,
+      });
+      if (error) throw error;
+      await recordActivity("TAMBAH_BUFFER", `Menambahkan buffer stok baru: "${bufferFormData.name.trim()}"`);
+    },
+    onSuccess: () => {
+      toast.success("Barang buffer stok berhasil ditambahkan");
+      setIsBufferAddOpen(false);
+      setBufferFormData({ name: "", code: "", unit: "pcs", location: "Gudang Utama", shelf: "Rak A-1", min_stock: "10", safe_stock: "1", max_stock: "", current_stock: "0", description: "" });
+      queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
+    },
+    onError: (e: Error) => toast.error("Gagal menambah buffer stok", { description: e.message }),
+  });
+
+  // ── MUTATION: EDIT BUFFER STOK ────────────────────────────────────────────────
+  const updateBufferItem = useMutation({
+    mutationFn: async () => {
+      if (!editingBufferItem) return;
+      if (!editingBufferItem.name.trim()) throw new Error("Nama barang wajib diisi");
+      const { error } = await (supabase as any)
+        .from("buffer_stock")
+        .update({
+          name: editingBufferItem.name.trim(),
+          code: editingBufferItem.code?.trim() || null,
+          unit: editingBufferItem.unit,
+          location: editingBufferItem.location,
+          shelf: editingBufferItem.shelf,
+          min_stock: Number(editingBufferItem.min_stock) || 10,
+          safe_stock: Number(editingBufferItem.safe_stock) || 1,
+          max_stock: editingBufferItem.max_stock ? Number(editingBufferItem.max_stock) : null,
+          current_stock: Number(editingBufferItem.current_stock) || 0,
+          description: editingBufferItem.description?.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editingBufferItem.id);
+      if (error) throw error;
+      await recordActivity("EDIT_BUFFER", `Memperbarui buffer stok: "${editingBufferItem.name}"`);
+    },
+    onSuccess: () => {
+      toast.success("Buffer stok berhasil diperbarui");
+      setEditingBufferItem(null);
+      queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
+    },
+    onError: (e: Error) => toast.error("Gagal mengubah buffer stok", { description: e.message }),
+  });
+
+  // ── MUTATION: HAPUS BUFFER STOK ───────────────────────────────────────────────
+  const deleteBufferItem = useMutation({
+    mutationFn: async (item: BufferStockItem) => {
+      const { error } = await (supabase as any).from("buffer_stock").delete().eq("id", item.id);
+      if (error) throw error;
+      await recordActivity("HAPUS_BUFFER", `Menghapus buffer stok: "${item.name}"`);
+    },
+    onSuccess: () => {
+      toast.success("Buffer stok berhasil dihapus");
+      setDeletingBufferItem(null);
+      queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
+    },
+    onError: (e: Error) => toast.error("Gagal menghapus buffer stok", { description: e.message }),
+  });
+
   // ── HELPER UPLOAD KE SUPABASE STORAGE ──────────────────────────────────────────
   async function handleFileUpload(file: File, folder: string = "items") {
     setIsUploading(true);
@@ -749,6 +1250,8 @@ function WarehouseAndProductsPage() {
     mutationFn: async () => {
       if (!formData.name.trim()) throw new Error("Nama barang wajib diisi");
 
+      const initialStock = Number(formData.current_stock) || 0;
+
       const { error } = await supabase.from("products").insert({
         name: formData.name.trim(),
         code: formData.code.trim() || null,
@@ -757,7 +1260,9 @@ function WarehouseAndProductsPage() {
         location: formData.location,
         shelf: formData.shelf,
         min_stock: Number(formData.min_stock) || 10,
-        current_stock: Number(formData.current_stock) || 0,
+        safe_stock: Number(formData.safe_stock) || 1,
+        max_stock: formData.max_stock ? Number(formData.max_stock) : null,
+        current_stock: initialStock,
         description: formData.description.trim() || null,
         image_url: formData.image_url || null,
         doc_url: formData.doc_url || null,
@@ -766,9 +1271,60 @@ function WarehouseAndProductsPage() {
 
       if (error) throw error;
 
+      // ── Jika ada stok awal > 0, buat transaksi MASUK otomatis ──────────────
+      // Ini memastikan stok awal ngelink ke tabel buffer stok (warehouse_transactions)
+      if (initialStock > 0) {
+        const { data: newProduct } = await supabase
+          .from("products")
+          .select("id")
+          .eq("name", formData.name.trim())
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+
+        if (newProduct?.id) {
+          let nextSeq = 1;
+          try {
+            const { data: latestTx } = await (supabase as any)
+              .from("warehouse_transactions")
+              .select("transaction_number")
+              .order("created_at", { ascending: false })
+              .limit(1);
+            if (latestTx && latestTx.length > 0) {
+              const seqs = latestTx
+                .map((t: any) => {
+                  const m = (t.transaction_number || "").match(/TES\s*-\s*GROUND\s*2\s*-\s*(\d+)/i);
+                  return m ? parseInt(m[1], 10) : 0;
+                })
+                .filter((n: number) => !isNaN(n) && n > 0);
+              nextSeq = seqs.length > 0 ? Math.max(...seqs) + 1 : latestTx.length + 1;
+            }
+          } catch {
+            nextSeq = 1;
+          }
+          const txNumber = `TES - GROUND 2 - ${String(nextSeq).padStart(2, "0")}`;
+          const sourceLabel = "OBS Sparepart";
+
+          await (supabase as any).from("warehouse_transactions").insert({
+            transaction_number: txNumber,
+            tx_type: "IN",
+            product_id: newProduct.id,
+            product_name: formData.name.trim(),
+            quantity: initialStock,
+            unit: formData.unit,
+            batch_number: null,
+            reference_no: "STOK_AWAL",
+            supplier_or_dest: "Stok Awal / Saldo Awal",
+            notes: `Stok awal saat pendaftaran barang baru via ${sourceLabel}`,
+            created_by: profile?.id,
+            created_by_name: profile?.full_name || profile?.email || "Admin Gudang",
+          });
+        }
+      }
+
       await recordActivity(
         "TAMBAH_BARANG",
-        `Menambahkan master barang baru: "${formData.name.trim()}" (${formData.category})`,
+        `Menambahkan master barang baru: "${formData.name.trim()}" (${formData.category})${initialStock > 0 ? ` — Stok awal: ${initialStock} ${formData.unit}` : ""}`,
       );
     },
     onSuccess: () => {
@@ -782,12 +1338,16 @@ function WarehouseAndProductsPage() {
         location: "Gudang Utama",
         shelf: "Rak A-1",
         min_stock: "10",
+        safe_stock: "1",
+        max_stock: "",
         current_stock: "0",
         description: "",
         image_url: "",
         doc_url: "",
       });
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
     },
     onError: (e: Error) => toast.error("Gagal menambah barang", { description: e.message }),
   });
@@ -808,6 +1368,7 @@ function WarehouseAndProductsPage() {
           location: editingItem.location,
           shelf: editingItem.shelf,
           min_stock: Number(editingItem.min_stock) || 10,
+          max_stock: editingItem.max_stock !== null && editingItem.max_stock !== undefined && (editingItem.max_stock as any) !== "" ? Number(editingItem.max_stock) : null,
           current_stock: Number(editingItem.current_stock) || 0,
           description: editingItem.description?.trim() || null,
           image_url: editingItem.image_url || null,
@@ -1513,11 +2074,53 @@ function WarehouseAndProductsPage() {
     };
   }, [groupedTransactions]);
 
+  // ── STATISTIK MUTASI GLOBAL (Berdasarkan filter tanggal atau keseluruhan) ──
+  const globalMutasiStats = useMemo(() => {
+    let inCount = 0;
+    let outCount = 0;
+    let totalQtyIn = 0;
+    let totalQtyOut = 0;
+
+    groupedTransactions.forEach((tx) => {
+      // Jika ada filter tanggal, cocokkan YYYY-MM-DD
+      if (txDateFilter) {
+        const txDate = new Date(tx.created_at).toISOString().split("T")[0] || "";
+        if (txDate !== txDateFilter) return;
+      }
+
+      if (tx.tx_type === "IN") {
+        inCount += 1;
+        tx.items.forEach((it) => {
+          totalQtyIn += Number(it.quantity) || 0;
+        });
+      } else if (tx.tx_type === "OUT") {
+        outCount += 1;
+        tx.items.forEach((it) => {
+          totalQtyOut += Number(it.quantity) || 0;
+        });
+      }
+    });
+
+    return {
+      inCount,
+      outCount,
+      totalCount: inCount + outCount,
+      totalQtyIn,
+      totalQtyOut,
+    };
+  }, [groupedTransactions, txDateFilter]);
+
   // ── FILTERED GROUPED TRANSACTIONS (TAB MUTASI) ───────────────────────────────
   const filteredGroupedTransactions = useMemo(() => {
     return groupedTransactions.filter((tx) => {
       if (txFilterType !== "ALL" && tx.tx_type !== txFilterType) {
         return false;
+      }
+      if (txDateFilter) {
+        const txDate = new Date(tx.created_at).toISOString().split("T")[0] || "";
+        if (txDate !== txDateFilter) {
+          return false;
+        }
       }
       if (!txSearchQuery.trim()) return true;
       const q = txSearchQuery.toLowerCase();
@@ -1530,7 +2133,7 @@ function WarehouseAndProductsPage() {
       const matchItems = tx.items.some((it) => it.product_name.toLowerCase().includes(q));
       return matchNo || matchBatch || matchRef || matchDest || matchPetugas || matchNotes || matchItems;
     });
-  }, [groupedTransactions, txFilterType, txSearchQuery]);
+  }, [groupedTransactions, txFilterType, txDateFilter, txSearchQuery]);
 
   // ── EXPORT LAPORAN RIWAYAT MUTASI (IN/OUT) KE EXCEL RESMI ─────────────────────
   const exportMutasiToExcel = () => {
@@ -1766,7 +2369,7 @@ function WarehouseAndProductsPage() {
           tx.notes
             ? `
           <div class="notes-card">
-            <div class="meta-label" style="margin-bottom: 4px;">Petugas Sparepart / Catatan:</div>
+            <div class="meta-label" style="margin-bottom: 4px;">Petugas Sparepart Shift 1/2/3:</div>
             <div style="font-size: 12px; color: #334155;">${tx.notes}</div>
           </div>
         `
@@ -1808,6 +2411,8 @@ function WarehouseAndProductsPage() {
     printWindow.document.close();
   };
 
+
+
   // Filter & Search Logic with Sorting
   const filteredProducts = useMemo(() => {
     const list = products.filter((p) => {
@@ -1819,21 +2424,32 @@ function WarehouseAndProductsPage() {
         (p.shelf && p.shelf.toLowerCase().includes(q)) ||
         (p.location && p.location.toLowerCase().includes(q));
 
-      const isLow = (p.current_stock ?? 0) <= (p.min_stock ?? 10);
-      const isZero = (p.current_stock ?? 0) <= 0;
+      const current = p.current_stock ?? 0;
+      const minStock = p.min_stock ?? 10;
+      const rawMax = (p as any).max_stock;
+      const maxStock = rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
+
+      const isOutOfStock = maxStock !== null && !isNaN(maxStock) && current > maxStock;
+      const isOrder = current <= minStock;
+      const isSafetyStock = !isOutOfStock && !isOrder;
 
       const matchStock =
         stockStatusFilter === "ALL" ||
-        (stockStatusFilter === "LIMIT" && isLow && !isZero) ||
-        (stockStatusFilter === "SAFE" && !isLow) ||
-        (stockStatusFilter === "ZERO" && isZero);
+        (stockStatusFilter === "ORDER" && isOrder) ||
+        (stockStatusFilter === "SAFETY" && isSafetyStock) ||
+        (stockStatusFilter === "OUT_OF_STOCK" && isOutOfStock);
 
-      const matchActive =
-        activeStatusFilter === "ALL" ||
-        (activeStatusFilter === "ACTIVE" && p.is_active) ||
-        (activeStatusFilter === "INACTIVE" && !p.is_active);
+      const matchDate =
+        !productDateFilter ||
+        (() => {
+          const pDate = p.created_at ? p.created_at.slice(0, 10) : "";
+          const nameKey = p.name ? p.name.trim().toLowerCase() : "";
+          const tx = latestInTxMap[p.id] || (nameKey ? latestInTxMap[nameKey] : undefined);
+          const txDate = tx?.created_at ? tx.created_at.slice(0, 10) : "";
+          return pDate === productDateFilter || txDate === productDateFilter;
+        })();
 
-      return matchSearch && matchStock && matchActive;
+      return matchSearch && matchStock && matchDate;
     });
 
     // Urutkan list barang
@@ -1869,7 +2485,7 @@ function WarehouseAndProductsPage() {
       }
       return 0;
     });
-  }, [products, searchQuery, stockStatusFilter, activeStatusFilter, sortOption, latestInTxMap]);
+  }, [products, searchQuery, stockStatusFilter, productDateFilter, sortOption, latestInTxMap]);
 
   // Stats
   const totalStockItems = products.reduce((acc, p) => acc + (p.current_stock ?? 0), 0);
@@ -1877,185 +2493,231 @@ function WarehouseAndProductsPage() {
     (p) => (p.current_stock ?? 0) <= (p.min_stock ?? 10) && p.is_active,
   );
 
+  // ── OBS MONITORING CARD STATS ─────────────────────────────────────────────────
+  const activeProductsObs = products.filter((p) => p.is_active);
+  const totalActiveItemsObs = activeProductsObs.length;
+  const totalStockQtyObs = activeProductsObs.reduce((acc, p) => acc + (p.current_stock ?? 0), 0);
+
+  // Classify each item into ORDER / SAFETY / OUT_OF_STOK / ZERO
+  const obsOrderItems = activeProductsObs.filter((p) => {
+    const current = p.current_stock ?? 0;
+    const minStock = p.min_stock ?? 10;
+    const rawMax = (p as any).max_stock;
+    const maxStock = rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
+    const isOutOfStock = maxStock !== null && !isNaN(maxStock) && current > maxStock;
+    return !isOutOfStock && current <= minStock;
+  });
+  const obsSafetyItems = activeProductsObs.filter((p) => {
+    const current = p.current_stock ?? 0;
+    const minStock = p.min_stock ?? 10;
+    const rawMax = (p as any).max_stock;
+    const maxStock = rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
+    const isOutOfStock = maxStock !== null && !isNaN(maxStock) && current > maxStock;
+    return !isOutOfStock && current > minStock;
+  });
+  const obsOutOfStockItems = activeProductsObs.filter((p) => {
+    const current = p.current_stock ?? 0;
+    const rawMax = (p as any).max_stock;
+    const maxStock = rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
+    return maxStock !== null && !isNaN(maxStock) && current > maxStock;
+  });
+  const obsZeroStockItems = activeProductsObs.filter((p) => (p.current_stock ?? 0) <= 0);
+
+  const obsOrderCount = obsOrderItems.length;
+  const obsSafetyCount = obsSafetyItems.length;
+  const obsOutOfStockCount = obsOutOfStockItems.length;
+  const obsZeroStockCount = obsZeroStockItems.length;
+
+  // Percentages for progress bar
+  const obsOrderPct = totalActiveItemsObs > 0 ? Math.round((obsOrderCount / totalActiveItemsObs) * 100) : 0;
+  const obsSafetyPct = totalActiveItemsObs > 0 ? Math.round((obsSafetyCount / totalActiveItemsObs) * 100) : 0;
+  const obsOutOfStockPct = totalActiveItemsObs > 0 ? Math.max(0, 100 - obsOrderPct - obsSafetyPct) : 0;
+
+  // Map untuk lookup kode produk berdasarkan id atau nama
+  const productMap = useMemo(() => {
+    const map = new Map<string, ProductItem>();
+    products.forEach((p) => {
+      if (p.id) map.set(p.id, p);
+      if (p.name) map.set(p.name.trim().toLowerCase(), p);
+    });
+    return map;
+  }, [products]);
+
   return (
     <AppShell breadcrumb="Gudang & Master Barang">
       {/* Header Halaman */}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight">Manajemen Gudang & Master Barang</h1>
-            <Badge variant="outline" className="text-xs bg-primary/10 text-primary border-primary/20">
-              Departement Warehouse - Sparepart
-            </Badge>
+            <h1 className="text-2xl font-bold tracking-tight text-white">
+              {activeTab === "buffer_stock"
+                ? "Buffer Stok"
+                : activeTab === "transactions"
+                ? "Riwayat Mutasi"
+                : "Manajemen Gudang & Master Barang"}
+            </h1>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Kelola data master barang, pencatatan masuk/keluar, audit stok, kategori, rak, dan dokumen.
+          <p className="mt-1 text-sm text-white/80">
+            {activeTab === "buffer_stock"
+              ? "Stok cadangan mandiri — data buffer stok tidak terhubung ke tabel OBS Sparepart."
+              : activeTab === "transactions"
+              ? "Mencatat riwayat mutasi masuk dan keluar"
+              : "Kelola data master barang, pencatatan masuk/keluar, audit stok, kategori, rak, dan dokumen."}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* 1. Catat Masuk (Primary Solid Emerald) */}
-          {canManageWarehouse && (
-            <Button
-              size="sm"
-              onClick={() => {
-                setTxType("IN");
-                setIsTxOpen(true);
-              }}
-              className="gap-1.5 bg-emerald-600 font-medium text-white shadow-sm hover:bg-emerald-700 active:scale-[0.98] transition-all"
-            >
-              <ArrowDownLeft className="size-4" />
-              Catat Masuk
-            </Button>
-          )}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {activeTab === "transactions" || search.tab === "transactions" ? (
+            /* Layout Sejajar Horizontal 1 Baris khusus Riwayat Mutasi */
+            <div className="flex items-center gap-2">
+              {canManageWarehouse && (
+                <>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setTxType("IN");
+                      setIsTxOpen(true);
+                    }}
+                    className="gap-1.5 bg-emerald-600 font-medium text-white shadow-sm hover:bg-emerald-700 active:scale-[0.98] transition-all h-8 text-xs px-3"
+                  >
+                    <ArrowDownLeft className="size-3.5" />
+                    Catat Masuk
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setTxType("OUT");
+                      setIsTxOpen(true);
+                    }}
+                    className="gap-1.5 bg-rose-600 font-medium text-white shadow-sm hover:bg-rose-700 active:scale-[0.98] transition-all h-8 text-xs px-3"
+                  >
+                    <ArrowUpRight className="size-3.5" />
+                    Catat Keluar
+                  </Button>
+                </>
+              )}
 
-          {/* 2. Catat Keluar (Primary Solid Rose) */}
-          {canManageWarehouse && (
-            <Button
-              size="sm"
-              onClick={() => {
-                setTxType("OUT");
-                setIsTxOpen(true);
-              }}
-              className="gap-1.5 bg-rose-600 font-medium text-white shadow-sm hover:bg-rose-700 active:scale-[0.98] transition-all"
-            >
-              <ArrowUpRight className="size-4" />
-              Catat Keluar
-            </Button>
-          )}
-
-          {/* 3. Export Laporan (Dropdown Excel Resmi & CSV Mentah) */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                size="sm"
-                className="gap-1.5 bg-slate-800 dark:bg-slate-700 text-white font-medium shadow-sm hover:bg-slate-900 dark:hover:bg-slate-600 active:scale-[0.98] transition-all"
-              >
-                <FileSpreadsheet className="size-4 text-emerald-400" />
-                Export Laporan
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel className="text-xs text-muted-foreground">Format Unduhan Laporan</DropdownMenuLabel>
-              <DropdownMenuItem onClick={exportToExcel} className="gap-2.5 cursor-pointer py-2">
-                <FileSpreadsheet className="size-4 text-emerald-600 dark:text-emerald-400" />
-                <div className="flex flex-col">
-                  <span className="font-semibold text-xs text-foreground">Excel Resmi (.xls)</span>
-                  <span className="text-[10px] text-muted-foreground">Format rapi, kop, KPI & tanda tangan</span>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={exportToCSV} className="gap-2.5 cursor-pointer py-2">
-                <FileText className="size-4 text-sky-600 dark:text-sky-400" />
-                <div className="flex flex-col">
-                  <span className="font-semibold text-xs text-foreground">CSV Mentah (.csv)</span>
-                  <span className="text-[10px] text-muted-foreground">Tabel data terpisah koma</span>
-                </div>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* 4. Tambah Barang (Subtle Outline) */}
-          {canManageWarehouse && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsAddOpen(true)}
-              className="gap-1.5 text-muted-foreground hover:text-foreground hover:bg-surface-muted"
-            >
-              <Plus className="size-4" />
-              Tambah Barang
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Ringkasan Statistik Gudang */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="border border-border bg-surface p-4">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-semibold uppercase tracking-wider">Total SKU Barang</span>
-            <Package className="size-4 text-primary" />
-          </div>
-          <p className="mt-2 text-2xl font-bold">{products.length}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {products.filter((p) => p.is_active).length} aktif, {products.filter((p) => !p.is_active).length} nonaktif
-          </p>
-        </div>
-
-        <div className="border border-border bg-surface p-4">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-semibold uppercase tracking-wider">Stok Menipis / Kritis</span>
-            <AlertTriangle className="size-4 text-amber-500" />
-          </div>
-          <p className="mt-2 text-2xl font-bold text-amber-600">{lowStockItems.length}</p>
-          <p className="mt-1 text-xs text-muted-foreground">Di bawah batas minimum stok</p>
-        </div>
-
-        {/* TOTAL MUTASI DAILY (SPLIT: MASUK & KELUAR) */}
-        <div className="border border-border bg-surface p-4 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between text-muted-foreground">
-              <span className="text-xs font-semibold uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                <span className="inline-block size-2 rounded-full bg-blue-500 animate-pulse" />
-                Total Mutasi Daily
-              </span>
-              <History className="size-4 text-blue-500" />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="sm"
+                    className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3"
+                  >
+                    <FileSpreadsheet className="size-3.5 text-emerald-400" />
+                    Export Laporan
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">Format Unduhan Laporan</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={exportToExcel} className="gap-2.5 cursor-pointer py-2">
+                    <FileSpreadsheet className="size-4 text-emerald-600 dark:text-emerald-400" />
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-xs text-foreground">Excel Resmi (.xls)</span>
+                      <span className="text-[10px] text-muted-foreground">Format rapi, kop, KPI & tanda tangan</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportToCSV} className="gap-2.5 cursor-pointer py-2">
+                    <FileText className="size-4 text-sky-600 dark:text-sky-400" />
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-xs text-foreground">CSV Mentah (.csv)</span>
+                      <span className="text-[10px] text-muted-foreground">Tabel data terpisah koma</span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <p className="text-2xl font-bold text-foreground">{dailyTotalCount}</p>
-              <span className="text-xs text-muted-foreground">transaksi hari ini</span>
-            </div>
-          </div>
-          <div className="mt-3 pt-2.5 border-t border-border/80 grid grid-cols-2 gap-2">
-            <div className="flex items-center gap-1.5 bg-emerald-500/10 dark:bg-emerald-500/20 px-2 py-1.5 rounded-sm">
-              <ArrowDownLeft className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-[10px] uppercase font-semibold text-emerald-700 dark:text-emerald-300 leading-none">Mutasi Masuk</p>
-                <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{dailyInCount}</p>
+          ) : (
+            /* Layout 2 Kolom saat tombol Tambah Barang aktif */
+            <>
+              {/* Kolom 1: Catat Masuk (Atas) & Catat Keluar (Bawah) */}
+              <div className="flex flex-col gap-1.5">
+                {canManageWarehouse && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setTxType("IN");
+                      setIsTxOpen(true);
+                    }}
+                    className="gap-1.5 bg-emerald-600 font-medium text-white shadow-sm hover:bg-emerald-700 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[130px]"
+                  >
+                    <ArrowDownLeft className="size-3.5" />
+                    Catat Masuk
+                  </Button>
+                )}
+                {canManageWarehouse && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setTxType("OUT");
+                      setIsTxOpen(true);
+                    }}
+                    className="gap-1.5 bg-rose-600 font-medium text-white shadow-sm hover:bg-rose-700 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[130px]"
+                  >
+                    <ArrowUpRight className="size-3.5" />
+                    Catat Keluar
+                  </Button>
+                )}
               </div>
-            </div>
-            <div className="flex items-center gap-1.5 bg-rose-500/10 dark:bg-rose-500/20 px-2 py-1.5 rounded-sm">
-              <ArrowUpRight className="size-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-[10px] uppercase font-semibold text-rose-700 dark:text-rose-300 leading-none">Mutasi Keluar</p>
-                <p className="text-xs font-bold text-rose-600 dark:text-rose-400 mt-0.5">{dailyOutCount}</p>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        <div className="border border-border bg-surface p-4">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-semibold uppercase tracking-wider">Total Kuantitas Stok</span>
-            <Layers className="size-4 text-emerald-500" />
-          </div>
-          <p className="mt-2 text-2xl font-bold">{totalStockItems.toLocaleString("id-ID")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {transactions.length} riwayat mutasi tercatat
-          </p>
+              {/* Kolom 2: Tambah Barang (Atas) & Export Laporan (Bawah) */}
+              <div className="flex flex-col gap-1.5">
+                {canManageWarehouse && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      if (activeTab === "buffer_stock") {
+                        setBufferFormData({ name: "", code: "", unit: "pcs", location: "Gudang Utama", shelf: "Rak A-1", min_stock: "10", safe_stock: "1", max_stock: "", current_stock: "0", description: "" });
+                        setIsBufferAddOpen(true);
+                      } else {
+                        setFormData((prev) => ({ ...prev, category: "Sparepart & Tools" }));
+                        setIsAddOpen(true);
+                      }
+                    }}
+                    className="gap-1.5 bg-white text-slate-900 font-semibold shadow-sm hover:bg-slate-100 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[155px]"
+                  >
+                    <Plus className="size-3.5 text-slate-900" />
+                    {activeTab === "buffer_stock"
+                      ? "Tambah Barang Buffer"
+                      : "Tambah Barang OBS"}
+                  </Button>
+                )}
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="sm"
+                      className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[155px]"
+                    >
+                      <FileSpreadsheet className="size-3.5 text-emerald-400" />
+                      Export Laporan
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">Format Unduhan Laporan</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={exportToExcel} className="gap-2.5 cursor-pointer py-2">
+                      <FileSpreadsheet className="size-4 text-emerald-600 dark:text-emerald-400" />
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-xs text-foreground">Excel Resmi (.xls)</span>
+                        <span className="text-[10px] text-muted-foreground">Format rapi, kop, KPI & tanda tangan</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportToCSV} className="gap-2.5 cursor-pointer py-2">
+                      <FileText className="size-4 text-sky-600 dark:text-sky-400" />
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-xs text-foreground">CSV Mentah (.csv)</span>
+                        <span className="text-[10px] text-muted-foreground">Tabel data terpisah koma</span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       {/* Tabs Menu Gudang */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="bg-surface-muted border border-border p-1">
-          <TabsTrigger value="items" className="gap-2">
-            <Package className="size-4" />
-            Master & Stok Barang
-          </TabsTrigger>
-          <TabsTrigger value="transactions" className="gap-2">
-            <History className="size-4" />
-            Riwayat Mutasi (In/Out)
-          </TabsTrigger>
-          <TabsTrigger value="locations" className="gap-2">
-            <Warehouse className="size-4" />
-            Lokasi & Rak
-          </TabsTrigger>
-          <TabsTrigger value="logs" className="gap-2">
-            <FileText className="size-4" />
-            Activity Log
-          </TabsTrigger>
-        </TabsList>
 
         {/* ── TAB 1: MASTER & STOK BARANG ─────────────────────────────────────── */}
         <TabsContent value="items" className="space-y-4">
@@ -2078,30 +2740,41 @@ function WarehouseAndProductsPage() {
                     <SelectValue placeholder="Kondisi Stok" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ALL" className="text-xs">Semua Kondisi Stok</SelectItem>
-                    <SelectItem value="LIMIT" className="text-xs font-medium text-amber-600">
-                      ⚠ Stok Limit / Kritis
+                    <SelectItem value="ALL" className="text-xs">Semua Kondisi</SelectItem>
+                    <SelectItem value="ORDER" className="text-xs font-semibold text-rose-600">
+                      ⚠ ORDER (≤ Minimal Stok)
                     </SelectItem>
-                    <SelectItem value="SAFE" className="text-xs font-medium text-emerald-600">
-                      ✓ Stok Aman / Normal
+                    <SelectItem value="SAFETY" className="text-xs font-semibold text-emerald-600">
+                      ✓ SAFETY STOK (&gt; Minimal Stok)
                     </SelectItem>
-                    <SelectItem value="ZERO" className="text-xs font-medium text-rose-600">
-                      ✕ Stok Kosong (0 pcs)
+                    <SelectItem value="OUT_OF_STOCK" className="text-xs font-semibold text-amber-600">
+                      ⚡ OUT OF STOK (&gt; Maksimal Stok)
                     </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
-              <Select value={activeStatusFilter} onValueChange={setActiveStatusFilter}>
-                <SelectTrigger className="w-36 h-9 text-xs">
-                  <SelectValue placeholder="Status Barang" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL" className="text-xs">Semua Status</SelectItem>
-                  <SelectItem value="ACTIVE" className="text-xs">Hanya Aktif</SelectItem>
-                  <SelectItem value="INACTIVE" className="text-xs">Hanya Nonaktif</SelectItem>
-                </SelectContent>
-              </Select>
+              {/* Filter Kalender Tanggal Tarik Data */}
+              <div className="flex items-center gap-1.5 bg-background border border-input rounded-md px-2.5 h-9 text-xs shadow-sm hover:border-primary/50 transition-colors">
+                <CalendarIcon className="size-3.5 text-muted-foreground shrink-0" />
+                <input
+                  type="date"
+                  value={productDateFilter}
+                  onChange={(e) => setProductDateFilter(e.target.value)}
+                  className="bg-transparent text-xs text-foreground focus:outline-none cursor-pointer font-medium"
+                  title="Tarik data berdasarkan tanggal kalender"
+                />
+                {productDateFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setProductDateFilter("")}
+                    className="text-muted-foreground hover:text-foreground p-0.5 rounded-full hover:bg-muted transition-colors"
+                    title="Reset filter tanggal"
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </div>
 
               {/* Urutan List Barang */}
               <div className="flex items-center gap-1.5">
@@ -2132,6 +2805,155 @@ function WarehouseAndProductsPage() {
             </div>
           </div>
 
+          {/* ── MONITORING INFO CARDS OBS SPAREPART ────────────────────────── */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {/* Card 1: Total Item OBS */}
+            <div className="rise-in group relative overflow-hidden border border-border bg-surface p-4 transition-all hover:shadow-md hover:border-primary/30">
+              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-blue-500/8 to-transparent rounded-bl-3xl" />
+              <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center justify-center size-8 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 ring-1 ring-blue-200/60 dark:ring-blue-800/50">
+                  <Boxes className="size-4" />
+                </div>
+                <span className="label-caps !text-blue-600 dark:!text-blue-400">Total Item</span>
+              </div>
+              <div className="font-mono text-2xl font-bold tabular-nums text-foreground">
+                {loadingProducts ? "—" : totalActiveItemsObs}
+              </div>
+              <div className="mt-1 text-[10px] text-muted-foreground">Barang aktif terdaftar</div>
+            </div>
+
+            {/* Card 2: Total Stok Qty */}
+            <div className="rise-in group relative overflow-hidden border border-border bg-surface p-4 transition-all hover:shadow-md hover:border-primary/30" style={{ animationDelay: '50ms' }}>
+              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-indigo-500/8 to-transparent rounded-bl-3xl" />
+              <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center justify-center size-8 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 ring-1 ring-indigo-200/60 dark:ring-indigo-800/50">
+                  <Package className="size-4" />
+                </div>
+                <span className="label-caps !text-indigo-600 dark:!text-indigo-400">Total Stok</span>
+              </div>
+              <div className="font-mono text-2xl font-bold tabular-nums text-foreground">
+                {loadingProducts ? "—" : totalStockQtyObs.toLocaleString("id-ID")}
+              </div>
+              <div className="mt-1 text-[10px] text-muted-foreground">Jumlah seluruh pcs/unit</div>
+            </div>
+
+            {/* Card 3: ORDER — Perlu Restock */}
+            <div
+              className="rise-in group relative overflow-hidden border border-rose-200 dark:border-rose-900/60 bg-gradient-to-br from-surface to-rose-50/40 dark:from-surface dark:to-rose-950/20 p-4 transition-all hover:shadow-md hover:border-rose-400/60 cursor-pointer"
+              style={{ animationDelay: '100ms' }}
+              onClick={() => setStockStatusFilter(stockStatusFilter === "ORDER" ? "ALL" : "ORDER")}
+            >
+              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-rose-500/10 to-transparent rounded-bl-3xl" />
+              <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center justify-center size-8 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 ring-1 ring-rose-200/60 dark:ring-rose-800/50">
+                  <CircleAlert className="size-4" />
+                </div>
+                <span className="label-caps !text-rose-600 dark:!text-rose-400">Order</span>
+              </div>
+              <div className="font-mono text-2xl font-bold tabular-nums text-rose-600 dark:text-rose-400">
+                {loadingProducts ? "—" : obsOrderCount}
+              </div>
+              <div className="mt-1 text-[10px] text-rose-500/80 dark:text-rose-400/60">Stok ≤ batas minimum</div>
+              {stockStatusFilter === "ORDER" && (
+                <div className="absolute top-2 right-2 size-2 rounded-full bg-rose-500 animate-pulse" />
+              )}
+            </div>
+
+            {/* Card 4: SAFETY STOK */}
+            <div
+              className="rise-in group relative overflow-hidden border border-emerald-200 dark:border-emerald-900/60 bg-gradient-to-br from-surface to-emerald-50/40 dark:from-surface dark:to-emerald-950/20 p-4 transition-all hover:shadow-md hover:border-emerald-400/60 cursor-pointer"
+              style={{ animationDelay: '150ms' }}
+              onClick={() => setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")}
+            >
+              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-emerald-500/10 to-transparent rounded-bl-3xl" />
+              <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center justify-center size-8 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-200/60 dark:ring-emerald-800/50">
+                  <ShieldCheck className="size-4" />
+                </div>
+                <span className="label-caps !text-emerald-600 dark:!text-emerald-400">Safety Stok</span>
+              </div>
+              <div className="font-mono text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                {loadingProducts ? "—" : obsSafetyCount}
+              </div>
+              <div className="mt-1 text-[10px] text-emerald-500/80 dark:text-emerald-400/60">Stok aman &gt; minimum</div>
+              {stockStatusFilter === "SAFETY" && (
+                <div className="absolute top-2 right-2 size-2 rounded-full bg-emerald-500 animate-pulse" />
+              )}
+            </div>
+
+            {/* Card 5: OUT OF STOK */}
+            <div
+              className="rise-in group relative overflow-hidden border border-amber-200 dark:border-amber-900/60 bg-gradient-to-br from-surface to-amber-50/40 dark:from-surface dark:to-amber-950/20 p-4 transition-all hover:shadow-md hover:border-amber-400/60 cursor-pointer"
+              style={{ animationDelay: '200ms' }}
+              onClick={() => setStockStatusFilter(stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK")}
+            >
+              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-amber-500/10 to-transparent rounded-bl-3xl" />
+              <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center justify-center size-8 rounded-md bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 ring-1 ring-amber-200/60 dark:ring-amber-800/50">
+                  <TrendingDown className="size-4" />
+                </div>
+                <span className="label-caps !text-amber-600 dark:!text-amber-400">Out of Stok</span>
+              </div>
+              <div className="font-mono text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
+                {loadingProducts ? "—" : obsOutOfStockCount}
+              </div>
+              <div className="mt-1 text-[10px] text-amber-500/80 dark:text-amber-400/60">Melebihi maks. stok</div>
+              {stockStatusFilter === "OUT_OF_STOCK" && (
+                <div className="absolute top-2 right-2 size-2 rounded-full bg-amber-500 animate-pulse" />
+              )}
+            </div>
+
+          </div>
+
+          {/* ── PROGRESS BAR DISTRIBUSI KONDISI STOK ──────────────────────── */}
+          {!loadingProducts && totalActiveItemsObs > 0 && (
+            <div className="rise-in border border-border bg-surface p-4" style={{ animationDelay: '300ms' }}>
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="label-caps">Distribusi Kondisi Stok</span>
+                <span className="text-[10px] font-mono text-muted-foreground">
+                  {totalActiveItemsObs} item aktif
+                </span>
+              </div>
+              <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                {obsSafetyPct > 0 && (
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-700 ease-out"
+                    style={{ width: `${obsSafetyPct}%` }}
+                    title={`Safety Stok: ${obsSafetyCount} item (${obsSafetyPct}%)`}
+                  />
+                )}
+                {obsOrderPct > 0 && (
+                  <div
+                    className="h-full bg-gradient-to-r from-rose-500 to-rose-400 transition-all duration-700 ease-out"
+                    style={{ width: `${obsOrderPct}%` }}
+                    title={`Order: ${obsOrderCount} item (${obsOrderPct}%)`}
+                  />
+                )}
+                {obsOutOfStockPct > 0 && (
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-700 ease-out"
+                    style={{ width: `${obsOutOfStockPct}%` }}
+                    title={`Out of Stok: ${obsOutOfStockCount} item (${obsOutOfStockPct}%)`}
+                  />
+                )}
+              </div>
+              <div className="flex items-center gap-4 mt-2.5 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <div className="size-2.5 rounded-full bg-emerald-500" />
+                  <span className="text-[10px] text-muted-foreground">Safety <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">{obsSafetyPct}%</span></span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="size-2.5 rounded-full bg-rose-500" />
+                  <span className="text-[10px] text-muted-foreground">Order <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">{obsOrderPct}%</span></span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="size-2.5 rounded-full bg-amber-500" />
+                  <span className="text-[10px] text-muted-foreground">Out of Stok <span className="font-mono font-semibold text-amber-600 dark:text-amber-400">{obsOutOfStockPct}%</span></span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Tabel Barang */}
           <div className="border border-border bg-surface overflow-x-auto rounded-lg shadow-2xs">
             {loadingProducts ? (
@@ -2147,186 +2969,174 @@ function WarehouseAndProductsPage() {
                 </p>
               </div>
             ) : (
-              <table className="w-full min-w-[760px] text-xs">
+              <table className="w-full min-w-[880px] text-xs border-collapse border border-slate-300 dark:border-slate-700">
                 <thead>
-                  <tr className="border-b border-border bg-surface-muted/60 text-muted-foreground">
-                    <th className="label-caps px-3.5 py-3 text-center w-14 whitespace-nowrap">Foto / Dok</th>
-                    <th className="label-caps px-3.5 py-3 text-left min-w-[180px] md:min-w-[220px] whitespace-nowrap">Kode SKU & Nama Barang</th>
-                    <th className="label-caps px-3.5 py-3 text-left min-w-[130px] whitespace-nowrap">Kategori</th>
-                    <th className="label-caps px-3.5 py-3 text-left min-w-[130px] whitespace-nowrap">Lokasi & Rak</th>
-                    <th className="label-caps px-3.5 py-3 text-right min-w-[120px] whitespace-nowrap">Stok Saat Ini</th>
-                    <th className="label-caps px-3.5 py-3 text-right min-w-[130px] whitespace-nowrap">Riwayat Masuk</th>
-                    <th className="label-caps px-3.5 py-3 text-right min-w-[130px] whitespace-nowrap">Riwayat Keluar</th>
+                  <tr className="bg-[#0f274a] text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
+                    <th className="label-caps px-3 py-3 text-center w-12 whitespace-nowrap text-white font-semibold">No</th>
+                    <th className="label-caps px-3 py-3 text-left min-w-[130px] whitespace-nowrap text-white font-semibold">Kode</th>
+                    <th className="label-caps px-3 py-3 text-left min-w-[220px] whitespace-nowrap text-white font-semibold">Material</th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[130px] whitespace-nowrap text-white font-semibold">Batas Minimum Stok</th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Minimal Stok</th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Maksimal Stok</th>
+                    <th className="label-caps px-3 py-3 text-right min-w-[110px] whitespace-nowrap text-white font-semibold">Stok Saat Ini</th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[120px] whitespace-nowrap text-white font-semibold">Kondisi</th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Aksi</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
-                  {filteredProducts.map((p) => {
-                    const isZero = (p.current_stock ?? 0) <= 0;
-                    const isLow = (p.current_stock ?? 0) <= (p.min_stock ?? 10);
-                    const nameKey = p.name ? p.name.trim().toLowerCase() : "";
-                    
-                    const totalOut = (totalOutQtyMap[p.id] ?? 0) || (nameKey ? totalOutQtyMap[nameKey] ?? 0 : 0);
-                    const totalIn = (totalInQtyMap[p.id] ?? 0) || (nameKey ? totalInQtyMap[nameKey] ?? 0 : 0);
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {filteredProducts.map((p, index) => {
+                    const current = p.current_stock ?? 0;
+                    const minStock = p.min_stock ?? 10;
+                    const safeStock = (p as any).safe_stock ?? 1;
+                    const rawMax = (p as any).max_stock;
+                    const maxStock = rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
 
-                    const lastIn = latestInTxMap[p.id] || (nameKey ? latestInTxMap[nameKey] : undefined);
-                    const lastInTime = lastIn ? formatDate(lastIn.created_at) : (p.created_at ? formatDate(p.created_at) : "—");
+                    // Logika Kondisi:
+                    // 1. Order warna merah (current <= minStock)
+                    // 2. Safety stok warna hijau (current > minStock dan <= maxStock)
+                    // 3. Out of stok warna kuning (current > maxStock)
+                    let kondisiText = "SAFETY STOK";
+                    let kondisiStyle = "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
 
-                    const lastOut = latestOutTxMap[p.id] || (nameKey ? latestOutTxMap[nameKey] : undefined);
-                    const lastOutTime = lastOut ? formatDate(lastOut.created_at) : (totalOut > 0 ? formatDate(new Date().toISOString()) : "—");
+                    if (maxStock !== null && !isNaN(maxStock) && current > maxStock) {
+                      kondisiText = "OUT OF STOK";
+                      kondisiStyle = "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
+                    } else if (current <= minStock) {
+                      kondisiText = "ORDER";
+                      kondisiStyle = "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800";
+                    }
 
                     return (
                       <tr
                         key={p.id}
                         className={cn(
-                          "group transition-colors hover:bg-surface-muted/40",
+                          "group transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 divide-x divide-slate-200 dark:divide-slate-700",
                           !p.is_active && "opacity-55 bg-surface-muted/20",
                         )}
                       >
-                        {/* Foto / Dokumen */}
-                        <td className="px-3.5 py-3 text-center align-middle w-14">
-                          <div className="flex items-center justify-center gap-1.5">
+                        {/* 1. No */}
+                        <td className="px-3 py-3 text-center font-mono text-muted-foreground w-12 bg-slate-50/40 dark:bg-slate-900/20">
+                          {index + 1}
+                        </td>
+
+                        {/* 2. Kode */}
+                        <td className="px-3 py-3 text-left whitespace-nowrap font-mono font-medium">
+                          <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                            {p.code || "—"}
+                          </span>
+                        </td>
+
+                        {/* 3. Material */}
+                        <td className="px-3 py-3 text-left min-w-[220px]">
+                          <div className="flex items-center gap-2">
                             {p.image_url ? (
-                              <a href={p.image_url} target="_blank" rel="noreferrer" title="Lihat Foto Sparepart">
+                              <a href={p.image_url} target="_blank" rel="noreferrer" title="Lihat Gambar" className="shrink-0">
                                 <img
                                   src={p.image_url}
                                   alt={p.name}
-                                  className="size-8 rounded object-cover border border-border shadow-2xs hover:scale-105 transition-transform"
+                                  className="size-7 rounded object-cover border border-border hover:scale-105 transition-transform"
                                 />
                               </a>
-                            ) : (
-                              <div className="flex size-8 items-center justify-center rounded border border-border bg-surface-muted text-muted-foreground/60">
-                                <ImageIcon className="size-3.5" />
-                              </div>
+                            ) : null}
+                            <span className="font-semibold text-foreground break-words leading-tight">{p.name}</span>
+                          </div>
+                        </td>
+
+                        {/* 4. Batas Minimum Stok */}
+                        <td className="px-3 py-3 text-center font-mono text-muted-foreground whitespace-nowrap">
+                          {safeStock ? `${safeStock} ${p.unit || "pcs"}` : "—"}
+                        </td>
+
+                        {/* 5. Minimal Stok */}
+                        <td className="px-3 py-3 text-center font-mono text-muted-foreground whitespace-nowrap">
+                          {minStock.toLocaleString("id-ID")} {p.unit || "pcs"}
+                        </td>
+
+                        {/* 6. Maksimal Stok */}
+                        <td className="px-3 py-3 text-center font-mono text-muted-foreground whitespace-nowrap">
+                          {maxStock !== null && !isNaN(maxStock) ? `${maxStock} ${p.unit || "pcs"}` : "—"}
+                        </td>
+
+                        {/* 7. Stok saat ini */}
+                        <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap">
+                          <span
+                            className={cn(
+                              "tabular-nums text-sm",
+                              current <= 0
+                                ? "text-rose-600 dark:text-rose-400 font-extrabold"
+                                : current <= minStock
+                                  ? "text-rose-600 dark:text-rose-400"
+                                  : "text-emerald-600 dark:text-emerald-400"
                             )}
+                          >
+                            {current.toLocaleString("id-ID")} {p.unit || "pcs"}
+                          </span>
+                        </td>
+
+                        {/* 8. Kondisi */}
+                        <td className="px-3 py-3 text-center whitespace-nowrap">
+                          <span
+                            className={cn(
+                              "inline-flex items-center justify-center w-28 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs",
+                              kondisiStyle
+                            )}
+                          >
+                            {kondisiText}
+                          </span>
+                        </td>
+
+                        {/* 9. Aksi (detail, unduhan) */}
+                        <td className="px-3 py-3 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
+                          <div className="flex items-center justify-center gap-1">
+                            {/* Tombol Detail */}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2.5 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+                              onClick={() => setSelectedProduct(p)}
+                              title="Lihat Detail & Edit Barang"
+                            >
+                              <Eye className="size-3 text-primary" />
+                              <span>Detail</span>
+                            </Button>
+
+                            {/* Tombol Unduhan (PDF Kartu Kontrol & Dokumen) */}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-xs gap-1 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+                              onClick={() => downloadProductPDF(p)}
+                              title="Unduh Lembar Kontrol Buffer Stok (PDF)"
+                            >
+                              <Download className="size-3" />
+                              <span>PDF</span>
+                            </Button>
+
                             {p.doc_url && (
                               <a
                                 href={p.doc_url}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="text-primary hover:text-primary/80 transition-colors"
-                                title="Lihat Dokumen COA / Manual Part"
+                                download
+                                className="inline-flex items-center justify-center size-7 rounded border border-border bg-surface hover:bg-surface-muted text-muted-foreground hover:text-foreground"
+                                title="Unduh File Dokumen Fisik Terlampir"
                               >
-                                <FileText className="size-3.5" />
+                                <FileText className="size-3.5 text-blue-500" />
                               </a>
                             )}
-                          </div>
-                        </td>
 
-                        {/* Nama & Kode SKU */}
-                        <td className="px-3.5 py-3 align-middle min-w-[180px] md:min-w-[220px]">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-semibold text-sm text-foreground leading-snug break-words">{p.name}</span>
-                            {lastIn && (Date.now() - new Date(lastIn.created_at).getTime() < 24 * 60 * 60 * 1000) && (
-                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
-                                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
-                                Baru Ditambah
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                            <span className="font-mono text-[10.5px] font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded tracking-wide">
-                              {p.code || "NO-SKU"}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Kategori */}
-                        <td className="px-3.5 py-3 align-middle min-w-[130px] whitespace-nowrap">
-                          <Badge
-                            variant="secondary"
-                            className="font-medium text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
-                          >
-                            {p.category || "Sparepart & Tools"}
-                          </Badge>
-                        </td>
-
-                        {/* Posisi Rak & Lokasi */}
-                        <td className="px-3.5 py-3 align-middle min-w-[130px] whitespace-nowrap">
-                          <div className="flex flex-col gap-1">
-                            <span className="text-xs font-medium text-foreground">{p.location || "Gudang Utama"}</span>
-                            <div>
-                              <Badge className="font-mono text-[10.5px] font-semibold px-2 py-0.5 bg-slate-800 dark:bg-slate-700 text-white rounded border-transparent shadow-none inline-flex items-center">
-                                {p.shelf || "Rak A-1"}
-                              </Badge>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Stok Terkini & Batas Minimum */}
-                        <td className="px-3.5 py-3 align-middle text-right whitespace-nowrap min-w-[120px]">
-                          <div className="flex flex-col items-end gap-1.5">
-                            <div className="inline-flex items-baseline gap-1 font-mono">
-                              <span
-                                className={cn(
-                                  "text-sm font-bold tabular-nums",
-                                  isZero
-                                    ? "text-rose-600 dark:text-rose-400 font-extrabold"
-                                    : isLow
-                                      ? "text-amber-600 dark:text-amber-400 font-bold"
-                                      : "text-emerald-600 dark:text-emerald-400"
-                                )}
+                            {/* Tombol Hapus (Khusus Admin/Authorized) */}
+                            {canDeleteMaster && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 ml-0.5"
+                                onClick={() => setDeletingItem(p)}
+                                title="Hapus Barang"
                               >
-                                {(p.current_stock ?? 0).toLocaleString("id-ID")}
-                              </span>
-                              <span className="text-xs text-muted-foreground font-normal">
-                                {p.unit || "pcs"}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-end">
-                              {isZero ? (
-                                <Badge variant="destructive" className="text-[10px] px-1.5 py-0.5 font-semibold h-auto leading-tight shadow-none border-transparent">
-                                  Habis (0 pcs)
-                                </Badge>
-                              ) : isLow && p.is_active ? (
-                                <Badge
-                                  className="text-[10px] px-1.5 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 gap-1 font-semibold h-auto leading-tight shadow-none inline-flex items-center"
-                                >
-                                  <AlertTriangle className="size-2.5 shrink-0" /> Limit (Min: {p.min_stock ?? 10})
-                                </Badge>
-                              ) : (
-                                <span className="text-[10.5px] text-muted-foreground font-mono leading-tight">
-                                  Min: {(p.min_stock ?? 10).toLocaleString("id-ID")}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Riwayat Masuk */}
-                        <td className="px-3.5 py-3 text-right align-middle whitespace-nowrap min-w-[130px]">
-                          <div className="flex flex-col items-end gap-0.5">
-                            <span
-                              className={cn(
-                                "inline-flex items-center font-mono text-xs font-semibold tabular-nums px-2 py-0.5 rounded border whitespace-nowrap",
-                                totalIn > 0
-                                  ? "text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
-                                  : "text-muted-foreground bg-surface-muted border-border/40",
-                              )}
-                            >
-                              {totalIn > 0 ? `+${totalIn.toLocaleString("id-ID")} ${p.unit || "pcs"}` : `0 ${p.unit || "pcs"}`}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground font-medium">
-                              {lastInTime}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Riwayat Keluar */}
-                        <td className="px-3.5 py-3 text-right align-middle whitespace-nowrap min-w-[130px]">
-                          <div className="flex flex-col items-end gap-0.5">
-                            <span
-                              className={cn(
-                                "inline-flex items-center font-mono text-xs font-semibold tabular-nums px-2 py-0.5 rounded border whitespace-nowrap",
-                                totalOut > 0
-                                  ? "text-rose-600 dark:text-rose-400 bg-rose-500/10 border-rose-500/20"
-                                  : "text-muted-foreground bg-surface-muted border-border/40"
-                              )}
-                            >
-                              {totalOut > 0 ? `-${totalOut.toLocaleString("id-ID")} ${p.unit || "pcs"}` : `0 ${p.unit || "pcs"}`}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground font-medium">
-                              {lastOutTime}
-                            </span>
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -2340,6 +3150,160 @@ function WarehouseAndProductsPage() {
 
         {/* ── TAB 2: RIWAYAT MUTASI (IN / OUT) ────────────────────────────────── */}
         <TabsContent value="transactions" className="space-y-4">
+          {/* Ringkasan Statistik Mutasi (Khusus Tab Riwayat Mutasi) */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {/* Card 1: Total Mutasi Daily (Split: Masuk & Keluar) */}
+            <div
+              onClick={() => {
+                setTxFilterType("ALL");
+                setTxDateFilter("");
+              }}
+              className="border border-border bg-surface p-4 flex flex-col justify-between cursor-pointer hover:border-blue-500/60 hover:shadow-md transition-all active:scale-[0.99] group"
+              title="Klik untuk melihat riwayat transaksi mutasi hari ini"
+            >
+              <div>
+                <div className="flex items-center justify-between text-muted-foreground group-hover:text-blue-600 transition-colors">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                    <span className="inline-block size-2 rounded-full bg-blue-500 animate-pulse" />
+                    Total Mutasi Daily
+                  </span>
+                  <History className="size-4 text-blue-500 group-hover:scale-110 transition-transform" />
+                </div>
+                <div className="mt-2 flex items-baseline gap-2">
+                  <p className="text-2xl font-bold text-foreground group-hover:text-blue-600 transition-colors">{dailyTotalCount}</p>
+                  <span className="text-xs text-muted-foreground">transaksi hari ini</span>
+                </div>
+              </div>
+              <div className="mt-3 pt-2.5 border-t border-border/80 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTxFilterType("IN");
+                    setTxDateFilter("");
+                  }}
+                  className="flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-1.5 rounded-sm transition-colors text-left"
+                  title="Klik untuk filter transaksi masuk hari ini"
+                >
+                  <ArrowDownLeft className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase font-semibold text-emerald-700 dark:text-emerald-300 leading-none">Mutasi Masuk</p>
+                    <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{dailyInCount}</p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTxFilterType("OUT");
+                    setTxDateFilter("");
+                  }}
+                  className="flex items-center gap-1.5 bg-rose-500/10 hover:bg-rose-500/20 px-2 py-1.5 rounded-sm transition-colors text-left"
+                  title="Klik untuk filter transaksi keluar hari ini"
+                >
+                  <ArrowUpRight className="size-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase font-semibold text-rose-700 dark:text-rose-300 leading-none">Mutasi Keluar</p>
+                    <p className="text-xs font-bold text-rose-600 dark:text-rose-400 mt-0.5">{dailyOutCount}</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Card 2: Monitoring Mutasi Global & Tarik Data Kalender */}
+            <div className="border border-border bg-surface p-4 flex flex-col justify-between hover:border-indigo-500/60 hover:shadow-md transition-all">
+              <div>
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                    <CalendarIcon className="size-3.5 text-indigo-500" />
+                    Monitoring Mutasi Global
+                  </span>
+                  {txDateFilter && (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                      Terfilter
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Input Kalender untuk Tarik Data Tanggal Tertentu */}
+                <div className="mt-2.5 flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="date"
+                      value={txDateFilter}
+                      onChange={(e) => {
+                        setTxDateFilter(e.target.value);
+                      }}
+                      className="w-full h-8 text-xs px-2.5 py-1 bg-surface-muted/60 border border-input rounded text-foreground focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      title="Pilih tanggal untuk memonitor & menarik riwayat mutasi"
+                    />
+                  </div>
+                  {txDateFilter ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setTxDateFilter("")}
+                      className="h-8 px-2 text-[11px] text-muted-foreground hover:text-foreground border-dashed"
+                      title="Reset filter tanggal (kembali ke semua mutasi)"
+                    >
+                      <X className="size-3.5 mr-1" />
+                      Reset
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const todayStr = new Date().toISOString().split("T")[0] || "";
+                        setTxDateFilter(todayStr);
+                      }}
+                      className="h-8 px-2.5 text-[11px] text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+                      title="Tarik data hari ini"
+                    >
+                      Hari Ini
+                    </Button>
+                  )}
+                </div>
+
+                <div className="mt-2 flex items-baseline justify-between">
+                  <div className="flex items-baseline gap-1.5">
+                    <p className="text-2xl font-bold text-foreground">
+                      {globalMutasiStats.totalCount}
+                    </p>
+                    <span className="text-xs text-muted-foreground">
+                      {txDateFilter ? "transaksi pada tanggal ini" : "total akumulasi transaksi"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 pt-2.5 border-t border-border/80 grid grid-cols-2 gap-2">
+                <div className="flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1.5 rounded-sm">
+                  <ArrowDownLeft className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase font-semibold text-emerald-700 dark:text-emerald-300 leading-none">
+                      Masuk ({globalMutasiStats.inCount})
+                    </p>
+                    <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      {globalMutasiStats.totalQtyIn} pcs
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 bg-rose-500/10 px-2 py-1.5 rounded-sm">
+                  <ArrowUpRight className="size-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase font-semibold text-rose-700 dark:text-rose-300 leading-none">
+                      Keluar ({globalMutasiStats.outCount})
+                    </p>
+                    <p className="text-xs font-bold text-rose-600 dark:text-rose-400 mt-0.5">
+                      {globalMutasiStats.totalQtyOut} pcs
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Header Bar Alat Tab Mutasi (Pencarian, Filter Tipe, & Export Laporan Mutasi) */}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border border-border bg-surface p-3 sm:p-4">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 flex-1 max-w-2xl">
@@ -2403,6 +3367,28 @@ function WarehouseAndProductsPage() {
                   Keluar ({groupedTransactions.filter((t) => t.tx_type === "OUT").length})
                 </button>
               </div>
+
+              {/* Filter Tanggal Kalender Tab Mutasi */}
+              <div className="flex items-center gap-1.5 bg-surface-muted px-2 py-1 rounded border border-border text-xs">
+                <CalendarIcon className="size-3.5 text-muted-foreground shrink-0" />
+                <input
+                  type="date"
+                  value={txDateFilter}
+                  onChange={(e) => setTxDateFilter(e.target.value)}
+                  className="bg-transparent text-xs text-foreground focus:outline-none cursor-pointer"
+                  title="Filter riwayat mutasi berdasarkan tanggal"
+                />
+                {txDateFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setTxDateFilter("")}
+                    className="text-muted-foreground hover:text-foreground ml-1"
+                    title="Hapus filter tanggal"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-2 self-end lg:self-auto shrink-0">
@@ -2451,19 +3437,20 @@ function WarehouseAndProductsPage() {
                 )}
               </div>
             ) : (
-              <table className="w-full text-xs text-left border-collapse">
+              <table className="w-full text-xs text-left border-collapse border border-slate-200 dark:border-slate-800">
                 <thead>
-                  <tr className="border-b border-border bg-surface-muted/60 text-muted-foreground uppercase text-[11px] tracking-wider font-semibold">
-                    <th className="px-4 py-3 w-40">No. Bon / Waktu</th>
-                    <th className="px-3 py-3 w-28">Tipe Mutasi</th>
-                    <th className="px-4 py-3 min-w-[320px]">Rincian Sparepart & Jumlah</th>
-                    <th className="px-4 py-3 w-48">Pihak / Rekanan</th>
-                    <th className="px-4 py-3 w-44">Batch & No. Ref</th>
-                    <th className="px-4 py-3 w-36">Petugas</th>
-                    <th className="px-4 py-3 text-right w-36">Aksi & Dokumen</th>
+                  <tr className="border-b border-border bg-[#0f274a] text-white text-[11px] tracking-wider font-semibold divide-x divide-slate-600/60">
+                    <th className="px-3 py-3 whitespace-nowrap text-white">Tanggal</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white w-28 text-center">Tipe Mutasi (In/Out)</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[120px]">KODE</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[240px]">MATERIAL</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[160px]">Vendor / Tujuan</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px]">No. Ref</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px]">User</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white text-center w-28">Aksi</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {filteredGroupedTransactions.map((tx) => {
                     const isMasuk = tx.tx_type === "IN";
                     const isToday =
@@ -2472,27 +3459,24 @@ function WarehouseAndProductsPage() {
                     return (
                       <tr
                         key={tx.transaction_number}
-                        className="hover:bg-surface-muted/40 transition-colors align-top"
+                        className="hover:bg-surface-muted/40 transition-colors align-top divide-x divide-slate-200 dark:divide-slate-800"
                       >
-                        {/* 1. No. Bon & Waktu */}
-                        <td className="px-4 py-3 font-mono">
-                          <div className="flex items-center gap-1.5 font-bold text-foreground text-xs">
-                            <span>{tx.transaction_number}</span>
-                            {isToday && (
-                              <span className="size-1.5 rounded-full bg-blue-500 inline-block" title="Hari ini" />
-                            )}
-                          </div>
-                          <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground font-sans">
-                            <Clock className="size-3 shrink-0 opacity-70" />
+                        {/* 1. Tanggal */}
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1 font-semibold text-foreground text-xs">
+                            <Clock className="size-3 text-muted-foreground shrink-0" />
                             <span>{formatDate(tx.created_at)}</span>
+                            {isToday && (
+                              <span className="size-1.5 rounded-full bg-blue-500 inline-block ml-1" title="Hari ini" />
+                            )}
                           </div>
                         </td>
 
-                        {/* 2. Tipe Mutasi */}
-                        <td className="px-3 py-3">
+                        {/* 2. Tipe Mutasi (In/Out) */}
+                        <td className="px-3 py-3 text-center whitespace-nowrap">
                           <span
                             className={cn(
-                              "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold uppercase tracking-wide",
+                              "inline-flex items-center justify-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-bold uppercase tracking-wide",
                               isMasuk
                                 ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25"
                                 : "bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/25",
@@ -2503,25 +3487,41 @@ function WarehouseAndProductsPage() {
                             ) : (
                               <ArrowUpRight className="size-3 shrink-0 text-rose-600 dark:text-rose-400" />
                             )}
-                            {isMasuk ? "Masuk" : "Keluar"}
+                            {isMasuk ? "In (Masuk)" : "Out (Keluar)"}
                           </span>
                         </td>
 
-                        {/* 3. Rincian Sparepart & Jumlah */}
-                        <td className="px-4 py-3">
+                        {/* 3. KODE */}
+                        <td className="px-3 py-3 font-mono text-xs">
+                          <div className="space-y-1.5">
+                            {tx.items.map((it, idx) => {
+                              const foundProd = productMap.get(it.product_id) || productMap.get(it.product_name.trim().toLowerCase());
+                              const itemCode = foundProd?.code || "—";
+                              return (
+                                <div key={it.id || idx} className="py-0.5">
+                                  <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 text-[11px]">
+                                    {itemCode}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </td>
+
+                        {/* 4. MATERIAL & Jumlah */}
+                        <td className="px-3 py-3">
                           <div className="space-y-1">
                             {tx.items.map((it, idx) => (
                               <div
                                 key={it.id || idx}
-                                className="flex items-center justify-between gap-3 text-xs bg-surface-muted/40 hover:bg-surface-muted px-2.5 py-1 rounded border border-border/50 transition-colors"
+                                className="flex items-center justify-between gap-3 text-xs bg-surface-muted/40 hover:bg-surface-muted px-2 py-1 rounded border border-border/50 transition-colors"
                               >
                                 <span className="font-medium text-foreground leading-snug truncate">
-                                  <span className="text-muted-foreground mr-1 text-[11px]">{idx + 1}.</span>
                                   {it.product_name}
                                 </span>
                                 <span
                                   className={cn(
-                                    "font-mono font-bold text-xs shrink-0 px-2 py-0.5 rounded text-right",
+                                    "font-mono font-bold text-xs shrink-0 px-1.5 py-0.5 rounded text-right whitespace-nowrap",
                                     isMasuk
                                       ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                                       : "bg-rose-500/10 text-rose-600 dark:text-rose-400",
@@ -2534,53 +3534,45 @@ function WarehouseAndProductsPage() {
                             ))}
                             {tx.items.length > 1 && (
                               <p className="text-[10px] text-muted-foreground px-1 font-medium">
-                                Total {tx.items.length} item sparepart dalam bon ini
+                                Total {tx.items.length} material dalam transaksi ini
                               </p>
                             )}
                           </div>
                         </td>
 
-                        {/* 4. Pihak / Rekanan (Vendor / Tujuan) */}
-                        <td className="px-4 py-3 text-xs">
-                          <span className="text-[10px] uppercase font-semibold text-muted-foreground block">
-                            {isMasuk ? "Vendor Pengirim" : "Tujuan / Line"}
-                          </span>
-                          <span className="font-medium text-foreground mt-0.5 block">
+                        {/* 5. Vendor / Tujuan */}
+                        <td className="px-3 py-3 text-xs">
+                          <span className="font-medium text-foreground block">
                             {tx.supplier_or_dest || "—"}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground block mt-0.5">
+                            {isMasuk ? "Vendor Pengirim" : "Alasan / Line Tujuan"}
                           </span>
                         </td>
 
-                        {/* 5. Batch & No. Referensi */}
-                        <td className="px-4 py-3 text-xs">
-                          {tx.batch_number ? (
-                            <div className="text-muted-foreground">
-                              <span className="text-[10px] uppercase font-semibold block">
-                                {isMasuk ? "Tgl Terima / Batch" : "Batch"}
-                              </span>
-                              <span className="font-mono text-foreground">{tx.batch_number}</span>
-                            </div>
-                          ) : null}
+                        {/* 6. No. Ref */}
+                        <td className="px-3 py-3 text-xs">
                           {tx.reference_no ? (
-                            <div className="mt-1 text-muted-foreground">
-                              <span className="text-[10px] uppercase font-semibold block">Ref / PO</span>
-                              <span className="font-mono text-xs text-foreground bg-surface-muted px-1.5 py-0.5 rounded border border-border/40 inline-block">
-                                {tx.reference_no}
-                              </span>
-                            </div>
-                          ) : null}
-                          {!tx.batch_number && !tx.reference_no && (
+                            <span className="font-mono text-xs text-foreground bg-surface-muted px-1.5 py-0.5 rounded border border-border/40 inline-block">
+                              {tx.reference_no}
+                            </span>
+                          ) : tx.batch_number ? (
+                            <span className="font-mono text-[11px] text-muted-foreground">
+                              {tx.batch_number}
+                            </span>
+                          ) : (
                             <span className="text-muted-foreground/60">—</span>
                           )}
                         </td>
 
-                        {/* 6. Petugas Sparepart */}
-                        <td className="px-4 py-3 text-xs">
+                        {/* 7. User */}
+                        <td className="px-3 py-3 text-xs">
                           <span className="font-medium text-foreground block">
                             {tx.created_by_name || "Petugas Gudang"}
                           </span>
                           {tx.notes && (
                             <span
-                              className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1 italic"
+                              className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1 italic block"
                               title={tx.notes}
                             >
                               &ldquo;{tx.notes}&rdquo;
@@ -2588,9 +3580,9 @@ function WarehouseAndProductsPage() {
                           )}
                         </td>
 
-                        {/* 7. Aksi & Dokumen */}
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
+                        {/* 8. Aksi */}
+                        <td className="px-3 py-3 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
+                          <div className="flex items-center justify-center gap-1">
                             <Button
                               size="sm"
                               variant="outline"
@@ -2805,15 +3797,737 @@ function WarehouseAndProductsPage() {
             )}
           </div>
         </TabsContent>
+        {/* ── TAB 5: BUFFER STOK (TABEL MANDIRI, TIDAK NGELINK OBS) ────────────── */}
+        <TabsContent value="buffer_stock" className="space-y-4">
+          {/* Header & Filter Buffer Stok */}
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between bg-surface border border-border p-3">
+            <div className="relative flex-1 lg:max-w-md">
+              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+              <Input
+                placeholder="Cari nama barang, kode, atau nomor rak..."
+                value={bufferSearchQuery}
+                onChange={(e) => setBufferSearchQuery(e.target.value)}
+                className="pl-9 h-9 text-xs sm:text-sm"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={bufferStatusFilter} onValueChange={setBufferStatusFilter}>
+                <SelectTrigger className="w-48 h-9 text-xs">
+                  <SelectValue placeholder="Kondisi Stok" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL" className="text-xs">Semua Kondisi</SelectItem>
+                  <SelectItem value="ORDER" className="text-xs font-semibold text-rose-600">⚠ ORDER (≤ Minimal)</SelectItem>
+                  <SelectItem value="SAFETY" className="text-xs font-semibold text-emerald-600">✓ SAFETY STOK (&gt; Minimal)</SelectItem>
+                  <SelectItem value="OUT_OF_STOCK" className="text-xs font-semibold text-amber-600">⚡ OUT OF STOK (&gt; Maksimal)</SelectItem>
+                </SelectContent>
+              </Select>
+              {canManageWarehouse && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setBufferFormData({ name: "", code: "", unit: "pcs", location: "Gudang Utama", shelf: "Rak A-1", min_stock: "10", safe_stock: "1", max_stock: "", current_stock: "0", description: "" });
+                    setIsBufferAddOpen(true);
+                  }}
+                  className="gap-1.5 bg-white text-slate-900 font-semibold shadow-sm hover:bg-slate-100 active:scale-[0.98] transition-all h-9 text-xs px-3"
+                >
+                  <Plus className="size-3.5 text-slate-900" />
+                  Tambah Barang Buffer
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* ── MONITORING INFO CARDS BUFFER STOK ──────────────────────────── */}
+          {(() => {
+            const activeBuffers = bufferItems.filter((b) => b.is_active);
+            const totalBufferItems = activeBuffers.length;
+            const totalBufferQty = activeBuffers.reduce((acc, b) => acc + (b.current_stock ?? 0), 0);
+
+            const bufOrderItems = activeBuffers.filter((b) => {
+              const current = b.current_stock ?? 0;
+              const minStock = b.min_stock ?? 10;
+              const rawMax = b.max_stock;
+              const maxStock = rawMax !== null && rawMax !== undefined ? Number(rawMax) : null;
+              const isOut = maxStock !== null && !isNaN(maxStock) && current > maxStock;
+              return !isOut && current <= minStock;
+            });
+            const bufSafetyItems = activeBuffers.filter((b) => {
+              const current = b.current_stock ?? 0;
+              const minStock = b.min_stock ?? 10;
+              const rawMax = b.max_stock;
+              const maxStock = rawMax !== null && rawMax !== undefined ? Number(rawMax) : null;
+              const isOut = maxStock !== null && !isNaN(maxStock) && current > maxStock;
+              return !isOut && current > minStock;
+            });
+            const bufOutOfStockItems = activeBuffers.filter((b) => {
+              const current = b.current_stock ?? 0;
+              const rawMax = b.max_stock;
+              const maxStock = rawMax !== null && rawMax !== undefined ? Number(rawMax) : null;
+              return maxStock !== null && !isNaN(maxStock) && current > maxStock;
+            });
+
+            const bufOrderCount = bufOrderItems.length;
+            const bufSafetyCount = bufSafetyItems.length;
+            const bufOutOfStockCount = bufOutOfStockItems.length;
+
+            const bufOrderPct = totalBufferItems > 0 ? Math.round((bufOrderCount / totalBufferItems) * 100) : 0;
+            const bufSafetyPct = totalBufferItems > 0 ? Math.round((bufSafetyCount / totalBufferItems) * 100) : 0;
+            const bufOutOfStockPct = totalBufferItems > 0 ? Math.max(0, 100 - bufOrderPct - bufSafetyPct) : 0;
+
+            return (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {/* Card 1: Total Item Buffer */}
+                  <div className="rise-in group relative overflow-hidden border border-border bg-surface p-4 transition-all hover:shadow-md hover:border-primary/30">
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-blue-500/8 to-transparent rounded-bl-3xl" />
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center justify-center size-8 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 ring-1 ring-blue-200/60 dark:ring-blue-800/50">
+                        <Boxes className="size-4" />
+                      </div>
+                      <span className="label-caps !text-blue-600 dark:!text-blue-400">Total Item</span>
+                    </div>
+                    <div className="font-mono text-2xl font-bold tabular-nums text-foreground">
+                      {loadingBuffer ? "—" : totalBufferItems}
+                    </div>
+                    <div className="mt-1 text-[10px] text-muted-foreground">Item buffer aktif</div>
+                  </div>
+
+                  {/* Card 2: Total Stok Qty */}
+                  <div className="rise-in group relative overflow-hidden border border-border bg-surface p-4 transition-all hover:shadow-md hover:border-primary/30" style={{ animationDelay: '50ms' }}>
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-indigo-500/8 to-transparent rounded-bl-3xl" />
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center justify-center size-8 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 ring-1 ring-indigo-200/60 dark:ring-indigo-800/50">
+                        <Package className="size-4" />
+                      </div>
+                      <span className="label-caps !text-indigo-600 dark:!text-indigo-400">Total Stok</span>
+                    </div>
+                    <div className="font-mono text-2xl font-bold tabular-nums text-foreground">
+                      {loadingBuffer ? "—" : totalBufferQty.toLocaleString("id-ID")}
+                    </div>
+                    <div className="mt-1 text-[10px] text-muted-foreground">Jumlah seluruh pcs/unit</div>
+                  </div>
+
+                  {/* Card 3: ORDER */}
+                  <div
+                    className="rise-in group relative overflow-hidden border border-rose-200 dark:border-rose-900/60 bg-gradient-to-br from-surface to-rose-50/40 dark:from-surface dark:to-rose-950/20 p-4 transition-all hover:shadow-md hover:border-rose-400/60 cursor-pointer"
+                    style={{ animationDelay: '100ms' }}
+                    onClick={() => setBufferStatusFilter(bufferStatusFilter === "ORDER" ? "ALL" : "ORDER")}
+                  >
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-rose-500/10 to-transparent rounded-bl-3xl" />
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center justify-center size-8 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 ring-1 ring-rose-200/60 dark:ring-rose-800/50">
+                        <CircleAlert className="size-4" />
+                      </div>
+                      <span className="label-caps !text-rose-600 dark:!text-rose-400">Order</span>
+                    </div>
+                    <div className="font-mono text-2xl font-bold tabular-nums text-rose-600 dark:text-rose-400">
+                      {loadingBuffer ? "—" : bufOrderCount}
+                    </div>
+                    <div className="mt-1 text-[10px] text-rose-500/80 dark:text-rose-400/60">Stok ≤ batas minimum</div>
+                    {bufferStatusFilter === "ORDER" && (
+                      <div className="absolute top-2 right-2 size-2 rounded-full bg-rose-500 animate-pulse" />
+                    )}
+                  </div>
+
+                  {/* Card 4: SAFETY STOK */}
+                  <div
+                    className="rise-in group relative overflow-hidden border border-emerald-200 dark:border-emerald-900/60 bg-gradient-to-br from-surface to-emerald-50/40 dark:from-surface dark:to-emerald-950/20 p-4 transition-all hover:shadow-md hover:border-emerald-400/60 cursor-pointer"
+                    style={{ animationDelay: '150ms' }}
+                    onClick={() => setBufferStatusFilter(bufferStatusFilter === "SAFETY" ? "ALL" : "SAFETY")}
+                  >
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-emerald-500/10 to-transparent rounded-bl-3xl" />
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center justify-center size-8 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-200/60 dark:ring-emerald-800/50">
+                        <ShieldCheck className="size-4" />
+                      </div>
+                      <span className="label-caps !text-emerald-600 dark:!text-emerald-400">Safety Stok</span>
+                    </div>
+                    <div className="font-mono text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {loadingBuffer ? "—" : bufSafetyCount}
+                    </div>
+                    <div className="mt-1 text-[10px] text-emerald-500/80 dark:text-emerald-400/60">Stok aman &gt; minimum</div>
+                    {bufferStatusFilter === "SAFETY" && (
+                      <div className="absolute top-2 right-2 size-2 rounded-full bg-emerald-500 animate-pulse" />
+                    )}
+                  </div>
+
+                  {/* Card 5: OUT OF STOK */}
+                  <div
+                    className="rise-in group relative overflow-hidden border border-amber-200 dark:border-amber-900/60 bg-gradient-to-br from-surface to-amber-50/40 dark:from-surface dark:to-amber-950/20 p-4 transition-all hover:shadow-md hover:border-amber-400/60 cursor-pointer"
+                    style={{ animationDelay: '200ms' }}
+                    onClick={() => setBufferStatusFilter(bufferStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK")}
+                  >
+                    <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-amber-500/10 to-transparent rounded-bl-3xl" />
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center justify-center size-8 rounded-md bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 ring-1 ring-amber-200/60 dark:ring-amber-800/50">
+                        <TrendingDown className="size-4" />
+                      </div>
+                      <span className="label-caps !text-amber-600 dark:!text-amber-400">Out of Stok</span>
+                    </div>
+                    <div className="font-mono text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
+                      {loadingBuffer ? "—" : bufOutOfStockCount}
+                    </div>
+                    <div className="mt-1 text-[10px] text-amber-500/80 dark:text-amber-400/60">Melebihi maks. stok</div>
+                    {bufferStatusFilter === "OUT_OF_STOCK" && (
+                      <div className="absolute top-2 right-2 size-2 rounded-full bg-amber-500 animate-pulse" />
+                    )}
+                  </div>
+                </div>
+
+                {/* Progress Bar Distribusi Kondisi Buffer Stok */}
+                {!loadingBuffer && totalBufferItems > 0 && (
+                  <div className="rise-in border border-border bg-surface p-4" style={{ animationDelay: '250ms' }}>
+                    <div className="flex items-center justify-between mb-2.5">
+                      <span className="label-caps">Distribusi Kondisi Buffer Stok</span>
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        {totalBufferItems} item aktif
+                      </span>
+                    </div>
+                    <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                      {bufSafetyPct > 0 && (
+                        <div
+                          className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-700 ease-out"
+                          style={{ width: `${bufSafetyPct}%` }}
+                          title={`Safety Stok: ${bufSafetyCount} item (${bufSafetyPct}%)`}
+                        />
+                      )}
+                      {bufOrderPct > 0 && (
+                        <div
+                          className="h-full bg-gradient-to-r from-rose-500 to-rose-400 transition-all duration-700 ease-out"
+                          style={{ width: `${bufOrderPct}%` }}
+                          title={`Order: ${bufOrderCount} item (${bufOrderPct}%)`}
+                        />
+                      )}
+                      {bufOutOfStockPct > 0 && (
+                        <div
+                          className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-700 ease-out"
+                          style={{ width: `${bufOutOfStockPct}%` }}
+                          title={`Out of Stok: ${bufOutOfStockCount} item (${bufOutOfStockPct}%)`}
+                        />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 mt-2.5 flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <div className="size-2.5 rounded-full bg-emerald-500" />
+                        <span className="text-[10px] text-muted-foreground">Safety <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">{bufSafetyPct}%</span></span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="size-2.5 rounded-full bg-rose-500" />
+                        <span className="text-[10px] text-muted-foreground">Order <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">{bufOrderPct}%</span></span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="size-2.5 rounded-full bg-amber-500" />
+                        <span className="text-[10px] text-muted-foreground">Out of Stok <span className="font-mono font-semibold text-amber-600 dark:text-amber-400">{bufOutOfStockPct}%</span></span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+
+          {/* Tabel Buffer Stok */}
+          <div className="border border-border bg-surface overflow-x-auto rounded-lg shadow-2xs">
+            {loadingBuffer ? (
+              <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
+                Memuat data buffer stok...
+              </div>
+            ) : (() => {
+              const filtered = bufferItems.filter((item) => {
+                const q = bufferSearchQuery.toLowerCase().trim();
+                const matchSearch = !q ||
+                  item.name.toLowerCase().includes(q) ||
+                  (item.code && item.code.toLowerCase().includes(q)) ||
+                  (item.shelf && item.shelf.toLowerCase().includes(q));
+                const current = item.current_stock ?? 0;
+                const minStock = item.min_stock ?? 10;
+                const maxStock = item.max_stock ? Number(item.max_stock) : null;
+                const isOutOfStock = maxStock !== null && !isNaN(maxStock) && current > maxStock;
+                const isOrder = !isOutOfStock && current <= minStock;
+                const isSafety = !isOutOfStock && !isOrder;
+                const matchStock =
+                  bufferStatusFilter === "ALL" ||
+                  (bufferStatusFilter === "ORDER" && isOrder) ||
+                  (bufferStatusFilter === "SAFETY" && isSafety) ||
+                  (bufferStatusFilter === "OUT_OF_STOCK" && isOutOfStock);
+                return matchSearch && matchStock;
+              });
+
+              if (filtered.length === 0) return (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <Package className="mb-3 size-10 text-muted-foreground/40" />
+                  <p className="text-sm font-medium">
+                    {bufferSearchQuery || bufferStatusFilter !== "ALL"
+                      ? "Tidak ada item buffer stok yang cocok"
+                      : "Belum ada data buffer stok"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground max-w-sm">
+                    {bufferSearchQuery || bufferStatusFilter !== "ALL"
+                      ? "Coba ubah kata kunci atau reset filter."
+                      : "Klik \"Tambah Barang Buffer\" untuk menambahkan item baru ke buffer stok (tidak akan muncul di OBS Sparepart)."}
+                  </p>
+                  {canManageWarehouse && !bufferSearchQuery && bufferStatusFilter === "ALL" && (
+                    <Button
+                      size="sm"
+                      onClick={() => { setBufferFormData({ name: "", code: "", unit: "pcs", location: "Gudang Utama", shelf: "Rak A-1", min_stock: "10", safe_stock: "1", max_stock: "", current_stock: "0", description: "" }); setIsBufferAddOpen(true); }}
+                      className="mt-4 gap-1.5 bg-primary text-primary-foreground text-xs h-8"
+                    >
+                      <Plus className="size-3.5" />
+                      Tambah Barang Buffer
+                    </Button>
+                  )}
+                </div>
+              );
+
+              return (
+                <table className="w-full min-w-[780px] text-xs border-collapse border border-slate-300 dark:border-slate-700">
+                  <thead>
+                    <tr className="bg-[#0f274a] text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
+                      <th className="label-caps px-3 py-3 text-center w-10 text-white font-semibold">No</th>
+                      <th className="label-caps px-3 py-3 text-left min-w-[120px] text-white font-semibold">Kode</th>
+                      <th className="label-caps px-3 py-3 text-left min-w-[220px] text-white font-semibold">Nama Barang</th>
+                      <th className="label-caps px-3 py-3 text-center min-w-[100px] text-white font-semibold">Batas Min</th>
+                      <th className="label-caps px-3 py-3 text-center min-w-[90px] text-white font-semibold">Min Stok</th>
+                      <th className="label-caps px-3 py-3 text-center min-w-[90px] text-white font-semibold">Maks Stok</th>
+                      <th className="label-caps px-3 py-3 text-right min-w-[100px] text-white font-semibold">Stok Saat Ini</th>
+                      <th className="label-caps px-3 py-3 text-center min-w-[100px] text-white font-semibold">Kondisi</th>
+                      <th className="label-caps px-3 py-3 text-center min-w-[90px] text-white font-semibold">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                    {filtered.map((item, index) => {
+                      const current = item.current_stock ?? 0;
+                      const minStock = item.min_stock ?? 10;
+                      const maxStock = item.max_stock ? Number(item.max_stock) : null;
+                      const isOrder = current <= minStock;
+                      const isOutOfStock = maxStock !== null && current > maxStock;
+                      let kondisiText = "AMAN";
+                      let kondisiStyle = "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
+                      if (isOutOfStock) {
+                        kondisiText = "OUT OF STOK";
+                        kondisiStyle = "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
+                      } else if (isOrder) {
+                        kondisiText = "ORDER";
+                        kondisiStyle = "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800";
+                      }
+                      return (
+                        <tr key={item.id} className={cn("group transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 divide-x divide-slate-200 dark:divide-slate-700", !item.is_active && "opacity-55 bg-surface-muted/20")}>
+                          <td className="px-3 py-3 text-center font-mono text-muted-foreground w-10 bg-slate-50/40 dark:bg-slate-900/20">{index + 1}</td>
+                          <td className="px-3 py-3 font-mono font-medium">
+                            <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                              {item.code || "—"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 font-semibold text-foreground min-w-[220px]">{item.name}</td>
+                          <td className="px-3 py-3 text-center font-mono text-muted-foreground">{(item.safe_stock ?? 1)} {item.unit || "pcs"}</td>
+                          <td className="px-3 py-3 text-center font-mono text-muted-foreground">{minStock} {item.unit || "pcs"}</td>
+                          <td className="px-3 py-3 text-center font-mono text-muted-foreground">{maxStock !== null ? `${maxStock} ${item.unit || "pcs"}` : "—"}</td>
+                          <td className="px-3 py-3 text-right font-mono font-bold">
+                            <span className={cn("tabular-nums text-sm", current <= 0 ? "text-rose-600 dark:text-rose-400 font-extrabold" : isOrder ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400")}>
+                              {current.toLocaleString("id-ID")} {item.unit || "pcs"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            <span className={cn("inline-flex items-center justify-center w-24 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs", kondisiStyle)}>
+                              {kondisiText}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 text-center bg-slate-50/30 dark:bg-slate-900/10">
+                            <div className="flex items-center justify-center gap-1">
+                              {canManageWarehouse && (
+                                <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => setEditingBufferItem(item)} title="Edit">
+                                  <Pencil className="size-3 text-amber-600" />
+                                  <span>Edit</span>
+                                </Button>
+                              )}
+                              {canDeleteMaster && (
+                                <Button size="sm" variant="ghost" className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30" onClick={() => setDeletingBufferItem(item)} title="Hapus">
+                                  <Trash2 className="size-3.5" />
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              );
+            })()}
+          </div>
+        </TabsContent>
       </Tabs>
 
-      {/* ── MODAL DIALOG: TAMBAH BARANG ───────────────────────────────────────── */}
+      {/* ── MODAL DIALOG: TAMBAH BARANG BUFFER STOK (INDEPENDEN) ─────────────── */}
+      <Dialog open={isBufferAddOpen} onOpenChange={setIsBufferAddOpen}>
+        <DialogContent className="sm:max-w-4xl w-full max-h-[90vh] flex flex-col p-6 overflow-hidden">
+          <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
+            <DialogTitle className="text-lg font-bold">Tambah Data Barang Buffer Stok</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Tambahkan data buffer stok secara manual atau upload file Excel / CSV. Data hanya masuk ke tabel Buffer Stok, tidak muncul di OBS Sparepart.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Tab Mode: Manual vs Upload File Excel/CSV */}
+          <Tabs defaultValue="manual" className="w-full flex-1 flex flex-col min-h-0 overflow-hidden mt-3">
+            <div className="flex items-center justify-between border-b pb-2 mb-3 shrink-0">
+              <TabsList className="grid w-72 grid-cols-2">
+                <TabsTrigger value="manual" className="text-xs">Manual Input</TabsTrigger>
+                <TabsTrigger value="upload" className="text-xs gap-1.5">
+                  <FileSpreadsheet className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                  Upload Excel/CSV
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            {/* Container Scrollable */}
+            <div className="flex-1 overflow-y-auto pr-1">
+              {/* TAB 1: FORM MANUAL */}
+              <TabsContent value="manual" className="mt-0 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="buf-name" className="text-xs font-semibold">Nama Barang *</Label>
+                    <Input id="buf-name" value={bufferFormData.name} onChange={(e) => setBufferFormData({ ...bufferFormData, name: e.target.value })} placeholder="cth. BEARING 6204-2RS / HEATER ELEMENT 2000W" className="h-9 text-xs" autoFocus />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="buf-code" className="text-xs font-semibold">Kode Material</Label>
+                    <Input id="buf-code" value={bufferFormData.code} onChange={(e) => setBufferFormData({ ...bufferFormData, code: e.target.value })} placeholder="cth. 7100110213 / SP-BRG-6204" className="h-9 text-xs font-mono" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Satuan (UoM)</Label>
+                    <Select value={bufferFormData.unit} onValueChange={(v) => setBufferFormData({ ...bufferFormData, unit: v })}>
+                      <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {units.map((u: any) => <SelectItem key={u.id} value={u.code} className="text-xs">{u.name} ({u.code})</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Lokasi Gudang</Label>
+                    <Input value={bufferFormData.location} onChange={(e) => setBufferFormData({ ...bufferFormData, location: e.target.value })} placeholder="Gudang Utama" className="h-9 text-xs" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Shelf / Rak</Label>
+                    <Input value={bufferFormData.shelf} onChange={(e) => setBufferFormData({ ...bufferFormData, shelf: e.target.value })} placeholder="Rak A-1" className="h-9 text-xs font-mono" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Stok Awal / Saat Ini</Label>
+                    <Input type="number" value={bufferFormData.current_stock} onChange={(e) => setBufferFormData({ ...bufferFormData, current_stock: e.target.value })} placeholder="0" className="h-9 text-xs font-mono" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Batas Minimum Stok</Label>
+                    <Input type="number" value={bufferFormData.safe_stock} onChange={(e) => setBufferFormData({ ...bufferFormData, safe_stock: e.target.value })} placeholder="1" className="h-9 text-xs font-mono" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Minimal Stok (Trigger Order)</Label>
+                    <Input type="number" value={bufferFormData.min_stock} onChange={(e) => setBufferFormData({ ...bufferFormData, min_stock: e.target.value })} placeholder="10" className="h-9 text-xs font-mono" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Maksimal Stok</Label>
+                    <Input type="number" value={bufferFormData.max_stock} onChange={(e) => setBufferFormData({ ...bufferFormData, max_stock: e.target.value })} placeholder="opsional" className="h-9 text-xs font-mono" />
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label className="text-xs font-semibold">Keterangan (Opsional)</Label>
+                    <Input value={bufferFormData.description} onChange={(e) => setBufferFormData({ ...bufferFormData, description: e.target.value })} placeholder="Keterangan tambahan..." className="h-9 text-xs" />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-4 border-t mt-4">
+                  <Button variant="outline" size="sm" onClick={() => setIsBufferAddOpen(false)}>Batal</Button>
+                  <Button size="sm" onClick={() => addBufferItem.mutate()} disabled={addBufferItem.isPending || !bufferFormData.name.trim()} className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium">
+                    {addBufferItem.isPending ? "Menyimpan..." : "Simpan Buffer Stok"}
+                  </Button>
+                </div>
+              </TabsContent>
+
+              {/* TAB 2: UPLOAD FILE EXCEL / CSV BUFFER STOK */}
+              <TabsContent value="upload" className="mt-0 space-y-4">
+                <input
+                  type="file"
+                  ref={bufferBulkFileInputRef}
+                  accept=".csv,.xls,.xlsx,.txt"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleBufferBulkFileSelect(f);
+                  }}
+                />
+
+                {/* Tampilan Box Upload */}
+                {!bufferImportFile ? (
+                  <div className="rounded-xl border-2 border-dashed border-border p-6 text-center bg-surface hover:bg-surface-muted/60 transition-colors">
+                    <div className="flex flex-col items-center justify-center gap-2.5">
+                      <div className="flex size-12 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                        <FileSpreadsheet className="size-6" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">
+                          Pilih File Excel / CSV (.xlsx, .xls, .csv)
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Format kolom: <strong>Kode</strong>, <strong>Material</strong>, <strong>Batas Minimal Stok</strong>, <strong>Minimal Stok</strong>, <strong>Maks. Stok</strong>, dan <strong>Stok Saat Ini</strong>
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-center gap-2.5 mt-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="default"
+                          onClick={() => bufferBulkFileInputRef.current?.click()}
+                          className="gap-1.5 text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
+                        >
+                          <UploadCloud className="size-3.5" />
+                          Pilih File Dokumen
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={downloadBufferImportTemplate}
+                          className="gap-1.5 text-xs h-8 text-primary hover:text-primary hover:bg-primary/10 border-primary/25"
+                        >
+                          <Download className="size-3.5" />
+                          Unduh Template Buffer (.xlsx)
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-xs">
+                    <div className="flex items-center gap-3 min-w-0 pr-2">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600/20 text-emerald-600 dark:text-emerald-400">
+                        <FileSpreadsheet className="size-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 font-semibold text-emerald-800 dark:text-emerald-300 text-sm truncate">
+                          <Check className="size-4 shrink-0 text-emerald-600" />
+                          <span className="truncate">{bufferImportFile.name}</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          Total {bufferImportPreview.length} item buffer terdeteksi &bull; Total Stok: {bufferImportPreview.reduce((acc: number, it: any) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={downloadBufferImportTemplate}
+                        className="h-7 px-2.5 text-xs gap-1 hover:bg-emerald-500/20"
+                        title="Unduh format template buffer"
+                      >
+                        <Download className="size-3" />
+                        Template
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => bufferBulkFileInputRef.current?.click()}
+                        className="h-7 px-2.5 text-xs gap-1 hover:bg-emerald-500/20"
+                      >
+                        <UploadCloud className="size-3" />
+                        Ganti File
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setBufferImportFile(null);
+                          setBufferImportPreview([]);
+                        }}
+                        className="h-7 px-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        title="Hapus File"
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Pratinjau Data yang Terbaca */}
+                {bufferImportPreview.length > 0 && (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <Check className="size-3.5 text-emerald-600" />
+                        Pratinjau {bufferImportPreview.length} Barang Buffer Terdeteksi
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        Pastikan seluruh kolom sudah sesuai dengan data
+                      </span>
+                    </div>
+                    <div className="max-h-72 overflow-x-auto overflow-y-auto rounded-lg border border-border text-xs bg-background">
+                      <table className="w-full text-left border-collapse min-w-[700px]">
+                        <thead className="bg-surface-muted text-[11px] font-semibold text-muted-foreground sticky top-0 z-10 border-b border-border">
+                          <tr>
+                            <th className="p-2.5 w-12 text-center">No</th>
+                            <th className="p-2.5 w-32 text-center">Kode</th>
+                            <th className="p-2.5 min-w-[200px]">Material</th>
+                            <th className="p-2.5 text-center w-28">Stok Saat Ini</th>
+                            <th className="p-2.5 text-center w-24">Batas Min.</th>
+                            <th className="p-2.5 text-center w-24">Min. Stok</th>
+                            <th className="p-2.5 text-center w-24">Maks. Stok</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/60">
+                          {bufferImportPreview.map((it: any, idx: number) => (
+                            <tr key={idx} className="hover:bg-surface-muted/50 transition-colors">
+                              <td className="p-2.5 text-center text-muted-foreground font-mono">{idx + 1}</td>
+                              <td className="p-2.5 text-center font-mono text-primary font-medium">{it.code || "-"}</td>
+                              <td className="p-2.5 font-medium text-foreground">{it.name}</td>
+                              <td className="p-2.5 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                {it.current_stock ?? 0} pcs
+                              </td>
+                              <td className="p-2.5 text-center font-mono text-muted-foreground">
+                                {it.safe_stock !== null && it.safe_stock !== undefined ? `${it.safe_stock} pcs` : "-"}
+                              </td>
+                              <td className="p-2.5 text-center font-mono text-muted-foreground">
+                                {it.min_stock !== null && it.min_stock !== undefined ? `${it.min_stock} pcs` : "-"}
+                              </td>
+                              <td className="p-2.5 text-center font-mono text-muted-foreground">
+                                {it.max_stock !== null && it.max_stock !== undefined ? `${it.max_stock} pcs` : "-"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex items-center justify-between text-xs px-1 text-muted-foreground pt-1.5 border-t border-border/40">
+                      <span>Menampilkan seluruh <strong>{bufferImportPreview.length}</strong> barang buffer yang siap ditambahkan</span>
+                      <span className="font-mono font-bold text-foreground">
+                        Total Stok: {bufferImportPreview.reduce((acc: number, it: any) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setBufferImportFile(null);
+                      setBufferImportPreview([]);
+                      setIsBufferAddOpen(false);
+                    }}
+                  >
+                    Batal
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={executeBufferBulkImport}
+                    disabled={isBufferImporting || bufferImportPreview.length === 0}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 font-medium"
+                  >
+                    <FileSpreadsheet className="size-4" />
+                    {isBufferImporting ? "Mengimport..." : "Import " + bufferImportPreview.length + " Barang Buffer"}
+                  </Button>
+                </div>
+              </TabsContent>
+            </div>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── MODAL DIALOG: EDIT BARANG BUFFER STOK ────────────────────────────── */}
+      <Dialog open={!!editingBufferItem} onOpenChange={(o) => { if (!o) setEditingBufferItem(null); }}>
+        <DialogContent className="sm:max-w-2xl w-full max-h-[90vh] flex flex-col p-6 overflow-hidden">
+          <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
+            <DialogTitle className="text-lg font-bold">Edit Data Buffer Stok</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">Perubahan hanya berlaku di tabel Buffer Stok, tidak mempengaruhi OBS Sparepart.</DialogDescription>
+          </DialogHeader>
+          {editingBufferItem && (
+            <div className="flex-1 overflow-y-auto pr-1 mt-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label className="text-xs font-semibold">Nama Barang *</Label>
+                  <Input value={editingBufferItem.name} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, name: e.target.value })} className="h-9 text-xs" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Kode Material</Label>
+                  <Input value={editingBufferItem.code || ""} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, code: e.target.value })} className="h-9 text-xs font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Satuan</Label>
+                  <Select value={editingBufferItem.unit || "pcs"} onValueChange={(v) => setEditingBufferItem({ ...editingBufferItem, unit: v })}>
+                    <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {units.map((u: any) => <SelectItem key={u.id} value={u.code} className="text-xs">{u.name} ({u.code})</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Lokasi</Label>
+                  <Input value={editingBufferItem.location || ""} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, location: e.target.value })} className="h-9 text-xs" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Shelf / Rak</Label>
+                  <Input value={editingBufferItem.shelf || ""} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, shelf: e.target.value })} className="h-9 text-xs font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Stok Saat Ini</Label>
+                  <Input type="number" value={editingBufferItem.current_stock ?? 0} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, current_stock: Number(e.target.value) })} className="h-9 text-xs font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Batas Minimum</Label>
+                  <Input type="number" value={editingBufferItem.safe_stock ?? 1} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, safe_stock: Number(e.target.value) })} className="h-9 text-xs font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Minimal Stok</Label>
+                  <Input type="number" value={editingBufferItem.min_stock ?? 10} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, min_stock: Number(e.target.value) })} className="h-9 text-xs font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Maksimal Stok</Label>
+                  <Input type="number" value={editingBufferItem.max_stock ?? ""} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, max_stock: e.target.value ? Number(e.target.value) : null })} placeholder="opsional" className="h-9 text-xs font-mono" />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label className="text-xs font-semibold">Keterangan</Label>
+                  <Input value={editingBufferItem.description || ""} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, description: e.target.value })} className="h-9 text-xs" />
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-2 pt-4 border-t mt-2 shrink-0">
+            <Button variant="outline" size="sm" onClick={() => setEditingBufferItem(null)}>Batal</Button>
+            <Button size="sm" onClick={() => updateBufferItem.mutate()} disabled={updateBufferItem.isPending} className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium">
+              {updateBufferItem.isPending ? "Menyimpan..." : "Simpan Perubahan"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── MODAL KONFIRMASI HAPUS BUFFER STOK ───────────────────────────────── */}
+      <AlertDialog open={!!deletingBufferItem} onOpenChange={(o) => { if (!o) setDeletingBufferItem(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Item Buffer Stok?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Item <strong>"{deletingBufferItem?.name}"</strong> akan dihapus dari buffer stok secara permanen. Tindakan ini tidak dapat dibatalkan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deletingBufferItem && deleteBufferItem.mutate(deletingBufferItem)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Ya, Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── MODAL DIALOG: TAMBAH BARANG OBS SPAREPART ────────────────────────── */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent className="sm:max-w-4xl w-full max-h-[90vh] flex flex-col p-6 overflow-hidden">
           <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
-            <DialogTitle className="text-lg font-bold">Tambah Data Barang Baru</DialogTitle>
+            <DialogTitle className="text-lg font-bold">
+              Tambah Data Barang OBS Sparepart
+            </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Tambahkan data master secara manual atau upload file Excel / CSV sekaligus.
+              Tambahkan data master inventaris secara manual atau upload file Excel / CSV (khusus kategori Sparepart & Tools).
             </DialogDescription>
           </DialogHeader>
 
@@ -2927,12 +4641,34 @@ function WarehouseAndProductsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Batas Minimum Stok (Alert)</Label>
+                    <Label className="text-xs font-semibold">Batas Minimum Stok</Label>
+                    <Input
+                      type="number"
+                      value={formData.safe_stock}
+                      onChange={(e) => setFormData({ ...formData, safe_stock: e.target.value })}
+                      placeholder="1"
+                      className="h-9 text-xs font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Minimal Stok</Label>
                     <Input
                       type="number"
                       value={formData.min_stock}
                       onChange={(e) => setFormData({ ...formData, min_stock: e.target.value })}
                       placeholder="10"
+                      className="h-9 text-xs font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Maksimal Stok</Label>
+                    <Input
+                      type="number"
+                      value={formData.max_stock}
+                      onChange={(e) => setFormData({ ...formData, max_stock: e.target.value })}
+                      placeholder="cth. 50 (opsional)"
                       className="h-9 text-xs font-mono"
                     />
                   </div>
@@ -3225,17 +4961,26 @@ function WarehouseAndProductsPage() {
                   type="number"
                   value={editingItem.min_stock ?? 10}
                   onChange={(e) => setEditingItem({ ...editingItem, min_stock: Number(e.target.value) })}
+                  placeholder="Contoh: 10"
                 />
               </div>
-
+              <div className="space-y-1.5">
+                <Label>Batas Maksimal Stok</Label>
+                <Input
+                  type="number"
+                  value={editingItem.max_stock ?? ""}
+                  onChange={(e) => setEditingItem({ ...editingItem, max_stock: e.target.value ? Number(e.target.value) : null })}
+                  placeholder="Contoh: 50 (opsional)"
+                />
+              </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingItem(null)}>
               Batal
             </Button>
-            <Button onClick={() => updateProduct.mutate()} disabled={updateProduct.isPending}>
-              {updateProduct.isPending ? "Menyimpan..." : "Simpan Perubahan"}
+            <Button onClick={() => updateProduct.mutate()} disabled={updateProduct.isPending} className="bg-primary hover:bg-primary/90 min-w-[80px]">
+              {updateProduct.isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3376,11 +5121,11 @@ function WarehouseAndProductsPage() {
             {/* Form Informasi Tambahan Mutasi */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Tanggal Terima</Label>
+                <Label>{txType === "IN" ? "Tanggal Terima" : "Tanggal Keluar"}</Label>
                 <Input
-                  value={txHeader.batchNumber}
+                  type="date"
+                  value={txHeader.batchNumber || new Date().toISOString().split("T")[0]}
                   onChange={(e) => setTxHeader({ ...txHeader, batchNumber: e.target.value })}
-                  placeholder="cth. 16/09/2026 atau BATCH-01"
                   className="h-9 text-xs"
                 />
               </div>
@@ -3396,21 +5141,21 @@ function WarehouseAndProductsPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>{txType === "IN" ? "Nama Vendor" : "Tujuan Pengeluaran / Line"}</Label>
+              <Label>{txType === "IN" ? "Nama Vendor" : "Alasan Permintaan Barang"}</Label>
               <Input
                 value={txHeader.supplierOrDest}
                 onChange={(e) => setTxHeader({ ...txHeader, supplierOrDest: e.target.value })}
-                placeholder={txType === "IN" ? "cth. PT Kopi Nusantara" : "cth. Line Roasting 1 / Kitchen"}
+                placeholder={txType === "IN" ? "cth. PT Kopi Nusantara" : "cth. Penggantian Bearing Rusak Line Roasting 1"}
                 className="h-9 text-xs"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label>Petugas Sparepart</Label>
+              <Label>Petugas Sparepart Shift 1/2/3</Label>
               <Input
                 value={txHeader.notes}
                 onChange={(e) => setTxHeader({ ...txHeader, notes: e.target.value })}
-                placeholder="Nama petugas sparepart / keterangan"
+                placeholder="contoh: Shift 1 / Sultan"
                 className="h-9 text-xs"
               />
             </div>
@@ -3486,43 +5231,30 @@ function WarehouseAndProductsPage() {
               <div className="rounded-lg border border-border bg-surface-muted/40 p-3.5 space-y-3">
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <span className="text-muted-foreground block text-[11px]">No. Transaksi / Bon:</span>
-                    <span className="font-mono font-bold text-foreground text-sm">{selectedTx.transaction_number}</span>
+                    <span className="text-muted-foreground block text-[11px]">Tanggal Pencatatan:</span>
+                    <span className="font-mono font-bold text-foreground text-sm">{formatDate(selectedTx.created_at)}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground block text-[11px]">Waktu Pencatatan:</span>
-                    <span className="font-medium text-foreground">{formatDate(selectedTx.created_at)}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Petugas Input:</span>
-                    <span className="font-medium text-foreground">{selectedTx.created_by_name || "Petugas Gudang"}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">
-                      {selectedTx.tx_type === "IN" ? "Nama Vendor:" : "Tujuan / Pemohon:"}
+                    <span className="text-muted-foreground block text-[11px]">User:</span>
+                    <span className="font-medium text-foreground">
+                      Warehouse Sparepart
                     </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[11px]">Alasan Permintaan:</span>
                     <span className="font-medium text-foreground">{selectedTx.supplier_or_dest || "—"}</span>
                   </div>
                   <div>
                     <span className="text-muted-foreground block text-[11px]">
-                      {selectedTx.tx_type === "IN" ? "Tanggal Terima:" : "Batch / Tgl:"}
+                      {selectedTx.tx_type === "IN" ? "Tanggal Terima:" : "Tanggal Keluar:"}
                     </span>
                     <span className="font-mono text-foreground">{selectedTx.batch_number || "—"}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground block text-[11px]">No. Referensi / PO:</span>
-                    <span className="font-mono text-foreground">{selectedTx.reference_no || "—"}</span>
+                    <span className="text-muted-foreground block text-[11px]">Petugas Sparepart Shift 1/2/3:</span>
+                    <span className="font-medium text-foreground">{selectedTx.notes || selectedTx.reference_no || "—"}</span>
                   </div>
                 </div>
-
-                {selectedTx.notes && (
-                  <div className="pt-2 border-t border-border/60 text-xs">
-                    <span className="text-muted-foreground block mb-0.5">Petugas Sparepart:</span>
-                    <p className="bg-surface p-2 rounded border border-border text-foreground">
-                      {selectedTx.notes}
-                    </p>
-                  </div>
-                )}
               </div>
 
               {/* Daftar Barang Dalam Bon */}
@@ -3562,51 +5294,6 @@ function WarehouseAndProductsPage() {
                   </table>
                 </div>
               </div>
-
-              {/* Box Lampiran Dokumen */}
-              <div className="space-y-1.5">
-                <div className="text-xs font-semibold text-foreground">Dokumen / Bukti Fisik:</div>
-                {selectedTx.document_url ? (
-                  <div className="flex items-center justify-between rounded-lg border border-border bg-surface p-3 text-xs">
-                    <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                      <div className="size-8 rounded bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                        <FileText className="size-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-medium text-foreground truncate max-w-[200px]">
-                          Lampiran Bukti Mutasi
-                        </div>
-                        <div className="text-[10px] text-muted-foreground">Format file tersimpan di cloud storage</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <a
-                        href={selectedTx.document_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface-muted hover:bg-surface-muted/80 text-foreground border border-border text-xs font-medium transition-colors"
-                      >
-                        <ExternalLink className="size-3" />
-                        <span>Buka</span>
-                      </a>
-                      <a
-                        href={selectedTx.document_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        download
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-medium transition-colors shadow-xs"
-                      >
-                        <Download className="size-3" />
-                        <span>Unduh</span>
-                      </a>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-xs text-muted-foreground bg-surface-muted/40 p-3 rounded-lg border border-border text-center">
-                    Tidak ada lampiran dokumen fisik pada mutasi ini.
-                  </div>
-                )}
-              </div>
             </div>
           )}
 
@@ -3622,6 +5309,208 @@ function WarehouseAndProductsPage() {
               >
                 <Download className="size-3.5" />
                 <span>Unduh Dokumen PDF</span>
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── MODAL DIALOG: DETAIL BARANG & SPESIFIKASI BUFFER STOK ─────────────── */}
+      <Dialog open={!!selectedProduct} onOpenChange={(open) => !open && setSelectedProduct(null)}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <div className="flex items-center justify-between gap-2 pr-4">
+              <DialogTitle className="text-base font-bold flex items-center gap-2">
+                <span>Detail Spesifikasi Barang</span>
+                {selectedProduct && (
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {selectedProduct.code || "SPAREPART"}
+                  </Badge>
+                )}
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-xs">
+              Informasi lengkap master sparepart, penempatan rak, dan parameter buffer stok
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedProduct && (() => {
+            const current = selectedProduct.current_stock ?? 0;
+            const minStock = selectedProduct.min_stock ?? 10;
+            const safeStock = (selectedProduct as any).safe_stock ?? 1;
+            const rawMax = (selectedProduct as any).max_stock;
+            const maxStock = rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
+
+            let kondisiText = "SAFETY STOK";
+            let kondisiBadgeClass = "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30";
+            let stokSaatIniBoxClass = "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+
+            if (maxStock !== null && !isNaN(maxStock) && current > maxStock) {
+              kondisiText = "OUT OF STOK";
+              kondisiBadgeClass = "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30";
+              stokSaatIniBoxClass = "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400";
+            } else if (current <= minStock) {
+              kondisiText = "ORDER";
+              kondisiBadgeClass = "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30";
+              stokSaatIniBoxClass = "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400";
+            }
+
+            const isOrder = kondisiText === "ORDER";
+
+            const prNumber = isOrder
+              ? ((selectedProduct as any).pr_number || (() => {
+                  const str = String(selectedProduct.id || selectedProduct.code || selectedProduct.name || "");
+                  let hash = 0;
+                  for (let i = 0; i < str.length; i++) hash = (hash << 5) - hash + str.charCodeAt(i);
+                  return `3110${Math.abs(hash % 900000) + 100000}`;
+                })())
+              : null;
+
+            const formattedDate = selectedProduct.created_at
+              ? new Date(selectedProduct.created_at).toLocaleDateString("id-ID", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })
+              : "23 September 2026";
+
+            return (
+              <div className="space-y-4 py-2 text-xs">
+                {/* Info Utama Layout Baru */}
+                <div className="rounded-lg border border-border bg-surface-muted/40 p-3.5 space-y-3">
+                  {/* 1. Tanggal Input & No. PR Header (Hanya untuk kondisi ORDER) */}
+                  <div className="flex items-center justify-between border-b border-border/60 pb-2 text-[11px]">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <CalendarIcon className="size-3.5 text-primary shrink-0" />
+                      <span>Tanggal Input:</span>
+                      <span className="font-semibold text-foreground">{formattedDate}</span>
+                    </div>
+                    {isOrder && prNumber && (
+                      <div className="flex items-center gap-1.5 text-muted-foreground">
+                        <span>No. PR:</span>
+                        <span className="font-mono font-bold text-foreground bg-primary/10 px-1.5 py-0.5 rounded text-[10px] text-primary">{prNumber}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 2. Nama Material > Kode Material */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">Nama Material / Sparepart:</span>
+                      <span className="text-sm font-bold text-foreground leading-tight block">{selectedProduct.name}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">Kode Material:</span>
+                      <span className="font-mono font-bold text-sm text-foreground">{selectedProduct.code || "—"}</span>
+                    </div>
+                  </div>
+
+                  {/* 3. Status Kondisi (No. PR hanya untuk status ORDER, no.spb dihilangkan) */}
+                  <div className={cn("gap-3 pt-2 border-t border-border/60", isOrder ? "grid grid-cols-2" : "flex items-center")}>
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">Status Kondisi:</span>
+                      <div className="mt-1">
+                        <Badge className={cn("text-[10px] font-bold uppercase", kondisiBadgeClass)}>
+                          {kondisiText}
+                        </Badge>
+                      </div>
+                    </div>
+                    {isOrder && prNumber && (
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">No. PR (Procurement):</span>
+                        <span className="font-mono font-semibold text-foreground block mt-1">{prNumber}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 4. Kategori > Nomor Rak */}
+                  <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border/60">
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">Kategori:</span>
+                      <span className="font-medium text-foreground">{selectedProduct.category || "Sparepart & Tools"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">Shelf / Nomor Rak:</span>
+                      <span className="font-mono font-medium text-foreground">{selectedProduct.shelf || "—"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">Lokasi Gudang:</span>
+                      <span className="font-medium text-foreground">{selectedProduct.location || "Gudang Utama"}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Parameter Buffer Stok */}
+                <div className="space-y-1.5">
+                  <div className="font-semibold text-foreground">Parameter Buffer Stok:</div>
+                  <div className="grid grid-cols-4 gap-2 text-center">
+                    <div className="p-2 rounded border border-border bg-surface">
+                      <div className="text-[10px] text-muted-foreground">Batas Min.</div>
+                      <div className="font-mono font-bold text-sm text-foreground mt-0.5">
+                        {safeStock} {selectedProduct.unit || "pcs"}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded border border-rose-500/30 bg-rose-500/5">
+                      <div className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">Min. Stok (Order)</div>
+                      <div className="font-mono font-bold text-sm text-rose-600 dark:text-rose-400 mt-0.5">
+                        {minStock} {selectedProduct.unit || "pcs"}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded border border-border bg-surface">
+                      <div className="text-[10px] text-muted-foreground">Maks. Stok</div>
+                      <div className="font-mono font-bold text-sm text-foreground mt-0.5">
+                        {maxStock !== null && !isNaN(maxStock) ? `${maxStock} ${selectedProduct.unit || "pcs"}` : "—"}
+                      </div>
+                    </div>
+                    <div className={cn("p-2 rounded border text-center transition-colors", stokSaatIniBoxClass)}>
+                      <div className="text-[10px] font-medium">Stok Saat Ini</div>
+                      <div className="font-mono font-bold text-sm mt-0.5">
+                        {current} {selectedProduct.unit || "pcs"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Deskripsi Tambahan jika ada */}
+                {selectedProduct.description && (
+                  <div className="space-y-1">
+                    <div className="font-semibold text-foreground">Deskripsi / Catatan Teknis:</div>
+                    <p className="p-2.5 rounded border border-border bg-surface text-muted-foreground leading-relaxed">
+                      {selectedProduct.description}
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          <DialogFooter className="flex flex-col-reverse sm:flex-row justify-between sm:justify-end items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setSelectedProduct(null)}>
+              Tutup
+            </Button>
+            {selectedProduct && canManageWarehouse && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setEditingItem(selectedProduct);
+                  setSelectedProduct(null);
+                }}
+                className="gap-1.5 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/60 font-medium text-xs"
+                title="Edit data master barang & batas stok"
+              >
+                <Pencil className="size-3.5 text-amber-600 dark:text-amber-400" />
+                <span>Edit Barang</span>
+              </Button>
+            )}
+            {selectedProduct && (
+              <Button
+                size="sm"
+                onClick={() => downloadProductPDF(selectedProduct)}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs gap-1.5"
+              >
+                <Download className="size-3.5" />
+                <span>Unduh Kartu Kontrol PDF</span>
               </Button>
             )}
           </DialogFooter>

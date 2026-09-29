@@ -9,6 +9,7 @@ import {
   ClipboardCheck,
   Package,
   Shield,
+  ShieldAlert,
   Users,
   CheckCircle2,
   Clock,
@@ -27,6 +28,9 @@ import {
   Eye,
   Download,
   ExternalLink,
+  Layers,
+  Activity,
+  BoxIcon,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -37,6 +41,9 @@ import {
   Tooltip as RechartsTooltip,
   CartesianGrid,
   Cell,
+  PieChart,
+  Pie,
+  Legend,
 } from "recharts";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
@@ -100,9 +107,29 @@ type Activity = {
   created_at: string;
 };
 
+// Tipe data Buffer Stok — tabel terpisah dari OBS Sparepart (mirrored from products.tsx)
+type BufferStockItem = {
+  id: string;
+  name: string;
+  code: string | null;
+  unit?: string | null;
+  location?: string | null;
+  shelf?: string | null;
+  min_stock?: number | null;
+  safe_stock?: number | null;
+  max_stock?: number | null;
+  current_stock?: number | null;
+  description?: string | null;
+  image_url?: string | null;
+  doc_url?: string | null;
+  is_active: boolean;
+  created_at?: string;
+};
+
 function DashboardPage() {
   const { profile, roles, isAdmin } = useCurrentUser();
   const [selectedTx, setSelectedTx] = useState<any | null>(null);
+  const [stockStatusTab, setStockStatusTab] = useState<"limit" | "habis" | "aman" | "all">("limit");
 
   // Queries
   const formulasi = useQuery({ queryKey: ["formulasi"], queryFn: fetchFormulasi });
@@ -138,6 +165,24 @@ function DashboardPage() {
       }[];
     },
   });
+
+  // ── QUERY DATA BUFFER STOK (TABEL SENDIRI, INDEPENDEN) ────────────────────────
+  const bufferStockQuery = useQuery({
+    queryKey: ["buffer_stock"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("buffer_stock")
+        .select("*")
+        .order("name");
+      if (error) {
+        if (error.message?.includes("does not exist") || error.code === "42P01") return [];
+        throw error;
+      }
+      return (data ?? []) as BufferStockItem[];
+    },
+  });
+  const allBufferItems = bufferStockQuery.data ?? [];
+  const activeBufferItems = allBufferItems.filter((b) => b.is_active);
 
   const txData = warehouseTx.data ?? [];
   const barangMasukCount = txData.filter((t) => t.tx_type === "IN").length;
@@ -271,13 +316,586 @@ function DashboardPage() {
           )}
         </svg>
         <div className="absolute flex flex-col items-center justify-center text-center">
-          <span className="font-mono text-base font-bold leading-tight text-foreground">
-            {availablePct}%
+          <span className="font-mono text-base font-bold leading-tight text-emerald-600 dark:text-emerald-400">
+            {safePct}%
           </span>
-          <span className="text-[8.5px] font-medium text-muted-foreground uppercase tracking-wider">
-            Tersedia
+          <span className="text-[8.5px] font-semibold text-muted-foreground uppercase tracking-wider">
+            Stok Aman
           </span>
         </div>
+      </div>
+    );
+  };
+
+  // Render Card Diagram & Analisis Status Barang OBS yang Rapi & Terbaca Jelas
+  const renderStockAnalysisCard = () => {
+    const getDisplayedList = () => {
+      switch (stockStatusTab) {
+        case "habis":
+          return {
+            items: zeroProductsList,
+            label: "Barang Stok Habis",
+            colorClass: "text-rose-600 dark:text-rose-400",
+            badgeClass: "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30",
+            emptyText: "✓ Tidak ada barang stok kosong (0 pcs).",
+          };
+        case "limit":
+          return {
+            items: limitOnlyProductsList,
+            label: "Barang Stok Limit / Kritis",
+            colorClass: "text-amber-600 dark:text-amber-400",
+            badgeClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
+            emptyText: "✓ Tidak ada barang stok limit / kritis.",
+          };
+        case "aman":
+          return {
+            items: safeProductsList,
+            label: "Barang Stok Aman / Normal",
+            colorClass: "text-emerald-600 dark:text-emerald-400",
+            badgeClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+            emptyText: "Tidak ada data barang aman.",
+          };
+        case "all":
+        default:
+          return {
+            items: activeProducts,
+            label: "Semua Barang OBS Sparepart",
+            colorClass: "text-blue-600 dark:text-blue-400",
+            badgeClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
+            emptyText: "Tidak ada data barang aktif.",
+          };
+      }
+    };
+
+    const currentTabInfo = getDisplayedList();
+
+    return (
+      <div className="rise-in border border-border bg-surface p-5 flex flex-col justify-between h-full shadow-xs space-y-4">
+        <div>
+          {/* Header & Donut */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-border pb-3.5 gap-4">
+            <div className="flex items-center gap-4">
+              {/* Diagram Donat Persentase Status All Barang */}
+              {renderStockDonut()}
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold tracking-tight flex items-center gap-2">
+                    <span className="label-caps !p-0">Diagram & Analisis Status Barang & Sparepart</span>
+                  </h3>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-surface-muted border border-border text-muted-foreground">
+                    {totalActiveProducts} Total Item
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Tingkat ketersediaan & proporsi status stok sparepart aktif di lini gudang
+                </p>
+                {/* Legend Persentase 3 Status */}
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                    <span className="size-2 rounded-full bg-emerald-500" />
+                    Aman: {nonLimitProductsCount} ({safePct}%)
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    <span className="size-2 rounded-full bg-amber-500" />
+                    Limit / Kritis: {limitOnlyCount} ({limitOnlyPct}%)
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                    <span className="size-2 rounded-full bg-rose-500" />
+                    Habis (0): {zeroProductsCount} ({zeroPct}%)
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bar Visual Progress Segmented */}
+          <div className="mt-3.5 space-y-1.5">
+            <div className="w-full bg-surface-muted rounded-full h-2.5 overflow-hidden flex shadow-inner">
+              <div
+                style={{ width: `${safePct}%` }}
+                className="bg-emerald-500 h-full transition-all"
+                title={`Aman: ${nonLimitProductsCount} (${safePct}%)`}
+              />
+              <div
+                style={{ width: `${limitOnlyPct}%` }}
+                className="bg-amber-500 h-full transition-all"
+                title={`Limit: ${limitOnlyCount} (${limitOnlyPct}%)`}
+              />
+              <div
+                style={{ width: `${zeroPct}%` }}
+                className="bg-rose-500 h-full transition-all"
+                title={`Habis: ${zeroProductsCount} (${zeroPct}%)`}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Tab Filter Button & Daftar Barang Rapi & Terbaca Jelas */}
+        <div className="pt-2 border-t border-border space-y-2.5 flex-1 flex flex-col justify-between">
+          {/* Tab Button Group */}
+          <div className="flex flex-wrap items-center justify-between gap-1.5 bg-surface-muted/60 p-1 rounded-lg border border-border">
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setStockStatusTab("limit")}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                  stockStatusTab === "limit"
+                    ? "bg-amber-500 text-white shadow-xs"
+                    : "text-muted-foreground hover:bg-surface hover:text-foreground"
+                )}
+              >
+                <AlertTriangle className="size-3 shrink-0" />
+                <span>Limit / Kritis</span>
+                <span className={cn(
+                  "font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+                  stockStatusTab === "limit" ? "bg-amber-700/60 text-white" : "bg-surface border border-border text-amber-600 dark:text-amber-400"
+                )}>
+                  {limitOnlyCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStockStatusTab("habis")}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                  stockStatusTab === "habis"
+                    ? "bg-rose-500 text-white shadow-xs"
+                    : "text-muted-foreground hover:bg-surface hover:text-foreground"
+                )}
+              >
+                <AlertCircle className="size-3 shrink-0" />
+                <span>Habis (0)</span>
+                <span className={cn(
+                  "font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+                  stockStatusTab === "habis" ? "bg-rose-700/60 text-white" : "bg-surface border border-border text-rose-600 dark:text-rose-400"
+                )}>
+                  {zeroProductsCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStockStatusTab("aman")}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer",
+                  stockStatusTab === "aman"
+                    ? "bg-emerald-600 text-white shadow-xs"
+                    : "text-muted-foreground hover:bg-surface hover:text-foreground"
+                )}
+              >
+                <CheckCircle2 className="size-3 shrink-0" />
+                <span>Aman</span>
+                <span className={cn(
+                  "font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold",
+                  stockStatusTab === "aman" ? "bg-emerald-800/60 text-white" : "bg-surface border border-border text-emerald-600 dark:text-emerald-400"
+                )}>
+                  {nonLimitProductsCount}
+                </span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setStockStatusTab("all")}
+              className={cn(
+                "flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-all cursor-pointer",
+                stockStatusTab === "all"
+                  ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                  : "text-muted-foreground hover:bg-surface hover:text-foreground"
+              )}
+            >
+              <span>Semua ({totalActiveProducts})</span>
+            </button>
+          </div>
+
+          {/* List Barang yang Luas, Rapi, & Terbaca Jelas */}
+          <div className="h-44 overflow-y-auto space-y-1.5 pr-1">
+            {currentTabInfo.items.length > 0 ? (
+              currentTabInfo.items.map((p) => {
+                const isZero = (p.current_stock ?? 0) <= 0;
+                const isLow = !isZero && (p.current_stock ?? 0) <= (p.min_stock ?? 10);
+                return (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between gap-3 p-2 rounded border bg-surface hover:bg-surface-muted/50 border-border/80 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-xs text-foreground truncate" title={p.name}>
+                        {p.name}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                        <span className="font-mono bg-surface-muted px-1.5 py-0.2 rounded border border-border/60">
+                          {p.code || "No SKU"}
+                        </span>
+                        {(p as any).location && (
+                          <span className="text-[10px]">Lokasi: {(p as any).location}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0 flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "font-mono text-xs font-bold px-2 py-0.5 rounded border",
+                          isZero
+                            ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/30"
+                            : isLow
+                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                            : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                        )}
+                      >
+                        {p.current_stock ?? 0} {p.unit || "pcs"}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">
+                        Min: {p.min_stock ?? 10}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 border border-emerald-500/15 p-4 rounded text-center my-auto flex items-center justify-center gap-1.5">
+                {currentTabInfo.emptyText}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── ANALISIS GABUNGAN OBS + BUFFER STOCK ─────────────────────────────────────
+  const combinedAnalysis = useMemo(() => {
+    // Klasifikasi Buffer Stock (sama seperti OBS)
+    const bufferZero = activeBufferItems.filter((b) => (b.current_stock ?? 0) <= 0);
+    const bufferLimit = activeBufferItems.filter(
+      (b) => (b.current_stock ?? 0) > 0 && (b.current_stock ?? 0) <= (b.min_stock ?? 10)
+    );
+    const bufferSafe = activeBufferItems.filter(
+      (b) => (b.current_stock ?? 0) > (b.min_stock ?? 10)
+    );
+
+    // Total gabungan
+    const totalOBS = totalActiveProducts;
+    const totalBuffer = activeBufferItems.length;
+    const totalGabungan = totalOBS + totalBuffer;
+
+    // Status gabungan
+    const gabunganAman = nonLimitProductsCount + bufferSafe.length;
+    const gabunganLimit = limitOnlyCount + bufferLimit.length;
+    const gabunganHabis = zeroProductsCount + bufferZero.length;
+
+    // Total stok fisik gabungan
+    const totalStokOBS = activeProducts.reduce((sum, p) => sum + (p.current_stock ?? 0), 0);
+    const totalStokBuffer = activeBufferItems.reduce((sum, b) => sum + (b.current_stock ?? 0), 0);
+    const totalStokGabungan = totalStokOBS + totalStokBuffer;
+
+    // Persentase
+    const pctAman = totalGabungan > 0 ? Math.round((gabunganAman / totalGabungan) * 100) : 0;
+    const pctLimit = totalGabungan > 0 ? Math.round((gabunganLimit / totalGabungan) * 100) : 0;
+    const pctHabis = totalGabungan > 0 ? Math.max(0, 100 - pctAman - pctLimit) : 0;
+    const pctKetersediaan = totalGabungan > 0 ? Math.round(((totalGabungan - gabunganHabis) / totalGabungan) * 100) : 0;
+
+    // Pie chart data: distribusi sumber
+    const sourceData = [
+      { name: "OBS Sparepart", value: totalOBS, color: "#2563eb" },
+      { name: "Buffer Stok", value: totalBuffer, color: "#f97316" },
+    ];
+
+    // Pie chart data: status gabungan
+    const statusData = [
+      { name: "Aman", value: gabunganAman, color: "#10b981", pct: pctAman },
+      { name: "Limit / Kritis", value: gabunganLimit, color: "#f59e0b", pct: pctLimit },
+      { name: "Habis (0)", value: gabunganHabis, color: "#ef4444", pct: pctHabis },
+    ].filter((d) => d.value > 0);
+
+    // Pie chart data: status OBS Sparepart
+    const obsStatusData = [
+      { name: "Aman", value: nonLimitProductsCount, color: "#10b981", pct: safePct },
+      { name: "Limit / Kritis", value: limitOnlyCount, color: "#f59e0b", pct: limitOnlyPct },
+      { name: "Habis (0)", value: zeroProductsCount, color: "#ef4444", pct: zeroPct },
+    ].filter((d) => d.value > 0);
+
+    // Horizontal bar chart data: perbandingan OBS vs Buffer per status
+    const comparisonData = [
+      { name: "Aman", obs: nonLimitProductsCount, buffer: bufferSafe.length, color: "#10b981" },
+      { name: "Limit", obs: limitOnlyCount, buffer: bufferLimit.length, color: "#f59e0b" },
+      { name: "Habis", obs: zeroProductsCount, buffer: bufferZero.length, color: "#ef4444" },
+    ];
+
+    return {
+      totalOBS, totalBuffer, totalGabungan,
+      gabunganAman, gabunganLimit, gabunganHabis,
+      totalStokOBS, totalStokBuffer, totalStokGabungan,
+      pctAman, pctLimit, pctHabis, pctKetersediaan,
+      sourceData, statusData, obsStatusData, comparisonData,
+      bufferZero, bufferLimit, bufferSafe,
+    };
+  }, [activeProducts, activeBufferItems, totalActiveProducts, nonLimitProductsCount, limitOnlyCount, zeroProductsCount, safePct, limitOnlyPct, zeroPct]);
+
+  // Render Panel Analisis Keseluruhan OBS + Buffer Stock
+  const renderCombinedAnalysisPanel = () => {
+    const ca = combinedAnalysis;
+    if (ca.totalGabungan === 0) return null;
+
+    const RADIAN = Math.PI / 180;
+    const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+      const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+      const x = cx + radius * Math.cos(-midAngle * RADIAN);
+      const y = cy + radius * Math.sin(-midAngle * RADIAN);
+      if (percent < 0.05) return null;
+      return (
+        <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700}>
+          {`${(percent * 100).toFixed(0)}%`}
+        </text>
+      );
+    };
+
+    return (
+      <div className="border border-border bg-surface p-5 rounded-none shadow-xs space-y-5">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Layers className="size-4 text-primary shrink-0" />
+              <h3 className="text-sm font-bold tracking-tight text-foreground uppercase">
+                Analisis Keseluruhan Barang OBS & Buffer Stok
+              </h3>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Ringkasan & diagram analisis gabungan dari seluruh barang OBS Sparepart + Buffer Stok.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+              OBS: {ca.totalOBS}
+            </span>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20">
+              Buffer: {ca.totalBuffer}
+            </span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-surface-muted border border-border text-foreground">
+              Total: {ca.totalGabungan}
+            </span>
+          </div>
+        </div>
+
+        {/* Panel A — 4 Stat Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="bg-gradient-to-br from-blue-500/10 to-blue-500/5 border border-blue-500/20 rounded-lg p-3.5 space-y-1">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+              <BoxIcon className="size-3.5" />
+              Total Item Gabungan
+            </div>
+            <div className="text-2xl font-mono font-extrabold text-foreground">{ca.totalGabungan}</div>
+            <div className="text-[10px] text-muted-foreground">
+              OBS: {ca.totalOBS} · Buffer: {ca.totalBuffer}
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 border border-cyan-500/20 rounded-lg p-3.5 space-y-1">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+              <Activity className="size-3.5" />
+              Total Stok Fisik
+            </div>
+            <div className="text-2xl font-mono font-extrabold text-foreground">{ca.totalStokGabungan.toLocaleString("id-ID")}</div>
+            <div className="text-[10px] text-muted-foreground">
+              OBS: {ca.totalStokOBS.toLocaleString("id-ID")} · Buffer: {ca.totalStokBuffer.toLocaleString("id-ID")}
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/20 rounded-lg p-3.5 space-y-1">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="size-3.5" />
+              Rasio Stok Aman
+            </div>
+            <div className="text-2xl font-mono font-extrabold text-emerald-600 dark:text-emerald-400">{ca.pctAman}%</div>
+            <div className="text-[10px] text-muted-foreground">
+              {ca.gabunganAman} dari {ca.totalGabungan} item stok normal/lebih
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-amber-500/10 to-amber-500/5 border border-amber-500/20 rounded-lg p-3.5 space-y-1">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="size-3.5" />
+              Perlu Perhatian (Limit & Habis)
+            </div>
+            <div className="text-2xl font-mono font-extrabold text-amber-600 dark:text-amber-400">{ca.pctLimit + ca.pctHabis}%</div>
+            <div className="text-[10px] text-muted-foreground">
+              {ca.gabunganLimit + ca.gabunganHabis} item ({ca.gabunganLimit} limit + {ca.gabunganHabis} habis)
+            </div>
+          </div>
+        </div>
+
+        {/* Panel B + C — Pie Charts */}
+        <div className="grid md:grid-cols-2 gap-4">
+          {/* Pie Chart: Distribusi Sumber */}
+          <div className="bg-surface-muted/30 border border-border rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Package className="size-3.5 text-blue-500" />
+              <h4 className="text-xs font-bold uppercase text-foreground">Distribusi Sumber Barang</h4>
+            </div>
+            <div className="h-52">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={ca.sourceData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={45}
+                    outerRadius={75}
+                    paddingAngle={3}
+                    dataKey="value"
+                    labelLine={false}
+                    label={renderCustomLabel}
+                  >
+                    {ca.sourceData.map((entry, index) => (
+                      <Cell key={`source-${index}`} fill={entry.color} stroke="none" />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length && payload[0]?.payload) {
+                        const d = payload[0].payload;
+                        const pct = ca.totalGabungan > 0 ? Math.round((d.value / ca.totalGabungan) * 100) : 0;
+                        return (
+                          <div className="rounded border border-border bg-surface p-2 shadow-md text-xs space-y-0.5">
+                            <p className="font-bold" style={{ color: d.color }}>{d.name}</p>
+                            <p className="text-foreground font-mono">{d.value} item ({pct}%)</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={30}
+                    formatter={(value: string) => <span className="text-xs text-foreground">{value}</span>}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Pie Chart: Status Stok OBS Sparepart */}
+          <div className="bg-surface-muted/30 border border-border rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <BarChart3 className="size-3.5 text-emerald-500" />
+              <h4 className="text-xs font-bold uppercase text-foreground">Status Stok OBS Sparepart</h4>
+            </div>
+            <div className="h-52 relative flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={ca.obsStatusData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={48}
+                    outerRadius={75}
+                    paddingAngle={3}
+                    dataKey="value"
+                    labelLine={false}
+                    label={renderCustomLabel}
+                  >
+                    {ca.obsStatusData.map((entry, index) => (
+                      <Cell key={`status-${index}`} fill={entry.color} stroke="none" />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length && payload[0]?.payload) {
+                        const d = payload[0].payload;
+                        return (
+                          <div className="rounded border border-border bg-surface p-2 shadow-md text-xs space-y-0.5">
+                            <p className="font-bold" style={{ color: d.color }}>{d.name}</p>
+                            <p className="text-foreground font-mono">{d.value} item ({d.pct}% dari {totalActiveProducts} item OBS)</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={36}
+                    formatter={(value: string) => {
+                      const item = ca.obsStatusData.find((s) => s.name === value);
+                      return (
+                        <span className="text-xs text-foreground font-medium">
+                          {value} {item ? `(${item.value} item · ${item.pct}%)` : ""}
+                        </span>
+                      );
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center text-center pointer-events-none">
+                <span className="font-mono text-base font-bold leading-tight text-emerald-600 dark:text-emerald-400">
+                  {safePct}%
+                </span>
+                <span className="text-[8.5px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Stok Aman
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Panel D — Horizontal Bar Chart Perbandingan OBS vs Buffer per Status */}
+        <div className="bg-surface-muted/30 border border-border rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <BarChart3 className="size-3.5 text-violet-500" />
+            <h4 className="text-xs font-bold uppercase text-foreground">Perbandingan OBS vs Buffer per Status</h4>
+          </div>
+          <div className="h-48">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={ca.comparisonData}
+                layout="vertical"
+                margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" opacity={0.6} />
+                <XAxis type="number" tick={{ fontSize: 11, fill: "#64748b" }} stroke="#cbd5e1" allowDecimals={false} />
+                <YAxis
+                  dataKey="name"
+                  type="category"
+                  tick={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
+                  stroke="#cbd5e1"
+                  width={50}
+                />
+                <RechartsTooltip
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      return (
+                        <div className="rounded border border-border bg-surface p-2.5 shadow-md text-xs space-y-1">
+                          <p className="font-bold text-foreground">{label}</p>
+                          {payload.map((p: any) => (
+                            <div key={p.dataKey} className="flex items-center gap-2">
+                              <span
+                                className="size-2 rounded-full shrink-0"
+                                style={{ backgroundColor: p.fill || p.color }}
+                              />
+                              <span className="text-muted-foreground">{p.name}:</span>
+                              <span className="font-mono font-bold text-foreground">{p.value} item</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Bar dataKey="obs" name="OBS Sparepart" fill="#2563eb" radius={[0, 4, 4, 0]} maxBarSize={24} />
+                <Bar dataKey="buffer" name="Buffer Stok" fill="#f97316" radius={[0, 4, 4, 0]} maxBarSize={24} />
+                <Legend
+                  verticalAlign="top"
+                  height={30}
+                  formatter={(value: string) => <span className="text-xs text-foreground">{value}</span>}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+
       </div>
     );
   };
@@ -372,55 +990,48 @@ function DashboardPage() {
     if (activeProducts.length === 0) return null;
 
     return (
-      <div className="border border-border bg-surface p-5 rounded-none shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <Wrench className="size-4 text-primary shrink-0" />
-              <h3 className="text-sm font-bold tracking-tight text-foreground uppercase">
-                TOP 10 OUTGOING SPAREPART
-              </h3>
+      <div className="rise-in border border-border bg-surface p-5 flex flex-col justify-between h-full shadow-xs space-y-4">
+        <div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Wrench className="size-4 text-primary shrink-0" />
+                <h3 className="text-sm font-bold tracking-tight text-foreground uppercase">
+                  TOP 10 OUTGOING SPAREPART
+                </h3>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Menampilkan sparepart yang paling sering muncul dalam catatan barang keluar berdasarkan frekuensi transaksi.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Menampilkan sparepart yang paling sering muncul dalam catatan barang keluar berdasarkan frekuensi transaksi.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-4 text-xs">
-            <span
-              className="inline-flex items-center gap-1.5 text-muted-foreground"
-              title="Stok masih aman."
-            >
-              <span className="font-semibold text-foreground">🟢 Normal</span>
-              <span className="text-[11px] text-muted-foreground">"Stok masih aman."</span>
-            </span>
-            <span
-              className="inline-flex items-center gap-1.5 text-muted-foreground"
-              title="Stok sudah mencapai batas minimum."
-            >
-              <span className="font-semibold text-foreground">🟡 Low Stock</span>
-              <span className="text-[11px] text-muted-foreground">"Stok sudah mencapai batas minimum."</span>
-            </span>
-            <span
-              className="inline-flex items-center gap-1.5 text-muted-foreground"
-              title="Stok sangat rendah / habis."
-            >
-              <span className="font-semibold text-foreground">🔴 Critical Stock</span>
-              <span className="text-[11px] text-muted-foreground">"Stok sangat rendah / habis."</span>
-            </span>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                <span className="size-2 rounded-full bg-emerald-500" />
+                Normal
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                <span className="size-2 rounded-full bg-amber-500" />
+                Low Stock
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                <span className="size-2 rounded-full bg-rose-500" />
+                Critical
+              </span>
+            </div>
           </div>
         </div>
 
-        <div className="h-64 w-full pt-2">
+        <div className="h-64 sm:h-72 w-full pt-2 flex-1 min-h-[250px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={inventoryChartData}
-              margin={{ top: 10, right: 15, left: -10, bottom: 25 }}
+              margin={{ top: 10, right: 15, left: -15, bottom: 35 }}
             >
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.6} />
               <XAxis
                 dataKey="name"
-                tick={{ fontSize: 11, fill: "#64748b" }}
-                angle={-15}
+                tick={{ fontSize: 10, fill: "#64748b" }}
+                angle={-20}
                 textAnchor="end"
                 interval={0}
                 stroke="#cbd5e1"
@@ -785,7 +1396,7 @@ function DashboardPage() {
           tx.notes
             ? `
           <div class="notes-card">
-            <div class="meta-label" style="margin-bottom: 4px;">Petugas Sparepart / Catatan:</div>
+            <div class="meta-label" style="margin-bottom: 4px;">Petugas Sparepart Shift 1/2/3:</div>
             <div style="font-size: 12px; color: #334155;">${tx.notes}</div>
           </div>
         `
@@ -1178,189 +1789,17 @@ function DashboardPage() {
 
       {(userRole === "admin" || isAdmin) && (
         <div className="space-y-6">
-          {/* Section Atas: Status Stok Barang yang Luas & Detail */}
-          <div className="w-full">
-            {/* Layout Status Stok Barang yang Luas & Detail */}
-            <div className="rise-in border border-border bg-surface p-5 flex flex-col justify-between">
-              <div>
-                <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-border pb-3.5 gap-4">
-                  <div className="flex items-center gap-4">
-                    {/* Diagram Donat Persentase Status All Barang */}
-                    {renderStockDonut()}
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold tracking-tight flex items-center gap-2">
-                          <span className="label-caps !p-0">Diagram & Analisis Status Barang</span>
-                        </h3>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-surface-muted border border-border text-muted-foreground">
-                          {totalActiveProducts} Total Item
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Tingkat ketersediaan & proporsi status stok sparepart aktif di gudang
-                      </p>
-                      {/* Legend Persentase 3 Status */}
-                      <div className="flex flex-wrap items-center gap-2 mt-2">
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                          <span className="size-2 rounded-full bg-emerald-500" />
-                          Aman: {nonLimitProductsCount} ({safePct}%)
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                          <span className="size-2 rounded-full bg-amber-500" />
-                          Limit / Kritis: {limitOnlyCount} ({limitOnlyPct}%)
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
-                          <span className="size-2 rounded-full bg-rose-500" />
-                          Habis (0): {zeroProductsCount} ({zeroPct}%)
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+          {/* Section: Status Stok Barang & TOP 10 Outgoing Berdampingan */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
+            {/* Card 1: Diagram & Analisis Status Barang & Sparepart */}
+            {renderStockAnalysisCard()}
 
-                {/* Bar Visual Progress Segmented */}
-                <div className="mt-3.5 space-y-1.5">
-                  <div className="w-full bg-surface-muted rounded-full h-2.5 overflow-hidden flex shadow-inner">
-                    <div
-                      style={{ width: `${safePct}%` }}
-                      className="bg-emerald-500 h-full transition-all"
-                      title={`Aman: ${nonLimitProductsCount} (${safePct}%)`}
-                    />
-                    <div
-                      style={{ width: `${limitOnlyPct}%` }}
-                      className="bg-amber-500 h-full transition-all"
-                      title={`Limit: ${limitOnlyCount} (${limitOnlyPct}%)`}
-                    />
-                    <div
-                      style={{ width: `${zeroPct}%` }}
-                      className="bg-rose-500 h-full transition-all"
-                      title={`Habis: ${zeroProductsCount} (${zeroPct}%)`}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 3 Kolom Komprehensif: Daftar Barang Habis, Barang Limit & Daftar Barang Aman */}
-              <div className="grid sm:grid-cols-3 gap-3.5 mt-4 pt-3 border-t border-border">
-                {/* Kolom 1: Barang Habis (0 pcs) */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                      <AlertCircle className="size-3.5" />
-                      Daftar Barang Habis ({zeroProductsList.length})
-                    </span>
-                    <span className="text-[10px] text-muted-foreground font-medium">Stok 0</span>
-                  </div>
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {zeroProductsList.length > 0 ? (
-                      zeroProductsList.map((p) => (
-                        <div
-                          key={p.id}
-                          className="flex items-center justify-between gap-2 text-xs bg-rose-500/10 hover:bg-rose-500/15 p-2 rounded border border-rose-500/25 transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <p className="font-medium text-foreground truncate">{p.name}</p>
-                            <p className="text-[10px] text-muted-foreground font-mono">{p.code || "No SKU"}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="font-mono text-rose-600 dark:text-rose-400 font-bold">
-                              0 {p.unit || "pcs"}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground ml-1">
-                              / min {p.min_stock ?? 10}
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 border border-emerald-500/15 p-2.5 rounded text-center">
-                        ✓ Tidak ada barang stok kosong.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Kolom 2: Barang Limit / Kritis */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                      <AlertTriangle className="size-3.5" />
-                      Daftar Barang Limit ({limitOnlyProductsList.length})
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">Stok ≤ Min</span>
-                  </div>
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {limitOnlyProductsList.length > 0 ? (
-                      limitOnlyProductsList.map((p) => (
-                        <div
-                          key={p.id}
-                          className="flex items-center justify-between gap-2 text-xs bg-amber-500/5 hover:bg-amber-500/10 p-2 rounded border border-amber-500/20 transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <p className="font-medium text-foreground truncate">{p.name}</p>
-                            <p className="text-[10px] text-muted-foreground font-mono">{p.code || "No SKU"}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="font-mono text-amber-600 dark:text-amber-400 font-bold">
-                              {p.current_stock ?? 0}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground ml-1">
-                              / min {p.min_stock ?? 10}
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 border border-emerald-500/15 p-2.5 rounded text-center">
-                        ✓ Tidak ada stok limit.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Kolom 3: Barang Aman */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 className="size-3.5" />
-                      Daftar Barang Aman ({safeProductsList.length})
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">Stok Normal</span>
-                  </div>
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {safeProductsList.length > 0 ? (
-                      safeProductsList.map((p) => (
-                        <div
-                          key={p.id}
-                          className="flex items-center justify-between gap-2 text-xs bg-surface-muted/50 hover:bg-surface-muted p-2 rounded border border-border transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <p className="font-medium text-foreground truncate">{p.name}</p>
-                            <p className="text-[10px] text-muted-foreground font-mono">{p.code || "No SKU"}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                              {p.current_stock ?? 0}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground ml-1">
-                              (Min {p.min_stock ?? 10})
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-xs text-muted-foreground text-center p-2.5">
-                        Tidak ada barang aktif.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+            {/* Card 2: TOP 10 OUTGOING SPAREPART */}
+            {renderInventoryChartPanel()}
           </div>
 
-          {/* Diagram Inventory Stok Sparepart */}
-          {renderInventoryChartPanel()}
+          {/* Diagram Analisis Keseluruhan OBS + Buffer Stock */}
+          {renderCombinedAnalysisPanel()}
 
           {/* Section Bawah: Aktivitas Mutasi Gudang */}
           <Panel
@@ -1509,189 +1948,17 @@ function DashboardPage() {
 
       {userRole === "qc_field" && (
         <div className="space-y-6">
-          {/* Section Atas: Status Stok Barang yang Luas & Detail */}
-          <div className="w-full">
-            {/* Layout Status Stok Barang yang Luas & Detail */}
-            <div className="rise-in border border-border bg-surface p-5 flex flex-col justify-between">
-              <div>
-                <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-border pb-3.5 gap-4">
-                  <div className="flex items-center gap-4">
-                    {/* Diagram Donat Persentase Status All Barang */}
-                    {renderStockDonut()}
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold tracking-tight flex items-center gap-2">
-                          <span className="label-caps !p-0">Diagram & Analisis Status Barang</span>
-                        </h3>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-surface-muted border border-border text-muted-foreground">
-                          {totalActiveProducts} Total Item
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Tingkat ketersediaan & proporsi status stok sparepart aktif di gudang
-                      </p>
-                      {/* Legend Persentase 3 Status */}
-                      <div className="flex flex-wrap items-center gap-2 mt-2">
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                          <span className="size-2 rounded-full bg-emerald-500" />
-                          Aman: {nonLimitProductsCount} ({safePct}%)
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                          <span className="size-2 rounded-full bg-amber-500" />
-                          Limit / Kritis: {limitOnlyCount} ({limitOnlyPct}%)
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
-                          <span className="size-2 rounded-full bg-rose-500" />
-                          Habis (0): {zeroProductsCount} ({zeroPct}%)
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+          {/* Section: Status Stok Barang & TOP 10 Outgoing Berdampingan */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
+            {/* Card 1: Diagram & Analisis Status Barang & Sparepart */}
+            {renderStockAnalysisCard()}
 
-                {/* Bar Visual Progress Segmented */}
-                <div className="mt-3.5 space-y-1.5">
-                  <div className="w-full bg-surface-muted rounded-full h-2.5 overflow-hidden flex shadow-inner">
-                    <div
-                      style={{ width: `${safePct}%` }}
-                      className="bg-emerald-500 h-full transition-all"
-                      title={`Aman: ${nonLimitProductsCount} (${safePct}%)`}
-                    />
-                    <div
-                      style={{ width: `${limitOnlyPct}%` }}
-                      className="bg-amber-500 h-full transition-all"
-                      title={`Limit: ${limitOnlyCount} (${limitOnlyPct}%)`}
-                    />
-                    <div
-                      style={{ width: `${zeroPct}%` }}
-                      className="bg-rose-500 h-full transition-all"
-                      title={`Habis: ${zeroProductsCount} (${zeroPct}%)`}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 3 Kolom Komprehensif: Daftar Barang Habis, Barang Limit & Daftar Barang Aman */}
-              <div className="grid sm:grid-cols-3 gap-3.5 mt-4 pt-3 border-t border-border">
-                {/* Kolom 1: Barang Habis (0 pcs) */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                      <AlertCircle className="size-3.5" />
-                      Daftar Barang Habis ({zeroProductsList.length})
-                    </span>
-                    <span className="text-[10px] text-muted-foreground font-medium">Stok 0</span>
-                  </div>
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {zeroProductsList.length > 0 ? (
-                      zeroProductsList.map((p) => (
-                        <div
-                          key={p.id}
-                          className="flex items-center justify-between gap-2 text-xs bg-rose-500/10 hover:bg-rose-500/15 p-2 rounded border border-rose-500/25 transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <p className="font-medium text-foreground truncate">{p.name}</p>
-                            <p className="text-[10px] text-muted-foreground font-mono">{p.code || "No SKU"}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="font-mono text-rose-600 dark:text-rose-400 font-bold">
-                              0 {p.unit || "pcs"}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground ml-1">
-                              / min {p.min_stock ?? 10}
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 border border-emerald-500/15 p-2.5 rounded text-center">
-                        ✓ Tidak ada barang stok kosong.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Kolom 2: Barang Limit / Kritis */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                      <AlertTriangle className="size-3.5" />
-                      Daftar Barang Limit ({limitOnlyProductsList.length})
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">Stok ≤ Min</span>
-                  </div>
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {limitOnlyProductsList.length > 0 ? (
-                      limitOnlyProductsList.map((p) => (
-                        <div
-                          key={p.id}
-                          className="flex items-center justify-between gap-2 text-xs bg-amber-500/5 hover:bg-amber-500/10 p-2 rounded border border-amber-500/20 transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <p className="font-medium text-foreground truncate">{p.name}</p>
-                            <p className="text-[10px] text-muted-foreground font-mono">{p.code || "No SKU"}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="font-mono text-amber-600 dark:text-amber-400 font-bold">
-                              {p.current_stock ?? 0}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground ml-1">
-                              / min {p.min_stock ?? 10}
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 border border-emerald-500/15 p-2.5 rounded text-center">
-                        ✓ Tidak ada stok limit.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Kolom 3: Barang Aman */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 className="size-3.5" />
-                      Daftar Barang Aman ({safeProductsList.length})
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">Stok Normal</span>
-                  </div>
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {safeProductsList.length > 0 ? (
-                      safeProductsList.map((p) => (
-                        <div
-                          key={p.id}
-                          className="flex items-center justify-between gap-2 text-xs bg-surface-muted/50 hover:bg-surface-muted p-2 rounded border border-border transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <p className="font-medium text-foreground truncate">{p.name}</p>
-                            <p className="text-[10px] text-muted-foreground font-mono">{p.code || "No SKU"}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                              {p.current_stock ?? 0}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground ml-1">
-                              (Min {p.min_stock ?? 10})
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-xs text-muted-foreground text-center p-2.5">
-                        Tidak ada barang aktif.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+            {/* Card 2: TOP 10 OUTGOING SPAREPART */}
+            {renderInventoryChartPanel()}
           </div>
 
-          {/* Diagram Inventory Stok Sparepart */}
-          {renderInventoryChartPanel()}
+          {/* Diagram Analisis Keseluruhan OBS + Buffer Stock */}
+          {renderCombinedAnalysisPanel()}
 
           <Panel
             title="Aktivitas Seluruh Sistem"
@@ -1962,189 +2229,17 @@ function DashboardPage() {
 
       {userRole === "prod_process_uh" && (
         <div className="space-y-6">
-          {/* Section Atas: Status Stok Barang yang Luas & Detail */}
-          <div className="w-full">
-            {/* Layout Status Stok Barang yang Luas & Detail */}
-            <div className="rise-in border border-border bg-surface p-5 flex flex-col justify-between">
-              <div>
-                <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-border pb-3.5 gap-4">
-                  <div className="flex items-center gap-4">
-                    {/* Diagram Donat Persentase Status All Barang */}
-                    {renderStockDonut()}
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold tracking-tight flex items-center gap-2">
-                          <span className="label-caps !p-0">Diagram & Analisis Status Barang & Sparepart</span>
-                        </h3>
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-surface-muted border border-border text-muted-foreground">
-                          {totalActiveProducts} Total Item
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Tingkat ketersediaan & proporsi status stok sparepart aktif di lini gudang
-                      </p>
-                      {/* Legend Persentase 3 Status */}
-                      <div className="flex flex-wrap items-center gap-2 mt-2">
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                          <span className="size-2 rounded-full bg-emerald-500" />
-                          Aman: {nonLimitProductsCount} ({safePct}%)
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                          <span className="size-2 rounded-full bg-amber-500" />
-                          Limit / Kritis: {limitOnlyCount} ({limitOnlyPct}%)
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
-                          <span className="size-2 rounded-full bg-rose-500" />
-                          Habis (0): {zeroProductsCount} ({zeroPct}%)
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+          {/* Section: Status Stok Barang & TOP 10 Outgoing Berdampingan */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
+            {/* Card 1: Diagram & Analisis Status Barang & Sparepart */}
+            {renderStockAnalysisCard()}
 
-                {/* Bar Visual Progress Segmented */}
-                <div className="mt-3.5 space-y-1.5">
-                  <div className="w-full bg-surface-muted rounded-full h-2.5 overflow-hidden flex shadow-inner">
-                    <div
-                      style={{ width: `${safePct}%` }}
-                      className="bg-emerald-500 h-full transition-all"
-                      title={`Aman: ${nonLimitProductsCount} (${safePct}%)`}
-                    />
-                    <div
-                      style={{ width: `${limitOnlyPct}%` }}
-                      className="bg-amber-500 h-full transition-all"
-                      title={`Limit: ${limitOnlyCount} (${limitOnlyPct}%)`}
-                    />
-                    <div
-                      style={{ width: `${zeroPct}%` }}
-                      className="bg-rose-500 h-full transition-all"
-                      title={`Habis: ${zeroProductsCount} (${zeroPct}%)`}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 3 Kolom Komprehensif: Daftar Barang Habis, Barang Limit & Daftar Barang Aman */}
-              <div className="grid sm:grid-cols-3 gap-3.5 mt-4 pt-3 border-t border-border">
-                {/* Kolom 1: Barang Habis (0 pcs) */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                      <AlertCircle className="size-3.5" />
-                      Daftar Barang Habis ({zeroProductsList.length})
-                    </span>
-                    <span className="text-[10px] text-muted-foreground font-medium">Stok 0</span>
-                  </div>
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {zeroProductsList.length > 0 ? (
-                      zeroProductsList.map((p) => (
-                        <div
-                          key={p.id}
-                          className="flex items-center justify-between gap-2 text-xs bg-rose-500/10 hover:bg-rose-500/15 p-2 rounded border border-rose-500/25 transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <p className="font-medium text-foreground truncate">{p.name}</p>
-                            <p className="text-[10px] text-muted-foreground font-mono">{p.code || "No SKU"}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="font-mono text-rose-600 dark:text-rose-400 font-bold">
-                              0 {p.unit || "pcs"}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground ml-1">
-                              / min {p.min_stock ?? 10}
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 border border-emerald-500/15 p-2.5 rounded text-center">
-                        ✓ Tidak ada barang stok kosong.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Kolom 2: Barang Limit / Kritis */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                      <AlertTriangle className="size-3.5" />
-                      Daftar Barang Limit ({limitOnlyProductsList.length})
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">Stok ≤ Min</span>
-                  </div>
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {limitOnlyProductsList.length > 0 ? (
-                      limitOnlyProductsList.map((p) => (
-                        <div
-                          key={p.id}
-                          className="flex items-center justify-between gap-2 text-xs bg-amber-500/5 hover:bg-amber-500/10 p-2 rounded border border-amber-500/20 transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <p className="font-medium text-foreground truncate">{p.name}</p>
-                            <p className="text-[10px] text-muted-foreground font-mono">{p.code || "No SKU"}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="font-mono text-amber-600 dark:text-amber-400 font-bold">
-                              {p.current_stock ?? 0}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground ml-1">
-                              / min {p.min_stock ?? 10}
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 border border-emerald-500/15 p-2.5 rounded text-center">
-                        ✓ Tidak ada stok limit.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Kolom 3: Barang Aman */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 className="size-3.5" />
-                      Daftar Barang Aman ({safeProductsList.length})
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">Stok Normal</span>
-                  </div>
-                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {safeProductsList.length > 0 ? (
-                      safeProductsList.map((p) => (
-                        <div
-                          key={p.id}
-                          className="flex items-center justify-between gap-2 text-xs bg-surface-muted/50 hover:bg-surface-muted p-2 rounded border border-border transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <p className="font-medium text-foreground truncate">{p.name}</p>
-                            <p className="text-[10px] text-muted-foreground font-mono">{p.code || "No SKU"}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
-                              {p.current_stock ?? 0}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground ml-1">
-                              (Min {p.min_stock ?? 10})
-                            </span>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-xs text-muted-foreground text-center p-2.5">
-                        Tidak ada barang aktif.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+            {/* Card 2: TOP 10 OUTGOING SPAREPART */}
+            {renderInventoryChartPanel()}
           </div>
 
-          {/* Diagram Inventory Stok Sparepart */}
-          {renderInventoryChartPanel()}
+          {/* Diagram Analisis Keseluruhan OBS + Buffer Stock */}
+          {renderCombinedAnalysisPanel()}
 
           <Panel
             title="Aktivitas Seluruh Sistem"
@@ -2463,7 +2558,7 @@ function DashboardPage() {
 
                 {selectedTx.notes && (
                   <div className="pt-2 border-t border-border/60 text-xs">
-                    <span className="text-muted-foreground block mb-0.5">Petugas Sparepart:</span>
+                    <span className="text-muted-foreground block mb-0.5">Petugas Sparepart Shift 1/2/3:</span>
                     <p className="bg-surface p-2 rounded border border-border text-foreground">
                       {selectedTx.notes}
                     </p>

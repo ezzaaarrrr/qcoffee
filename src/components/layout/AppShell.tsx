@@ -18,6 +18,7 @@ import {
   PanelLeftOpen,
   LogOut,
   User,
+  FileText,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/useAuth";
@@ -53,6 +54,7 @@ const MANAJEMEN: NavItem[] = [
   { to: "/products", search: { tab: "items" }, label: "OBS Sparepart", icon: Boxes },
   { to: "/products", search: { tab: "buffer_stock" }, label: "Buffer Stok", icon: ShieldAlert },
   { to: "/products", search: { tab: "transactions" }, label: "Riwayat Mutasi", icon: History },
+  { to: "/products", search: { tab: "logs" }, label: "Activity Log", icon: FileText },
   { to: "/profile", label: "Pengaturan Akun", icon: User },
   { to: "/settings", label: "Manajemen User", icon: Settings, adminOnly: true },
   { to: "/roles", label: "Hak Akses & Departemen", icon: Shield, adminOnly: true },
@@ -179,7 +181,7 @@ export function AppShell({
           <div className="flex items-center gap-3">
             <div className="flex size-14 shrink-0 items-center justify-center">
               <img
-                src="/logo-sparepart.png"
+                src="/logo-sparepart-icon.png"
                 alt="Logo Sparepart"
                 className="size-full object-contain drop-shadow-md hover:scale-105 transition-transform"
               />
