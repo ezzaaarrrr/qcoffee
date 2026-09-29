@@ -37,12 +37,12 @@ export const Route = createFileRoute("/_authenticated/formulasi")({
   }),
   head: () => ({
     meta: [
-      { title: "Formulasi Mixing — Q-Coffee M2" },
+      { title: "Formulasi Mixing" },
       {
         name: "description",
         content: "Checklist digital formulasi dan mixing batch produksi kopi per shift.",
       },
-      { property: "og:title", content: "Formulasi Mixing — Q-Coffee M2" },
+      { property: "og:title", content: "Formulasi Mixing" },
       {
         property: "og:description",
         content: "Checklist digital formulasi dan mixing batch produksi kopi per shift.",

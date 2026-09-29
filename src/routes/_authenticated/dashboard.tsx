@@ -88,10 +88,10 @@ import {
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
     meta: [
-      { title: "DASHBOARD OVERVIEW — Q-Coffee M2" },
+      { title: "DASHBOARD OVERVIEW" },
       {
         name: "description",
-        content: "Dashboard khusus disesuaikan berdasarkan peran dan departemen di Q-Coffee M2.",
+        content: "Dashboard khusus disesuaikan berdasarkan peran dan departemen di Warehouse  M2.",
       },
     ],
   }),
@@ -603,8 +603,8 @@ function DashboardPage() {
                           isZero
                             ? "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/30"
                             : isLow
-                            ? "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30"
-                            : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                              ? "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30"
+                              : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
                         )}
                       >
                         {p.current_stock ?? 0} {p.unit || "pcs"}
@@ -1199,7 +1199,7 @@ function DashboardPage() {
                       <div className="rounded border border-border bg-surface p-2.5 shadow-md text-xs space-y-1 z-50">
                         <p className="font-bold text-foreground text-xs">{data.fullName}</p>
                         <p className="text-[10px] text-muted-foreground font-mono">SKU: {data.code}</p>
-                        
+
                         <div className="flex items-center gap-2 pt-1 border-t border-border mt-1">
                           <span className="text-muted-foreground">Frekuensi Keluar:</span>
                           <span className="font-bold font-mono text-primary">
@@ -1336,10 +1336,10 @@ function DashboardPage() {
     const itemsToRender = ("items" in tx && tx.items && tx.items.length > 0)
       ? tx.items
       : [{
-          product_name: (tx as any).product_name || "Produk",
-          quantity: (tx as any).quantity || 0,
-          unit: (tx as any).unit || "kg",
-        }];
+        product_name: (tx as any).product_name || "Produk",
+        quantity: (tx as any).quantity || 0,
+        unit: (tx as any).unit || "kg",
+      }];
 
     const itemRowsHtml = itemsToRender
       .map(
@@ -1498,7 +1498,7 @@ function DashboardPage() {
       <body>
         <div class="header-box">
           <div>
-            <div class="company-title">Q-COFFEE M2</div>
+            <div class="company-title">GD-SPAREPART M2</div>
             <div class="company-sub">Sistem Manajemen Mutasi Gudang & Inventaris Terintegrasi</div>
           </div>
           <div class="doc-badge">${titleType}</div>
@@ -1542,16 +1542,15 @@ function DashboardPage() {
           </tbody>
         </table>
 
-        ${
-          tx.notes
-            ? `
+        ${tx.notes
+        ? `
           <div class="notes-card">
             <div class="meta-label" style="margin-bottom: 4px;">Petugas Sparepart Shift 1/2/3:</div>
             <div style="font-size: 12px; color: #334155;">${tx.notes}</div>
           </div>
         `
-            : ""
-        }
+        : ""
+      }
 
         <div class="signatures">
           <div>
@@ -1569,7 +1568,7 @@ function DashboardPage() {
         </div>
 
         <div class="footer-note">
-          Dokumen resmi hasil cetak otomatis dari sistem Q-Coffee M2. Dicetak pada: ${new Date().toLocaleString("id-ID")}.
+          Dokumen resmi hasil cetak otomatis dari sistem. Dicetak pada: ${new Date().toLocaleString("id-ID")}.
         </div>
 
         <script>
@@ -1710,7 +1709,7 @@ function DashboardPage() {
       <body>
         <div class="header-box">
           <div>
-            <div class="company-title">Q-COFFEE M2</div>
+            <div class="company-title">GD-SPAREPART M2</div>
             <div class="company-sub">Laporan Dokumen Checklist Operasional Produksi</div>
           </div>
           <div class="doc-badge">CHECKLIST ${titleKind}</div>
@@ -1753,7 +1752,7 @@ function DashboardPage() {
         </div>
 
         <div class="footer-note">
-          Dokumen resmi hasil cetak otomatis dari sistem Q-Coffee M2. Dicetak pada: ${new Date().toLocaleString("id-ID")}.
+          Dokumen resmi hasil cetak otomatis dari sistem. Dicetak pada: ${new Date().toLocaleString("id-ID")}.
         </div>
 
         <script>
@@ -2680,12 +2679,12 @@ function DashboardPage() {
                     {(selectedTx.items && selectedTx.items.length > 0
                       ? selectedTx.items
                       : [
-                          {
-                            product_name: selectedTx.product_name || "Produk",
-                            quantity: selectedTx.quantity || 0,
-                            unit: selectedTx.unit || "kg",
-                          },
-                        ]
+                        {
+                          product_name: selectedTx.product_name || "Produk",
+                          quantity: selectedTx.quantity || 0,
+                          unit: selectedTx.unit || "kg",
+                        },
+                      ]
                     ).map((it: any, idx: number) => (
                       <div
                         key={idx}

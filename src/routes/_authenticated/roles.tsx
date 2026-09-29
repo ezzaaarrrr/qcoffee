@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/_authenticated/roles")({
   head: () => ({
     meta: [
-      { title: "Hak Akses & Departemen — Q-Coffee M2" },
+      { title: "Hak Akses & Departemen" },
       {
         name: "description",
         content: "Kelola master data departemen dan atur matriks hak akses halaman untuk setiap peran (role).",

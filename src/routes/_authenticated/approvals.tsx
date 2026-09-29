@@ -24,13 +24,13 @@ import { useCurrentUser } from "@/hooks/useAuth";
 export const Route = createFileRoute("/_authenticated/approvals")({
   head: () => ({
     meta: [
-      { title: "Approval Center — Q-Coffee M2" },
+      { title: "Approval Center" },
       {
         name: "description",
         content:
           "Pusat persetujuan checklist produksi: pemeriksaan QC Field dan approval Prod. Process UH.",
       },
-      { property: "og:title", content: "Approval Center — Q-Coffee M2" },
+      { property: "og:title", content: "Approval Center" },
       {
         property: "og:description",
         content: "Pusat persetujuan checklist produksi kopi oleh QC Field dan Unit Head.",

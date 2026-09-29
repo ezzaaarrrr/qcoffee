@@ -27,7 +27,7 @@ import { ROLE_LABELS } from "@/lib/domain";
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({
     meta: [
-      { title: "Pengaturan Akun — Q-Coffee M2" },
+      { title: "Pengaturan Akun" },
       {
         name: "description",
         content: "Kelola profil akun, ganti kata sandi, dan perbarui tanda tangan digital.",
@@ -148,8 +148,8 @@ function ProfileSettingsPage() {
   return (
     <AppShell breadcrumb="Pengaturan Akun">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Pengaturan Akun</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h1 className="text-2xl font-bold tracking-tight text-white">Pengaturan Akun</h1>
+        <p className="mt-1 text-sm text-white">
           Kelola informasi identitas akun, ubah kata sandi, dan atur tanda tangan digital Anda.
         </p>
       </div>

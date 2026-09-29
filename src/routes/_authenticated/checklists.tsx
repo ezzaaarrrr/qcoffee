@@ -44,7 +44,7 @@ import { useCurrentUser } from "@/hooks/useAuth";
 export const Route = createFileRoute("/_authenticated/checklists")({
   head: () => ({
     meta: [
-      { title: "Dashboard Checklist — Q-Coffee M2" },
+      { title: "Dashboard Checklists" },
       {
         name: "description",
         content: "Monitoring dan manajemen checklist digital operasional lini produksi kopi.",
@@ -147,7 +147,7 @@ function DashboardChecklistPage() {
         (statusFilter === "pending" && item.status.toLowerCase().includes("pending")) ||
         (statusFilter === "approved" && (item.status.toLowerCase().includes("approved") || item.status.toLowerCase().includes("disetujui"))) ||
         (statusFilter === "rejected" && (item.status.toLowerCase().includes("reject") || item.status.toLowerCase().includes("ditolak")));
-      
+
       const matchSearch =
         !searchTerm.trim() ||
         item.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -264,7 +264,7 @@ function DashboardChecklistPage() {
         </head>
         <body>
           <div class="header">
-            <div class="title">Q-COFFEE M2 — ${title}</div>
+            <div class="title">${title}</div>
             <div class="sub">Dokumen Resmi Lini Produksi & Audit QC</div>
           </div>
           ${detailHtml}
@@ -440,11 +440,10 @@ function DashboardChecklistPage() {
                     key={t.key}
                     type="button"
                     onClick={() => setActiveTab(t.key as any)}
-                    className={`text-xs px-2.5 py-1 rounded transition-colors ${
-                      activeTab === t.key
+                    className={`text-xs px-2.5 py-1 rounded transition-colors ${activeTab === t.key
                         ? "bg-background font-semibold text-foreground shadow-xs"
                         : "text-muted-foreground hover:text-foreground"
-                    }`}
+                      }`}
                   >
                     {t.label}
                   </button>

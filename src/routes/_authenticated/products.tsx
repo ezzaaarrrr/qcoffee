@@ -118,7 +118,7 @@ export const Route = createFileRoute("/_authenticated/products")({
   },
   head: () => ({
     meta: [
-      { title: "Buffer Stok — Q-Coffee M2" },
+      { title: "Buffer Stok" },
       {
         name: "description",
         content: "Memantau stok cadangan untuk menjaga ketersediaan barang dan mengantisipasi kebutuhan yang tidak terduga.",
@@ -2084,8 +2084,8 @@ function WarehouseAndProductsPage() {
       <body>
         <div class="header-box">
           <div>
-            <div class="company-title">Q-COFFEE M2</div>
-            <div class="company-sub">Departement Warehouse - Sparepart & Coffee Inventory</div>
+            <div class="company-title">GD-SPAREPART M2</div>
+            <div class="company-sub">Departement Warehouse - Sparepart Inventory</div>
           </div>
           <div class="doc-badge">KARTU MASTER BARANG</div>
         </div>
@@ -2186,7 +2186,7 @@ function WarehouseAndProductsPage() {
         </div>
 
         <div class="footer-note">
-          Dokumen resmi hasil cetak sistem manajemen Q-Coffee M2. Dicetak pada: ${new Date().toLocaleString("id-ID")}.
+          Dokumen resmi hasil cetak sistem manajemen. Dicetak pada: ${new Date().toLocaleString("id-ID")}.
         </div>
 
         <script>
@@ -2531,7 +2531,7 @@ function WarehouseAndProductsPage() {
       <body>
         <div class="header-box">
           <div>
-            <div class="company-title">Q-COFFEE M2</div>
+            <div class="company-title">GD-SPAREPART M2</div>
             <div class="company-sub">Sistem Manajemen Mutasi Gudang & Inventaris Terintegrasi</div>
           </div>
           <div class="doc-badge">${titleType}</div>
@@ -2602,7 +2602,7 @@ function WarehouseAndProductsPage() {
         </div>
 
         <div class="footer-note">
-          Dokumen resmi hasil cetak otomatis dari sistem Q-Coffee M2. Dicetak pada: ${new Date().toLocaleString("id-ID")}.
+          Dokumen resmi hasil cetak otomatis dari sistem. Dicetak pada: ${new Date().toLocaleString("id-ID")}.
         </div>
 
         <script>

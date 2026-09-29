@@ -43,13 +43,13 @@ export const Route = createFileRoute("/_authenticated/grinding")({
   }),
   head: () => ({
     meta: [
-      { title: "Proses Grinding — Q-Coffee M2" },
+      { title: "Proses Grinding" },
       {
         name: "description",
         content:
           "Checklist proses grinding kopi: kehalusan, density, pH, moisture, dan perhitungan waste otomatis.",
       },
-      { property: "og:title", content: "Proses Grinding — Q-Coffee M2" },
+      { property: "og:title", content: "Proses Grinding" },
       {
         property: "og:description",
         content: "Checklist proses grinding kopi dengan perhitungan waste otomatis.",

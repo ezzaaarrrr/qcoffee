@@ -70,10 +70,10 @@ export type ProfileRow = {
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
     meta: [
-      { title: "Manajemen User — Q-Coffee M2" },
+      { title: "Manajemen User" },
       {
         name: "description",
-        content: "Kelola pengguna, tambah user baru, edit profil, hapus akun, dan atur peran (role) pengguna Q-Coffee M2.",
+        content: "Kelola pengguna, tambah user baru, edit profil, hapus akun, dan atur peran (role) pengguna.",
       },
     ],
   }),

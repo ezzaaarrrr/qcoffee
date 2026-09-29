@@ -42,13 +42,13 @@ export const Route = createFileRoute("/_authenticated/roasting")({
   }),
   head: () => ({
     meta: [
-      { title: "Proses Roasting — Q-Coffee M2" },
+      { title: "Proses Roasting" },
       {
         name: "description",
         content:
           "Checklist proses roasting kopi: waktu roasting dan cooling otomatis, suhu, pH, MC, dan waste.",
       },
-      { property: "og:title", content: "Proses Roasting — Q-Coffee M2" },
+      { property: "og:title", content: "Proses Roasting" },
       {
         property: "og:description",
         content: "Checklist roasting kopi dengan perhitungan waktu dan waste otomatis.",
