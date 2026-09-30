@@ -917,9 +917,9 @@ function WarehouseAndProductsPage() {
           .trim();
         const cleanCode = item.code
           ? String(item.code)
-              .replace(/\u00a0/g, " ")
-              .replace(/\s+/g, " ")
-              .trim()
+            .replace(/\u00a0/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
           : null;
 
         if (!cleanName && !cleanCode) continue;
@@ -1064,9 +1064,9 @@ function WarehouseAndProductsPage() {
           .trim();
         const cleanCode = item.code
           ? String(item.code)
-              .replace(/\u00a0/g, " ")
-              .replace(/\s+/g, " ")
-              .trim()
+            .replace(/\u00a0/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
           : null;
 
         if (!cleanName && !cleanCode) continue;
@@ -1172,7 +1172,7 @@ function WarehouseAndProductsPage() {
     }
   };
 
-    const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState({
     name: "",
     code: "",
     category: "Sparepart & Tools",
@@ -1888,7 +1888,7 @@ function WarehouseAndProductsPage() {
     const rows = dataToExport.map((p, idx) => {
       const isLimit = (p.current_stock ?? 0) <= (p.min_stock ?? 10);
       const nameKey = p.name ? p.name.trim().toLowerCase() : "";
-      
+
       const totalOut = (totalOutQtyMap[p.id] ?? 0) || (nameKey ? totalOutQtyMap[nameKey] ?? 0 : 0);
       const totalIn = (totalInQtyMap[p.id] ?? 0) || (nameKey ? totalInQtyMap[nameKey] ?? 0 : 0);
 
@@ -2157,16 +2157,15 @@ function WarehouseAndProductsPage() {
               <td><strong>${(p.min_stock ?? 10).toLocaleString("id-ID")} ${p.unit || "kg"}</strong></td>
               <td>Batas pengingat restock barang</td>
             </tr>
-            ${
-              p.description
-                ? `
+            ${p.description
+        ? `
             <tr>
               <td><strong>Deskripsi / Catatan</strong></td>
               <td colspan="2">${p.description}</td>
             </tr>
             `
-                : ""
-            }
+        : ""
+      }
           </tbody>
         </table>
 
@@ -2575,16 +2574,15 @@ function WarehouseAndProductsPage() {
           </tbody>
         </table>
 
-        ${
-          tx.notes
-            ? `
+        ${tx.notes
+        ? `
           <div class="notes-card">
             <div class="meta-label" style="margin-bottom: 4px;">Petugas Sparepart Shift 1/2/3:</div>
             <div style="font-size: 12px; color: #334155;">${tx.notes}</div>
           </div>
         `
-            : ""
-        }
+        : ""
+      }
 
         <div class="signatures">
           <div>
@@ -2764,38 +2762,38 @@ function WarehouseAndProductsPage() {
       activeTab === "buffer_stock"
         ? "Buffer Stock"
         : activeTab === "transactions"
-        ? "Riwayat Mutasi"
-        : activeTab === "logs"
-        ? "Aktivitas Seluruh Kegiatan"
-        : "Majemen & Master Barang"
+          ? "Riwayat Mutasi"
+          : activeTab === "logs"
+            ? "Aktivitas Seluruh Kegiatan"
+            : "Manajemen & Master Barang"
     }>
       {/* Header Halaman */}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-            <h1
-              className="text-2xl font-bold tracking-[0.5em] text-white"
-              style={{
-                fontFamily: "'Montserrat', sans-serif",
-                fontWeight: 700,
-                letterSpacing: "0.5em",
-              }}
-            >
-              {activeTab === "buffer_stock"
-                ? "Buffer Stock"
-                : activeTab === "transactions"
+          <h1
+            className="text-2xl font-bold tracking-[0.5em] text-white"
+            style={{
+              fontFamily: "'Montserrat', sans-serif",
+              fontWeight: 700,
+              letterSpacing: "0.5em",
+            }}
+          >
+            {activeTab === "buffer_stock"
+              ? "Buffer Stock"
+              : activeTab === "transactions"
                 ? "Riwayat Mutasi"
                 : activeTab === "logs"
-                ? "Aktivitas Seluruh Kegiatan"
-                : "Majemen & Master Barang"}
-            </h1>
+                  ? "Aktivitas Seluruh Kegiatan"
+                  : "Manajemen & Master Barang"}
+          </h1>
           <p className="mt-1 text-sm text-white/80" style={{ fontFamily: "'Inter', sans-serif" }}>
             {activeTab === "buffer_stock"
               ? "Memantau dan mengelola stok cadangan sparepart untuk menjaga ketersediaan dan mendukung kebutuhan operasional."
               : activeTab === "transactions"
-              ? "Mencatat riwayat mutasi masuk dan keluar"
-              : activeTab === "logs"
-              ? "Rekap jejak audit dan riwayat seluruh aktivitas operasional gudang."
-              : "Kelola data master barang, pencatatan masuk/keluar, audit stok, kategori, rak, dan dokumen."}
+                ? "Mencatat riwayat mutasi masuk dan keluar"
+                : activeTab === "logs"
+                  ? "Rekap jejak audit dan riwayat seluruh aktivitas operasional gudang."
+                  : "Kelola data master barang, pencatatan masuk/keluar, audit stok, kategori, rak, dan dokumen."}
           </p>
         </div>
 
@@ -4779,14 +4777,14 @@ function WarehouseAndProductsPage() {
                       <table className="w-full text-left border-collapse min-w-[600px]">
                         <thead className="bg-surface-muted text-[11px] font-semibold text-muted-foreground sticky top-0 z-10 border-b border-border">
                           <tr>
-                            <th 
+                            <th
                               className="p-2.5 w-12 text-center cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
                               onClick={() => setBufferImportSortOption("DEFAULT")}
                               title="Reset ke urutan asli file"
                             >
                               No
                             </th>
-                            <th 
+                            <th
                               className="p-2.5 w-36 text-center cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
                               onClick={() => setBufferImportSortOption(bufferImportSortOption === "CODE_ASC" ? "CODE_DESC" : "CODE_ASC")}
                               title="Urutkan kode angka terkecil / terbesar"
@@ -4796,7 +4794,7 @@ function WarehouseAndProductsPage() {
                                 <ArrowUpDown className={`size-3 ${bufferImportSortOption.startsWith("CODE") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
                               </div>
                             </th>
-                            <th 
+                            <th
                               className="p-2.5 min-w-[200px] cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
                               onClick={() => setBufferImportSortOption(bufferImportSortOption === "NAME_ASC" ? "NAME_DESC" : "NAME_ASC")}
                               title="Urutkan nama A-Z / Z-A"
@@ -4806,7 +4804,7 @@ function WarehouseAndProductsPage() {
                                 <ArrowUpDown className={`size-3 ${bufferImportSortOption.startsWith("NAME") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
                               </div>
                             </th>
-                            <th 
+                            <th
                               className="p-2.5 text-center w-28 cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
                               onClick={() => setBufferImportSortOption(bufferImportSortOption === "STOCK_ASC" ? "STOCK_DESC" : "STOCK_ASC")}
                               title="Urutkan stok angka terkecil / terbesar"
@@ -5352,14 +5350,14 @@ function WarehouseAndProductsPage() {
                       <table className="w-full text-left border-collapse min-w-[600px]">
                         <thead className="bg-surface-muted text-[11px] font-semibold text-muted-foreground sticky top-0 z-10 border-b border-border">
                           <tr>
-                            <th 
+                            <th
                               className="p-2.5 w-12 text-center cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
                               onClick={() => setImportSortOption("DEFAULT")}
                               title="Reset ke urutan asli file"
                             >
                               No
                             </th>
-                            <th 
+                            <th
                               className="p-2.5 w-36 text-center cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
                               onClick={() => setImportSortOption(importSortOption === "CODE_ASC" ? "CODE_DESC" : "CODE_ASC")}
                               title="Urutkan kode angka terkecil / terbesar"
@@ -5369,7 +5367,7 @@ function WarehouseAndProductsPage() {
                                 <ArrowUpDown className={`size-3 ${importSortOption.startsWith("CODE") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
                               </div>
                             </th>
-                            <th 
+                            <th
                               className="p-2.5 min-w-[200px] cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
                               onClick={() => setImportSortOption(importSortOption === "NAME_ASC" ? "NAME_DESC" : "NAME_ASC")}
                               title="Urutkan nama A-Z / Z-A"
@@ -5380,7 +5378,7 @@ function WarehouseAndProductsPage() {
                               </div>
                             </th>
                             <th className="p-2.5 text-center w-20 font-semibold">Satuan</th>
-                            <th 
+                            <th
                               className="p-2.5 text-center w-28 cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
                               onClick={() => setImportSortOption(importSortOption === "STOCK_ASC" ? "STOCK_DESC" : "STOCK_ASC")}
                               title="Urutkan stok angka terkecil / terbesar"
@@ -5954,10 +5952,10 @@ function WarehouseAndProductsPage() {
 
             const formattedDate = selectedProduct.created_at
               ? new Date(selectedProduct.created_at).toLocaleDateString("id-ID", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })
               : "23 September 2026";
 
             return (
