@@ -1109,8 +1109,7 @@ function DashboardPage() {
         minStock: min,
         outToday,
         unit: p.unit || "unit",
-        color: isZero ? "#ef4444" : isLow ? "#f59e0b" : "#10b981",
-        status: isZero ? "Habis (0)" : isLow ? "Limit / Kritis" : "Aman / Normal",
+        color: isZero ? "#FF0000" : isLow ? "#FFFF00" : "#00c056ff",
       };
     });
 
