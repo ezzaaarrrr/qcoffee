@@ -282,7 +282,7 @@ function DashboardPage() {
               cy="50"
               r={radius}
               fill="transparent"
-              stroke="#10b981"
+              stroke="#4dff00ff"
               strokeWidth={strokeWidth}
               strokeDasharray={`${safeDash} ${circumference}`}
               strokeDashoffset={safeOffset}
@@ -297,7 +297,7 @@ function DashboardPage() {
               cy="50"
               r={radius}
               fill="transparent"
-              stroke="#f97316"
+              stroke="#fffb25ff"
               strokeWidth={strokeWidth}
               strokeDasharray={`${limitDash} ${circumference}`}
               strokeDashoffset={limitOffset}
@@ -312,7 +312,7 @@ function DashboardPage() {
               cy="50"
               r={radius}
               fill="transparent"
-              stroke="#ef4444"
+              stroke="#ff0505ff"
               strokeWidth={strokeWidth}
               strokeDasharray={`${zeroDash} ${circumference}`}
               strokeDashoffset={zeroOffset}
