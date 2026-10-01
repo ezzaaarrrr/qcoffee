@@ -200,19 +200,7 @@ function DashboardPage() {
       if (p.name && p.code) map.set(p.name.trim().toLowerCase(), p.code);
     });
     return map;
-  }, [allProducts]);
-
-  // Klasifikasi 3 Kondisi Status Stok Barang
-  // 1. Stok Habis (0 pcs)
-  const zeroProductsList = activeProducts.filter((p) => (p.current_stock ?? 0) <= 0);
-  // 2. Stok Limit / Kritis (> 0 tapi <= min_stock)
-  const limitOnlyProductsList = activeProducts.filter(
-    (p) => (p.current_stock ?? 0) > 0 && (p.current_stock ?? 0) <= (p.min_stock ?? 10)
-  );
-  // 3. Stok Aman / Normal (> min_stock)
-  const safeProductsList = activeProducts.filter(
-    (p) => (p.current_stock ?? 0) > (p.min_stock ?? 10)
-  );
+  },
   // Legacy: Semua barang yang perlu restock (stok <= min_stock)
   const limitProductsList = activeProducts.filter(
     (p) => (p.current_stock ?? 0) <= (p.min_stock ?? 10)
