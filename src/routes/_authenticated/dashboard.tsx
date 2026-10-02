@@ -200,7 +200,19 @@ function DashboardPage() {
       if (p.name && p.code) map.set(p.name.trim().toLowerCase(), p.code);
     });
     return map;
-  },
+  }, [allProducts]);
+
+  // Klasifikasi 3 Kondisi Status Stok Barang
+  // 1. Stok Habis (0 pcs)
+  const zeroProductsList = activeProducts.filter((p) => (p.current_stock ?? 0) <= 0);
+  // 2. Stok Limit / Kritis (> 0 tapi <= min_stock)
+  const limitOnlyProductsList = activeProducts.filter(
+    (p) => (p.current_stock ?? 0) > 0 && (p.current_stock ?? 0) <= (p.min_stock ?? 10)
+  );
+  // 3. Stok Aman / Normal (> min_stock)
+  const safeProductsList = activeProducts.filter(
+    (p) => (p.current_stock ?? 0) > (p.min_stock ?? 10)
+  );
   // Legacy: Semua barang yang perlu restock (stok <= min_stock)
   const limitProductsList = activeProducts.filter(
     (p) => (p.current_stock ?? 0) <= (p.min_stock ?? 10)
@@ -625,14 +637,32 @@ function DashboardPage() {
     const pctHabis = totalGabungan > 0 ? Math.max(0, 100 - pctAman - pctLimit) : 0;
     const pctKetersediaan = totalGabungan > 0 ? Math.round(((totalGabungan - gabunganHabis) / totalGabungan) * 100) : 0;
 
-       ];
+    // Pie chart data: distribusi sumber
+    const sourceData = [
+      { name: "OBS Sparepart", value: totalOBS, color: "#2563eb" },
+      { name: "Buffer Stok", value: totalBuffer, color: "#f97316" },
+    ];
 
-  // Pie chart data: status gabungan
-  const statusData = [
-    { name: "Aman", value: gabunganAman, color: "#10b981", pct: pctAman },
-    { name: "Limit / Kritis", value: gabunganLimit, color: "#f59e0b", pct: pctLimit },
-    { name: "Habis (0)", value: gabunganHabis, color: "#ef4444", pct: pctHabis },
-  ].filter((d) => d.value > 0);
+    // Pie chart data: status gabungan
+    const statusData = [
+      { name: "Aman", value: gabunganAman, color: "#10b981", pct: pctAman },
+      { name: "Limit / Kritis", value: gabunganLimit, color: "#f59e0b", pct: pctLimit },
+      { name: "Habis (0)", value: gabunganHabis, color: "#ef4444", pct: pctHabis },
+    ].filter((d) => d.value > 0);
+
+    // Pie chart data: status OBS Sparepart
+    const obsStatusData = [
+      { name: "Aman", value: nonLimitProductsCount, color: "#10b981", pct: safePct, statusKey: "aman" as const },
+      { name: "Limit", value: limitOnlyCount, color: "#f97316", pct: limitOnlyPct, statusKey: "limit" as const },
+      { name: "Critical / Habis (0)", value: zeroProductsCount, color: "#ef4444", pct: zeroPct, statusKey: "habis" as const },
+    ].filter((d) => d.value > 0);
+
+    // Horizontal bar chart data: perbandingan OBS vs Buffer per status
+    const comparisonData = [
+      { name: "Aman", obs: nonLimitProductsCount, buffer: bufferSafe.length, color: "#10b981" },
+      { name: "Limit", obs: limitOnlyCount, buffer: bufferLimit.length, color: "#f59e0b" },
+      { name: "Habis", obs: zeroProductsCount, buffer: bufferZero.length, color: "#ef4444" },
+    ];
 
 
   return {
