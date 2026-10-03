@@ -516,7 +516,7 @@ function parseExcelWorkbookToSheets(
       let unit = "pcs";
       if (uomIdx >= 0 && row[uomIdx]) {
         unit = String(row[uomIdx]).trim().toLowerCase();
-      } else if (row[2] && typeof row[2] === "string" && ["pcs", "unit", "set", "rol", "mtr", "kg", "btg", "pack", "box"].includes(row[2].trim().toLowerCase())) {
+      } else if (row[2] && typeof row[2] === "string" && ["pcs", "unit", "set", "rol", "CAN", "LMR", "pack"].includes(row[2].trim().toLowerCase())) {
         unit = row[2].trim().toLowerCase();
       }
 
@@ -2771,7 +2771,7 @@ function WarehouseAndProductsPage() {
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1
-            className="text-2xl font-bold tracking-[0.5em] text-white"
+            className="text-2xl font-bold tracking-[0.5em] text-black"
             style={{
               fontFamily: "'Montserrat', sans-serif",
               fontWeight: 700,
@@ -2786,7 +2786,7 @@ function WarehouseAndProductsPage() {
                   ? "Aktivitas Seluruh Kegiatan"
                   : "Manajemen & Master Barang"}
           </h1>
-          <p className="mt-1 text-sm text-white/80" style={{ fontFamily: "'Inter', sans-serif" }}>
+          <p className="mt-1 text-sm text-black/80" style={{ fontFamily: "'Inter', sans-serif" }}>
             {activeTab === "buffer_stock"
               ? "Memantau dan mengelola stok cadangan sparepart untuk menjaga ketersediaan dan mendukung kebutuhan operasional."
               : activeTab === "transactions"
@@ -3045,56 +3045,84 @@ function WarehouseAndProductsPage() {
           {/* ── MONITORING INFO CARDS OBS SPAREPART ────────────────────────── */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {/* Card 1: Total Item OBS */}
-            <div className="rise-in group relative overflow-hidden border border-border bg-surface p-4 transition-all hover:shadow-md hover:border-primary/30">
-              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-blue-500/8 to-transparent rounded-bl-3xl" />
+            <div
+              className="rise-in group relative overflow-hidden rounded-lg border border-blue-500 bg-blue-600 p-4 text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+            >
               <div className="flex items-center gap-2 mb-3">
-                <div className="flex items-center justify-center size-8 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 ring-1 ring-blue-200/60 dark:ring-blue-800/50">
+                <div className="flex items-center justify-center size-8 rounded-md bg-blue-500 text-white border border-blue-400">
                   <Boxes className="size-4" />
                 </div>
-                <span className="label-caps !text-blue-600 dark:!text-blue-400">Total Item</span>
+
+                <span className="label-caps !text-white">
+                  Total Item
+                </span>
               </div>
-              <div className="font-mono text-2xl font-bold tabular-nums text-foreground">
+
+              <div className="font-mono text-2xl font-bold tabular-nums text-white">
                 {loadingProducts ? "—" : totalActiveItemsObs}
               </div>
-              <div className="mt-1 text-[10px] text-muted-foreground">Barang aktif terdaftar</div>
+
+              <div className="mt-1 text-[10px] text-white">
+                Barang aktif terdaftar
+              </div>
             </div>
 
-            {/* Card 2: Total Stok Qty */}
-            <div className="rise-in group relative overflow-hidden border border-border bg-surface p-4 transition-all hover:shadow-md hover:border-primary/30" style={{ animationDelay: '50ms' }}>
-              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-indigo-500/8 to-transparent rounded-bl-3xl" />
-              <div className="flex items-center gap-2 mb-3">
-                <div className="flex items-center justify-center size-8 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 ring-1 ring-indigo-200/60 dark:ring-indigo-800/50">
-                  <Package className="size-4" />
-                </div>
-                <span className="label-caps !text-indigo-600 dark:!text-indigo-400">Total Stok</span>
+          {/* Card 2: Total Stok Qty */}
+          <div
+            className="rise-in group relative overflow-hidden rounded-lg border border-blue-500 bg-blue-600 p-4 text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+            style={{ animationDelay: "50ms" }}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center justify-center size-8 rounded-md bg-blue-500 text-white border border-blue-400">
+                <Package className="size-4" />
               </div>
-              <div className="font-mono text-2xl font-bold tabular-nums text-foreground">
-                {loadingProducts ? "—" : totalStockQtyObs.toLocaleString("id-ID")}
-              </div>
-              <div className="mt-1 text-[10px] text-muted-foreground">Jumlah seluruh pcs/unit</div>
+
+              <span className="label-caps !text-white">
+                Total Stok
+              </span>
             </div>
 
-            {/* Card 3: ORDER — Perlu Restock */}
-            <div
-              className="rise-in group relative overflow-hidden border border-rose-200 dark:border-rose-900/60 bg-gradient-to-br from-surface to-rose-50/40 dark:from-surface dark:to-rose-950/20 p-4 transition-all hover:shadow-md hover:border-rose-400/60 cursor-pointer"
-              style={{ animationDelay: '100ms' }}
-              onClick={() => setStockStatusFilter(stockStatusFilter === "ORDER" ? "ALL" : "ORDER")}
-            >
-              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-rose-500/10 to-transparent rounded-bl-3xl" />
-              <div className="flex items-center gap-2 mb-3">
-                <div className="flex items-center justify-center size-8 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 ring-1 ring-rose-200/60 dark:ring-rose-800/50">
-                  <CircleAlert className="size-4" />
-                </div>
-                <span className="label-caps !text-rose-600 dark:!text-rose-400">Order</span>
-              </div>
-              <div className="font-mono text-2xl font-bold tabular-nums text-rose-600 dark:text-rose-400">
-                {loadingProducts ? "—" : obsOrderCount}
-              </div>
-              <div className="mt-1 text-[10px] text-rose-500/80 dark:text-rose-400/60">Stok ≤ batas minimum</div>
-              {stockStatusFilter === "ORDER" && (
-                <div className="absolute top-2 right-2 size-2 rounded-full bg-rose-500 animate-pulse" />
-              )}
+            <div className="font-mono text-2xl font-bold tabular-nums text-white">
+              {loadingProducts ? "—" : totalStockQtyObs.toLocaleString("id-ID")}
             </div>
+
+            <div className="mt-1 text-[10px] text-white">
+              Jumlah seluruh pcs/unit
+            </div>
+          </div>
+
+           {/* Card 3: ORDER — Perlu Restock */}
+              <div
+                className="rise-in group relative overflow-hidden rounded-lg border border-emerald-400 bg-emerald-600 p-4 text-white shadow-md transition-all hover:bg-emerald-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+                style={{ animationDelay: "100ms" }}
+                onClick={() =>
+                  setStockStatusFilter(
+                    stockStatusFilter === "ORDER" ? "ALL" : "ORDER"
+                  )
+                }
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center justify-center size-8 rounded-md bg-emerald-500 text-white border border-emerald-400">
+                    <CircleAlert className="size-4" />
+                  </div>
+
+                  <span className="label-caps !text-white">
+                    Order
+                  </span>
+                </div>
+
+                <div className="font-mono text-2xl font-bold tabular-nums text-white">
+                  {loadingProducts ? "—" : obsOrderCount}
+                </div>
+
+                <div className="mt-1 text-[10px] text-white">
+                  Stok ≤ batas minimum
+                </div>
+
+                {stockStatusFilter === "ORDER" && (
+                  <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
+                )}
+              </div>    
 
             {/* Card 4: SAFETY STOK */}
             <div
@@ -3214,6 +3242,8 @@ function WarehouseAndProductsPage() {
                     <th className="label-caps px-3 py-3 text-left min-w-[220px] whitespace-nowrap text-white font-semibold">Material</th>
                     <th className="label-caps px-3 py-3 text-center min-w-[85px] whitespace-nowrap text-white font-semibold">Satuan</th>
                     <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Minimal Stok</th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Masuk</th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Keluar</th>
                     <th className="label-caps px-3 py-3 text-right min-w-[110px] whitespace-nowrap text-white font-semibold">Stok Saat Ini</th>
                     <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Maksimal Stok</th>
                     <th className="label-caps px-3 py-3 text-center min-w-[120px] whitespace-nowrap text-white font-semibold">Kondisi</th>
@@ -3288,6 +3318,34 @@ function WarehouseAndProductsPage() {
                         {/* 5. Minimal Stok */}
                         <td className="px-3 py-3 text-center font-mono text-muted-foreground whitespace-nowrap">
                           {minStock.toLocaleString("id-ID")}
+                        </td>
+
+                        {/* 6. Masuk */}
+                        <td className="px-3 py-3 text-center font-mono font-semibold whitespace-nowrap">
+                          {(() => {
+                            const nameKey = p.name ? p.name.trim().toLowerCase() : "";
+                            const lastIn =
+                              latestInTxMap[p.id] ||
+                              (nameKey ? latestInTxMap[nameKey] : undefined);
+
+                            return lastIn
+                              ? `${Number(lastIn.quantity).toLocaleString("id-ID")}`
+                              : "—";
+                          })()}
+                        </td>
+
+                        {/* 7. Keluar */}
+                        <td className="px-3 py-3 text-center font-mono font-semibold whitespace-nowrap">
+                          {(() => {
+                            const nameKey = p.name ? p.name.trim().toLowerCase() : "";
+                            const lastOut =
+                              latestOutTxMap[p.id] ||
+                              (nameKey ? latestOutTxMap[nameKey] : undefined);
+
+                            return lastOut
+                              ? `${Number(lastOut.quantity).toLocaleString("id-ID")}`
+                              : "—";
+                          })()}
                         </td>
 
                         {/* 6. Stok saat ini */}
@@ -4202,7 +4260,7 @@ function WarehouseAndProductsPage() {
 
                   {/* Card 4: SAFETY STOK */}
                   <div
-                    className="rise-in group relative overflow-hidden border border-emerald-200 dark:border-emerald-900/60 bg-gradient-to-br from-surface to-emerald-50/40 dark:from-surface dark:to-emerald-950/20 p-4 transition-all hover:shadow-md hover:border-emerald-400/60 cursor-pointer"
+                    className="rise-in group relative overflow-hidden border border-emerald-200 bg-gradient-to-br from-surface to-emerald-50/40 dark:from-surface dark:to-emerald-950/20 p-4 transition-all hover:shadow-md hover:border-emerald-400/60 cursor-pointer"
                     style={{ animationDelay: '150ms' }}
                     onClick={() => setBufferStatusFilter(bufferStatusFilter === "SAFETY" ? "ALL" : "SAFETY")}
                   >

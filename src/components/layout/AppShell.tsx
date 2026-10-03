@@ -159,8 +159,8 @@ export function AppShell({
           className={cn(
             "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
             active
-              ? "bg-white font-bold text-[#1268D9] shadow-sm"
-              : "text-blue-100 hover:bg-white/10 hover:text-white",
+              ? "bg-blue-600 font-bold text-white shadow-md shadow-blue-950/40"
+              : "text-slate-300 hover:bg-white/10 hover:text-white",
           )}
         >
           <Icon className="size-4 shrink-0" />
@@ -170,14 +170,14 @@ export function AppShell({
     });
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#1268D9] font-sans text-foreground">
+    <div className="flex h-screen overflow-hidden bg-background font-sans text-foreground">
       <aside
         className={cn(
-          "flex h-screen shrink-0 flex-col border-r-2 border-blue-200/50 bg-[#1268D9] text-white transition-[width] duration-200 sticky top-0 overflow-y-auto shadow-md",
+          "flex h-screen shrink-0 flex-col border-r border-blue-900/40 bg-[#071633] text-white transition-[width] duration-200 sticky top-0 overflow-y-auto shadow-md",
           collapsed ? "w-[68px]" : "w-64",
         )}
       >
-        <div className="border-b-2 border-blue-200/50 p-4 shrink-0">
+        <div className="border-b border-blue-900/40 p-4 shrink-0">
           <div className="flex items-center gap-3">
             <div className="flex size-14 shrink-0 items-center justify-center">
               <img
@@ -202,7 +202,7 @@ export function AppShell({
               {!collapsed && (
                 <div
                   className={cn(
-                    "text-[10px] font-bold uppercase tracking-wider text-blue-200 mb-2 px-3",
+                    "text-[10px] font-bold uppercase tracking-wider text-blue-300/80 mb-2 px-3",
                     visibleOperasional.length > 0 ? "mt-8" : "mt-2",
                   )}
                 >
@@ -210,17 +210,17 @@ export function AppShell({
                 </div>
               )}
               {collapsed && visibleOperasional.length > 0 && (
-                <div className="my-3 border-t-2 border-blue-200/50" />
+                <div className="my-3 border-t border-blue-900/40" />
               )}
               {renderNav(visibleManajemen)}
             </>
           )}
         </nav>
 
-        <div className="border-t-2 border-blue-200/50 p-3 shrink-0">
+        <div className="border-t border-blue-900/40 p-3 shrink-0">
           <button
             onClick={() => setCollapsed((c) => !c)}
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-blue-100 transition-colors hover:bg-white/10 hover:text-white"
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
           >
             {collapsed ? (
               <PanelLeftOpen className="size-4" />
@@ -231,15 +231,15 @@ export function AppShell({
             )}
           </button>
           {!collapsed && (
-            <Link to="/profile" className="mt-2 flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/10 transition-colors">
-              <div className="grid size-8 shrink-0 place-items-center rounded-full bg-white/20 text-white font-mono text-xs font-bold">
+            <Link to="/profile" className="mt-2 flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 transition-colors">
+              <div className="grid size-8 shrink-0 place-items-center rounded-full bg-blue-900/60 text-blue-200 border border-blue-800/50 font-mono text-xs font-bold">
                 {initials}
               </div>
               <div className="flex min-w-0 flex-col">
                 <span className="truncate text-xs font-semibold leading-tight text-white">
                   {profile?.full_name || profile?.email || "Pengguna"}
                 </span>
-                <span className="truncate text-[10px] text-blue-200">
+                <span className="truncate text-[10px] text-blue-300/70">
                   {roles.map((r) => ROLE_LABELS[r]).join(", ") || "Tanpa Peran"}
                 </span>
               </div>
@@ -248,18 +248,18 @@ export function AppShell({
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col h-screen overflow-hidden bg-[#1268D9]">
-        <header className="flex h-16 shrink-0 items-center justify-between border-b-2 border-blue-200/50 bg-[#1268D9] px-8 sticky top-0 z-10 text-white shadow-xs">
+      <main className="flex min-w-0 flex-1 flex-col h-screen overflow-hidden bg-slate-50">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-white px-8 sticky top-0 z-10 text-foreground shadow-2xs">
           <div className="flex items-center gap-4 text-sm">
-            <span className="text-blue-200">Dashboard</span>
-            <span className="text-blue-300">/</span>
-            <span className="font-semibold text-white">{breadcrumb}</span>
+            <span className="text-muted-foreground">Dashboard</span>
+            <span className="text-muted-foreground">/</span>
+            <span className="font-semibold text-foreground">{breadcrumb}</span>
           </div>
           <div className="flex items-center gap-3">
             {actions}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="grid size-8 place-items-center rounded-full bg-white/20 font-mono text-xs text-white font-bold transition-colors hover:bg-white/30 border border-white/30">
+                <button className="grid size-8 place-items-center rounded-full bg-slate-100 font-mono text-xs text-slate-800 font-bold transition-colors hover:bg-slate-200 border border-slate-200">
                   {initials}
                 </button>
               </DropdownMenuTrigger>

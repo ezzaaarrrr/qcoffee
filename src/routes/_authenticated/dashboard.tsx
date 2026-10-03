@@ -31,6 +31,8 @@ import {
   Layers,
   Activity,
   BoxIcon,
+  Calendar as CalendarIcon,
+  Search,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -51,6 +53,13 @@ import { Panel, StatCard } from "@/components/Panel";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -129,7 +138,15 @@ type BufferStockItem = {
 function DashboardPage() {
   const { profile, roles, isAdmin } = useCurrentUser();
   const [selectedTx, setSelectedTx] = useState<any | null>(null);
-  const [stockStatusTab, setStockStatusTab] = useState<"all" | "critical" | "limit" | "habis" | "aman">("all");
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+
+  // State untuk Interaktivitas Modal Detail 4 Kotak Ringkasan Metrik
+  const [selectedMetricModal, setSelectedMetricModal] = useState<
+    "total_gabungan" | "total_stok" | "stok_aman" | "perlu_perhatian" | null
+  >(null);
+  const [metricSearchQuery, setMetricSearchQuery] = useState("");
+  const [metricCategoryFilter, setMetricCategoryFilter] = useState<"all" | "obs" | "buffer">("all");
+  const [metricStatusFilter, setMetricStatusFilter] = useState<"all" | "safe" | "limit" | "empty">("all");
 
   // Queries
   const formulasi = useQuery({ queryKey: ["formulasi"], queryFn: fetchFormulasi });
@@ -241,370 +258,6 @@ function DashboardPage() {
   const isKpiHit = kpiExactPct >= 92.0;
   const kpiStatus: "HIT" | "MISS" = isKpiHit ? "HIT" : "MISS";
 
-  // Diagram SVG Donat Status Stok
-  const renderStockDonut = () => {
-    if (totalActiveProducts === 0) {
-      return (
-        <div className="flex items-center justify-center size-24 rounded-full border-4 border-dashed border-border text-[11px] text-muted-foreground font-mono">
-          0 item
-        </div>
-      );
-    }
-
-    const radius = 40;
-    const strokeWidth = 11;
-    const circumference = 2 * Math.PI * radius;
-
-    const safeDash = (safePct / 100) * circumference;
-    const limitDash = (limitOnlyPct / 100) * circumference;
-    const zeroDash = (zeroPct / 100) * circumference;
-
-    const safeOffset = 0;
-    const limitOffset = -safeDash;
-    const zeroOffset = -(safeDash + limitDash);
-
-    return (
-      <div className="relative flex items-center justify-center size-24 shrink-0">
-        <svg className="size-full -rotate-90" viewBox="0 0 100 100">
-          <circle
-            cx="50"
-            cy="50"
-            r={radius}
-            fill="transparent"
-            stroke="currentColor"
-            strokeWidth={strokeWidth}
-            className="text-surface-muted opacity-30"
-          />
-          {/* Sektor Aman / Normal (Emerald) */}
-          {safePct > 0 && (
-            <circle
-              cx="50"
-              cy="50"
-              r={radius}
-              fill="transparent"
-              stroke="#4dff00ff"
-              strokeWidth={strokeWidth}
-              strokeDasharray={`${safeDash} ${circumference}`}
-              strokeDashoffset={safeOffset}
-              strokeLinecap="round"
-              className="transition-all duration-700"
-            />
-          )}
-          {/* Sektor Limit / Kritis (Orange) */}
-          {limitOnlyPct > 0 && (
-            <circle
-              cx="50"
-              cy="50"
-              r={radius}
-              fill="transparent"
-              stroke="#fffb25ff"
-              strokeWidth={strokeWidth}
-              strokeDasharray={`${limitDash} ${circumference}`}
-              strokeDashoffset={limitOffset}
-              strokeLinecap="round"
-              className="transition-all duration-700"
-            />
-          )}
-          {/* Sektor Stok Habis / Critical (Merah Menyala) */}
-          {zeroPct > 0 && (
-            <circle
-              cx="50"
-              cy="50"
-              r={radius}
-              fill="transparent"
-              stroke="#ff0505ff"
-              strokeWidth={strokeWidth}
-              strokeDasharray={`${zeroDash} ${circumference}`}
-              strokeDashoffset={zeroOffset}
-              strokeLinecap="round"
-              className="transition-all duration-700"
-            />
-          )}
-        </svg>
-        <div className="absolute flex flex-col items-center justify-center text-center">
-          <span
-            className={cn(
-              "font-mono text-base font-bold leading-tight",
-              isKpiHit ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"
-            )}
-          >
-            {kpiExactPct.toFixed(2)}%
-          </span>
-          <span
-            className={cn(
-              "text-[9.5px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider mt-1 border shadow-xs",
-              isKpiHit
-                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                : "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/40"
-            )}
-          >
-            {kpiStatus}
-          </span>
-        </div>
-      </div>
-    );
-  };
-
-  // Render Card Diagram & Analisis Status Barang OBS yang Rapi & Terbaca Jelas
-  const renderStockAnalysisCard = () => {
-    const getDisplayedList = () => {
-      switch (stockStatusTab) {
-        case "critical":
-          return {
-            items: limitProductsList,
-            label: "Barang Critical (Habis & Limit)",
-            colorClass: "text-red-600 dark:text-red-500",
-            badgeClass: "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/30",
-            emptyText: "✓ Tidak ada barang critical (stok habis atau limit).",
-          };
-        case "habis":
-          return {
-            items: zeroProductsList,
-            label: "Barang Critical / Habis",
-            colorClass: "text-red-600 dark:text-red-500",
-            badgeClass: "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/30",
-            emptyText: "✓ Tidak ada barang stok kosong / critical (0 pcs).",
-          };
-        case "limit":
-          return {
-            items: limitOnlyProductsList,
-            label: "Barang Stok Limit",
-            colorClass: "text-orange-600 dark:text-orange-400",
-            badgeClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30",
-            emptyText: "✓ Tidak ada barang stok limit.",
-          };
-        case "aman":
-          return {
-            items: safeProductsList,
-            label: "Barang Stok Aman / Normal",
-            colorClass: "text-emerald-600 dark:text-emerald-400",
-            badgeClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
-            emptyText: "Tidak ada data barang aman.",
-          };
-        case "all":
-        default:
-          return {
-            items: activeProducts,
-            label: "Semua Barang OBS Sparepart",
-            colorClass: "text-blue-600 dark:text-blue-400",
-            badgeClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
-            emptyText: "Tidak ada data barang aktif.",
-          };
-      }
-    };
-
-    const currentTabInfo = getDisplayedList();
-
-    return (
-      <div
-        id="diagram-analisis-status-sparepart"
-        className="rise-in border border-border bg-surface p-5 flex flex-col justify-between h-full shadow-xs space-y-4 scroll-mt-20"
-      >
-        <div>
-          {/* Header & Donut */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-border pb-3.5 gap-4">
-            <div className="flex items-center gap-4">
-              {/* Diagram Donat Persentase Status All Barang */}
-              {renderStockDonut()}
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-sm font-semibold tracking-tight flex items-center gap-2">
-                    <span className="label-caps !p-0">Diagram Analisis Status Barang Sparepart</span>
-                  </h3>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-surface-muted border border-border text-muted-foreground">
-                    {totalActiveProducts} Total Item
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Tingkat ketersediaan & proporsi status stok sparepart aktif di lini gudang
-                </p>
-                {/* Legend Persentase 3 Status */}
-                <div className="flex flex-wrap items-center gap-2 mt-2">
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                    <span className="size-2 rounded-full bg-emerald-500" />
-                    Aman: {nonLimitProductsCount} ({safePct}%)
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20">
-                    <span className="size-2 rounded-full bg-orange-500" />
-                    Limit: {limitOnlyCount} ({limitOnlyPct}%)
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-500 border border-red-500/20">
-                    <span className="size-2 rounded-full bg-red-600" />
-                    Critical / Habis (0): {zeroProductsCount} ({zeroPct}%)
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Bar Visual Progress Segmented */}
-          <div className="mt-3.5 space-y-1.5">
-            <div className="w-full bg-surface-muted rounded-full h-2.5 overflow-hidden flex shadow-inner">
-              <div
-                style={{ width: `${safePct}%` }}
-                className="bg-emerald-500 h-full transition-all"
-                title={`Aman: ${nonLimitProductsCount} (${safePct}%)`}
-              />
-              <div
-                style={{ width: `${limitOnlyPct}%` }}
-                className="bg-orange-500 h-full transition-all"
-                title={`Limit: ${limitOnlyCount} (${limitOnlyPct}%)`}
-              />
-              <div
-                style={{ width: `${zeroPct}%` }}
-                className="bg-red-600 h-full transition-all"
-                title={`Critical / Habis: ${zeroProductsCount} (${zeroPct}%)`}
-              />
-            </div>
-            <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-0.5">
-              <span>0%</span>
-              <span className="font-medium flex items-center gap-1">
-                Target KPI Sparepart: <strong className="font-mono text-foreground font-semibold">&ge; 92.00% (HIT)</strong> &bull; Aktual:{" "}
-                <span className={cn("font-mono font-bold", isKpiHit ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500")}>
-                  {kpiExactPct.toFixed(2)}% ({kpiStatus})
-                </span>
-              </span>
-              <span>100%</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Tab Filter Button & Daftar Barang Rapi & Terbaca Jelas */}
-        <div className="pt-2 border-t border-border space-y-2.5 flex-1 flex flex-col justify-between">
-          {/* Tab Button Group: Semua, Critical, Aman */}
-          <div className="flex items-center gap-1.5 bg-surface-muted/60 p-1 rounded-lg border border-border">
-            {/* 1. Tab Semua */}
-            <button
-              type="button"
-              onClick={() => setStockStatusTab("all")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer",
-                stockStatusTab === "all"
-                  ? "bg-primary text-primary-foreground shadow-xs"
-                  : "text-muted-foreground hover:bg-surface hover:text-foreground"
-              )}
-            >
-              <Package className="size-3.5 shrink-0" />
-              <span>Semua</span>
-              <span
-                className={cn(
-                  "font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold",
-                  stockStatusTab === "all"
-                    ? "bg-primary-foreground/20 text-primary-foreground"
-                    : "bg-surface border border-border text-foreground"
-                )}
-              >
-                {totalActiveProducts}
-              </span>
-            </button>
-
-            {/* 2. Tab Critical (Gabungan Kosong & Limit) */}
-            <button
-              type="button"
-              onClick={() => setStockStatusTab("critical")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer",
-                stockStatusTab === "critical" || stockStatusTab === "habis" || stockStatusTab === "limit"
-                  ? "bg-red-600 text-white shadow-xs"
-                  : "text-muted-foreground hover:bg-surface hover:text-foreground"
-              )}
-              title="Barang Critical: Gabungan Stok Kosong (0 pcs) & Stok Limit"
-            >
-              <AlertTriangle className="size-3.5 shrink-0" />
-              <span>Critical</span>
-              <span
-                className={cn(
-                  "font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold",
-                  stockStatusTab === "critical" || stockStatusTab === "habis" || stockStatusTab === "limit"
-                    ? "bg-red-800/80 text-white"
-                    : "bg-surface border border-border text-red-600 dark:text-red-500"
-                )}
-              >
-                {limitProductsCount}
-              </span>
-            </button>
-
-            {/* 3. Tab Aman */}
-            <button
-              type="button"
-              onClick={() => setStockStatusTab("aman")}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer",
-                stockStatusTab === "aman"
-                  ? "bg-emerald-600 text-white shadow-xs"
-                  : "text-muted-foreground hover:bg-surface hover:text-foreground"
-              )}
-            >
-              <CheckCircle2 className="size-3.5 shrink-0" />
-              <span>Aman</span>
-              <span
-                className={cn(
-                  "font-mono text-[10px] px-1.5 py-0.2 rounded-full font-bold",
-                  stockStatusTab === "aman"
-                    ? "bg-emerald-800/80 text-white"
-                    : "bg-surface border border-border text-emerald-600 dark:text-emerald-400"
-                )}
-              >
-                {nonLimitProductsCount}
-              </span>
-            </button>
-          </div>
-
-          {/* List Barang yang Luas, Rapi, & Terbaca Jelas */}
-          <div className="h-44 overflow-y-auto space-y-1.5 pr-1">
-            {currentTabInfo.items.length > 0 ? (
-              currentTabInfo.items.map((p) => {
-                const isZero = (p.current_stock ?? 0) <= 0;
-                const isLow = !isZero && (p.current_stock ?? 0) <= (p.min_stock ?? 10);
-                return (
-                  <div
-                    key={p.id}
-                    className="flex items-center justify-between gap-3 p-2 rounded border bg-surface hover:bg-surface-muted/50 border-border/80 transition-colors"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-xs text-foreground truncate" title={p.name}>
-                        {p.name}
-                      </p>
-                      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
-                        <span className="font-mono bg-surface-muted px-1.5 py-0.2 rounded border border-border/60">
-                          {p.code || "No SKU"}
-                        </span>
-                        {(p as any).location && (
-                          <span className="text-[10px]">Lokasi: {(p as any).location}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0 flex items-center gap-2">
-                      <span
-                        className={cn(
-                          "font-mono text-xs font-bold px-2 py-0.5 rounded border",
-                          isZero
-                            ? "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/30"
-                            : isLow
-                              ? "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30"
-                              : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                        )}
-                      >
-                        {p.current_stock ?? 0} {p.unit || "pcs"}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground font-medium whitespace-nowrap">
-                        Min: {p.min_stock ?? 10}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 border border-emerald-500/15 p-4 rounded text-center my-auto flex items-center justify-center gap-1.5">
-                {currentTabInfo.emptyText}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   // ── ANALISIS GABUNGAN OBS + BUFFER STOCK ─────────────────────────────────────
   const combinedAnalysis = useMemo(() => {
     // Klasifikasi Buffer Stock (sama seperti OBS)
@@ -637,66 +290,333 @@ function DashboardPage() {
     const pctHabis = totalGabungan > 0 ? Math.max(0, 100 - pctAman - pctLimit) : 0;
     const pctKetersediaan = totalGabungan > 0 ? Math.round(((totalGabungan - gabunganHabis) / totalGabungan) * 100) : 0;
 
-    // Pie chart data: distribusi sumber
-    const sourceData = [
-      { name: "OBS Sparepart", value: totalOBS, color: "#2563eb" },
-      { name: "Buffer Stok", value: totalBuffer, color: "#f97316" },
-    ];
-
-    // Pie chart data: status gabungan
-    const statusData = [
-      { name: "Aman", value: gabunganAman, color: "#10b981", pct: pctAman },
-      { name: "Limit / Kritis", value: gabunganLimit, color: "#f59e0b", pct: pctLimit },
-      { name: "Habis (0)", value: gabunganHabis, color: "#ef4444", pct: pctHabis },
-    ].filter((d) => d.value > 0);
-
-    // Pie chart data: status OBS Sparepart
-    const obsStatusData = [
-      { name: "Aman", value: nonLimitProductsCount, color: "#10b981", pct: safePct, statusKey: "aman" as const },
-      { name: "Limit", value: limitOnlyCount, color: "#f97316", pct: limitOnlyPct, statusKey: "limit" as const },
-      { name: "Critical / Habis (0)", value: zeroProductsCount, color: "#ef4444", pct: zeroPct, statusKey: "habis" as const },
-    ].filter((d) => d.value > 0);
-
-    // Horizontal bar chart data: perbandingan OBS vs Buffer per status
-    const comparisonData = [
-      { name: "Aman", obs: nonLimitProductsCount, buffer: bufferSafe.length, color: "#10b981" },
-      { name: "Limit", obs: limitOnlyCount, buffer: bufferLimit.length, color: "#f59e0b" },
-      { name: "Habis", obs: zeroProductsCount, buffer: bufferZero.length, color: "#ef4444" },
-    ];
-
-
     return {
       totalOBS, totalBuffer, totalGabungan,
       gabunganAman, gabunganLimit, gabunganHabis,
       totalStokOBS, totalStokBuffer, totalStokGabungan,
       pctAman, pctLimit, pctHabis, pctKetersediaan,
-      sourceData, statusData, obsStatusData, comparisonData,
       bufferZero, bufferLimit, bufferSafe,
     };
   }, [activeProducts, activeBufferItems, totalActiveProducts, nonLimitProductsCount, limitOnlyCount, zeroProductsCount, safePct, limitOnlyPct, zeroPct]);
+
+  // Data gabungan OBS + Buffer untuk Modal Interaktif 4 Kartu Metrik
+  type MetricItem = {
+    id: string;
+    name: string;
+    code?: string | null;
+    category: "OBS Sparepart" | "Buffer Stock";
+    current_stock: number;
+    min_stock: number;
+    unit: string;
+    status: "safe" | "limit" | "empty";
+  };
+
+  const unifiedMetricItems = useMemo<MetricItem[]>(() => {
+    const list: MetricItem[] = [];
+
+    activeProducts.forEach((p) => {
+      const stock = p.current_stock ?? 0;
+      const minStock = p.min_stock ?? 10;
+      let status: "safe" | "limit" | "empty" = "safe";
+      if (stock <= 0) status = "empty";
+      else if (stock <= minStock) status = "limit";
+
+      list.push({
+        id: `obs-${p.id}`,
+        name: p.name,
+        code: p.code,
+        category: "OBS Sparepart",
+        current_stock: stock,
+        min_stock: minStock,
+        unit: p.unit || "pcs",
+        status,
+      });
+    });
+
+    activeBufferItems.forEach((b) => {
+      const stock = b.current_stock ?? 0;
+      const minStock = b.min_stock ?? 10;
+      let status: "safe" | "limit" | "empty" = "safe";
+      if (stock <= 0) status = "empty";
+      else if (stock <= minStock) status = "limit";
+
+      list.push({
+        id: `buffer-${b.id}`,
+        name: b.name,
+        code: b.code,
+        category: "Buffer Stock",
+        current_stock: stock,
+        min_stock: minStock,
+        unit: b.unit || "pcs",
+        status,
+      });
+    });
+
+    return list;
+  }, [activeProducts, activeBufferItems]);
+
+  // Filter barang sesuai kartu metrik yang dipilih & filter pencarian di modal
+  const filteredModalItems = useMemo(() => {
+    if (!selectedMetricModal) return [];
+
+    let base = unifiedMetricItems;
+
+    // Filter berdasarkan kartu metrik utama yang diklik
+    if (selectedMetricModal === "total_stok") {
+      // Urutkan dari stok fisik terbanyak
+      base = [...base].sort((a, b) => b.current_stock - a.current_stock);
+    } else if (selectedMetricModal === "stok_aman") {
+      base = base.filter((it) => it.status === "safe");
+    } else if (selectedMetricModal === "perlu_perhatian") {
+      base = base.filter((it) => it.status === "limit" || it.status === "empty");
+    }
+
+    // Filter Kategori (Semua / OBS / Buffer)
+    if (metricCategoryFilter === "obs") {
+      base = base.filter((it) => it.category === "OBS Sparepart");
+    } else if (metricCategoryFilter === "buffer") {
+      base = base.filter((it) => it.category === "Buffer Stock");
+    }
+
+    // Filter Status (Aman / Limit / Habis)
+    if (metricStatusFilter !== "all") {
+      base = base.filter((it) => it.status === metricStatusFilter);
+    }
+
+    // Filter Pencarian nama atau kode material
+    if (metricSearchQuery.trim()) {
+      const q = metricSearchQuery.toLowerCase();
+      base = base.filter(
+        (it) =>
+          it.name.toLowerCase().includes(q) ||
+          (it.code && it.code.toLowerCase().includes(q))
+      );
+    }
+
+    return base;
+  }, [unifiedMetricItems, selectedMetricModal, metricCategoryFilter, metricStatusFilter, metricSearchQuery]);
+
+  // Helper render Donut Chart SVG untuk Perbandingan Status Stok
+  const renderDonutSvg = ({
+    safePctVal,
+    limitPctVal,
+    zeroPctVal,
+    centerValue,
+    centerBadge,
+    badgeClass,
+    subText,
+  }: {
+    safePctVal: number;
+    limitPctVal: number;
+    zeroPctVal: number;
+    centerValue: string;
+    centerBadge: string;
+    badgeClass: string;
+    subText?: string;
+  }) => {
+    const size = 104;
+    const strokeWidth = 13;
+    const radius = 37;
+    const circumference = 2 * Math.PI * radius;
+
+    const total = (safePctVal + limitPctVal + zeroPctVal) || 100;
+    const sPct = (safePctVal / total) * 100;
+    const lPct = (limitPctVal / total) * 100;
+    const zPct = (zeroPctVal / total) * 100;
+
+    const safeDash = (sPct / 100) * circumference;
+    const limitDash = (lPct / 100) * circumference;
+    const zeroDash = (zPct / 100) * circumference;
+
+    const safeOffset = 0;
+    const limitOffset = -safeDash;
+    const zeroOffset = -(safeDash + limitDash);
+
+    return (
+      <div className="relative flex items-center justify-center shrink-0">
+        <svg width={size} height={size} viewBox="0 0 100 100" className="transform -rotate-90">
+          <circle
+            cx="50"
+            cy="50"
+            r={radius}
+            fill="transparent"
+            stroke="currentColor"
+            strokeWidth={strokeWidth}
+            className="text-slate-200 dark:text-slate-700"
+          />
+          {sPct > 0 && (
+            <circle
+              cx="50"
+              cy="50"
+              r={radius}
+              fill="transparent"
+              stroke="#10b981"
+              strokeWidth={strokeWidth}
+              strokeDasharray={`${safeDash} ${circumference}`}
+              strokeDashoffset={safeOffset}
+              strokeLinecap="round"
+              className="transition-all duration-700"
+            />
+          )}
+          {lPct > 0 && (
+            <circle
+              cx="50"
+              cy="50"
+              r={radius}
+              fill="transparent"
+              stroke="#f59e0b"
+              strokeWidth={strokeWidth}
+              strokeDasharray={`${limitDash} ${circumference}`}
+              strokeDashoffset={limitOffset}
+              strokeLinecap="round"
+              className="transition-all duration-700"
+            />
+          )}
+          {zPct > 0 && (
+            <circle
+              cx="50"
+              cy="50"
+              r={radius}
+              fill="transparent"
+              stroke="#ef4444"
+              strokeWidth={strokeWidth}
+              strokeDasharray={`${zeroDash} ${circumference}`}
+              strokeDashoffset={zeroOffset}
+              strokeLinecap="round"
+              className="transition-all duration-700"
+            />
+          )}
+        </svg>
+        <div className="absolute flex flex-col items-center justify-center text-center">
+          <span className="font-mono text-sm sm:text-base font-bold leading-tight text-foreground">
+            {centerValue}
+          </span>
+          <span className={cn("text-[8.5px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider mt-0.5 border shadow-xs", badgeClass)}>
+            {centerBadge}
+          </span>
+          {subText && (
+            <span className="text-[7.5px] font-semibold text-muted-foreground uppercase tracking-wider mt-0.5">
+              {subText}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Render Card Diagram & Analisis Status Barang: OBS Sparepart vs All Item Barang
+  const renderStockAnalysisCard = () => {
+    const ca = combinedAnalysis;
+    const allSafePctExact = ca.totalGabungan > 0 ? (ca.gabunganAman / ca.totalGabungan) * 100 : 0;
+
+    return (
+      <div
+        id="diagram-analisis-status-sparepart"
+        className="rise-in border border-border bg-white p-5 flex flex-col justify-between h-full shadow-xs scroll-mt-20 rounded-xl"
+      >
+        {/* 2 Kolom Komparasi: OBS Sparepart vs All Item Barang */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+          {/* Sisi Kiri: OBS Sparepart */}
+          <div className="border border-border/80 rounded-xl p-4 flex flex-col justify-between space-y-3 bg-slate-50/70 shadow-2xs">
+            <div className="flex items-center gap-1.5 border-b border-border/80 pb-2">
+              <Package className="size-3.5 text-blue-600 shrink-0" />
+              <span className="text-xs font-bold uppercase tracking-wider text-foreground">OBS Sparepart</span>
+            </div>
+
+            <div className="flex items-center justify-center py-2">
+              {renderDonutSvg({
+                safePctVal: safePct,
+                limitPctVal: limitOnlyPct,
+                zeroPctVal: zeroPct,
+                centerValue: `${kpiExactPct.toFixed(1)}%`,
+                centerBadge: kpiStatus,
+                badgeClass: isKpiHit
+                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                  : "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/40",
+              })}
+            </div>
+
+            <div className="space-y-2 py-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="size-2 rounded-full bg-emerald-500" /> Aman
+                </span>
+                <span className="font-mono font-bold text-foreground">{nonLimitProductsCount} ({safePct}%)</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="size-2 rounded-full bg-amber-500" /> Limit
+                </span>
+                <span className="font-mono font-bold text-foreground">{limitOnlyCount} ({limitOnlyPct}%)</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="size-2 rounded-full bg-rose-500" /> Critical / Habis
+                </span>
+                <span className="font-mono font-bold text-foreground">{zeroProductsCount} ({zeroPct}%)</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Sisi Kanan: All Item Barang (OBS + Buffer) */}
+          <div className="border border-border/80 rounded-xl p-4 flex flex-col justify-between space-y-3 bg-slate-50/70 shadow-2xs">
+            <div className="flex items-center gap-1.5 border-b border-border/80 pb-2">
+              <Layers className="size-3.5 text-cyan-600 shrink-0" />
+              <span className="text-xs font-bold uppercase tracking-wider text-foreground">All Item Barang</span>
+            </div>
+
+            <div className="flex items-center justify-center py-2">
+              {renderDonutSvg({
+                safePctVal: ca.pctAman,
+                limitPctVal: ca.pctLimit,
+                zeroPctVal: ca.pctHabis,
+                centerValue: `${allSafePctExact.toFixed(1)}%`,
+                centerBadge: "AMAN",
+                badgeClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+              })}
+            </div>
+
+            <div className="space-y-2 py-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="size-2 rounded-full bg-emerald-500" /> Aman
+                </span>
+                <span className="font-mono font-bold text-foreground">
+                  {ca.gabunganAman} ({ca.pctAman}%)
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="size-2 rounded-full bg-amber-500" /> Limit
+                </span>
+                <span className="font-mono font-bold text-foreground">
+                  {ca.gabunganLimit} ({ca.pctLimit}%)
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="size-2 rounded-full bg-rose-500" /> Critical / Habis
+                </span>
+                <span className="font-mono font-bold text-foreground">
+                  {ca.gabunganHabis} ({ca.pctHabis}%)
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Render Panel Analisis Keseluruhan OBS + Buffer Stock
   const renderCombinedAnalysisPanel = () => {
     const ca = combinedAnalysis;
     if (ca.totalGabungan === 0) return null;
 
-    const RADIAN = Math.PI / 180;
-    const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
-      const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-      const x = cx + radius * Math.cos(-midAngle * RADIAN);
-      const y = cy + radius * Math.sin(-midAngle * RADIAN);
-      if (percent < 0.05) return null;
-      return (
-        <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700}>
-          {`${(percent * 100).toFixed(0)}%`}
-        </text>
-      );
-    };
-
     return (
-      <div className="border border-border bg-surface p-5 rounded-none shadow-xs space-y-5">
+      <div className="space-y-3">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-2.5">
           <div>
             <div className="flex items-center gap-2">
               <Layers className="size-4 text-primary shrink-0" />
@@ -704,328 +624,433 @@ function DashboardPage() {
                 Analisis Keseluruhan Barang OBS & Buffer Stok
               </h3>
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Ringkasan & diagram analisis gabungan dari seluruh barang OBS Sparepart + Buffer Stok.
+            <p className="text-xs text-muted-foreground mt-0.5 font-medium">
+              Ringkasan statistik gabungan dari seluruh barang OBS Sparepart + Buffer Stok.
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/25">
               OBS: {ca.totalOBS}
             </span>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20">
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/25">
               Buffer: {ca.totalBuffer}
             </span>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-surface-muted border border-border text-foreground">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-border text-foreground">
               Total: {ca.totalGabungan}
             </span>
           </div>
         </div>
 
-        {/* Panel A — 4 Stat Cards */}
+        {/* 4 Stat Cards dengan Warna Tebal & Interaktif saat di-klik */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="bg-gradient-to-br from-blue-500/10 to-blue-500/5 border border-blue-500/20 rounded-lg p-3.5 space-y-1">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-              <BoxIcon className="size-3.5" />
-              Total Item Gabungan
+          {/* Card 1: Total Item Gabungan (Biru Tebal) */}
+          <div
+            onClick={() => {
+              setSelectedMetricModal("total_gabungan");
+              setMetricCategoryFilter("all");
+              setMetricStatusFilter("all");
+              setMetricSearchQuery("");
+            }}
+            className="cursor-pointer bg-blue-600 hover:bg-blue-600/90 active:scale-[0.99] border border-blue-400/40 rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none"
+            title="Klik untuk melihat daftar seluruh item barang"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-blue-100">
+                <BoxIcon className="size-3.5 text-blue-200" />
+                Total Item Gabungan
+              </div>
+              <ArrowUpRight className="size-3.5 text-blue-200 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
             </div>
-            <div className="text-2xl font-mono font-extrabold text-foreground">{ca.totalGabungan}</div>
-            <div className="text-[10px] text-muted-foreground">
-              OBS: {ca.totalOBS} · Buffer: {ca.totalBuffer}
-            </div>
-          </div>
-          <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-500/5 border border-cyan-500/20 rounded-lg p-3.5 space-y-1">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
-              <Activity className="size-3.5" />
-              Total Stok Fisik
-            </div>
-            <div className="text-2xl font-mono font-extrabold text-foreground">{ca.totalStokGabungan.toLocaleString("id-ID")}</div>
-            <div className="text-[10px] text-muted-foreground">
-              OBS: {ca.totalStokOBS.toLocaleString("id-ID")} · Buffer: {ca.totalStokBuffer.toLocaleString("id-ID")}
-            </div>
-          </div>
-          <div className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border border-emerald-500/20 rounded-lg p-3.5 space-y-1">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-              <CheckCircle2 className="size-3.5" />
-              Rasio Stok Aman
-            </div>
-            <div className="text-2xl font-mono font-extrabold text-emerald-600 dark:text-emerald-400">{ca.pctAman}%</div>
-            <div className="text-[10px] text-muted-foreground">
-              {ca.gabunganAman} dari {ca.totalGabungan} item stok normal/lebih
+            <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">{ca.totalGabungan}</div>
+            <div className="flex items-center justify-between text-[11px] text-blue-100/90 font-medium">
+              <span>OBS: {ca.totalOBS} · Buffer: {ca.totalBuffer}</span>
+              <span className="text-[10px] text-blue-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                Lihat Barang
+              </span>
             </div>
           </div>
-          <div className="bg-gradient-to-br from-amber-500/10 to-amber-500/5 border border-amber-500/20 rounded-lg p-3.5 space-y-1">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-              <AlertTriangle className="size-3.5" />
-              Perlu Perhatian (Limit & Habis)
+
+          {/* Card 2: Total Stok Fisik (Cyan Tebal) */}
+          <div
+            onClick={() => {
+              setSelectedMetricModal("total_stok");
+              setMetricCategoryFilter("all");
+              setMetricStatusFilter("all");
+              setMetricSearchQuery("");
+            }}
+            className="cursor-pointer bg-cyan-600 hover:bg-cyan-600/90 active:scale-[0.99] border border-cyan-400/40 rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none"
+            title="Klik untuk melihat daftar stok fisik barang"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-cyan-100">
+                <Activity className="size-3.5 text-cyan-200" />
+                Total Stok Fisik
+              </div>
+              <ArrowUpRight className="size-3.5 text-cyan-200 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
             </div>
-            <div className="text-2xl font-mono font-extrabold text-amber-600 dark:text-amber-400">{ca.pctLimit + ca.pctHabis}%</div>
-            <div className="text-[10px] text-muted-foreground">
-              {ca.gabunganLimit + ca.gabunganHabis} item ({ca.gabunganLimit} limit + {ca.gabunganHabis} habis)
+            <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">{ca.totalStokGabungan.toLocaleString("id-ID")}</div>
+            <div className="flex items-center justify-between text-[11px] text-cyan-100/90 font-medium">
+              <span>OBS: {ca.totalStokOBS.toLocaleString("id-ID")} · Buffer: {ca.totalStokBuffer.toLocaleString("id-ID")}</span>
+              <span className="text-[10px] text-cyan-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                Lihat Barang
+              </span>
+            </div>
+          </div>
+
+          {/* Card 3: Rasio Stok Aman (Emerald / Hijau Tebal) */}
+          <div
+            onClick={() => {
+              setSelectedMetricModal("stok_aman");
+              setMetricCategoryFilter("all");
+              setMetricStatusFilter("all");
+              setMetricSearchQuery("");
+            }}
+            className="cursor-pointer bg-emerald-600 hover:bg-emerald-600/90 active:scale-[0.99] border border-emerald-400/40 rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none"
+            title="Klik untuk melihat daftar barang stok aman"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-100">
+                <CheckCircle2 className="size-3.5 text-emerald-200" />
+                Rasio Stok Aman
+              </div>
+              <ArrowUpRight className="size-3.5 text-emerald-200 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+            </div>
+            <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">{ca.pctAman}%</div>
+            <div className="flex items-center justify-between text-[11px] text-emerald-100/90 font-medium">
+              <span>{ca.gabunganAman} dari {ca.totalGabungan} item aman</span>
+              <span className="text-[10px] text-emerald-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                Lihat Barang
+              </span>
+            </div>
+          </div>
+
+          {/* Card 4: Perlu Perhatian (Amber / Oranye Tebal) */}
+          <div
+            onClick={() => {
+              setSelectedMetricModal("perlu_perhatian");
+              setMetricCategoryFilter("all");
+              setMetricStatusFilter("all");
+              setMetricSearchQuery("");
+            }}
+            className="cursor-pointer bg-amber-600 hover:bg-amber-600/90 active:scale-[0.99] border border-amber-400/40 rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none"
+            title="Klik untuk melihat daftar barang yang perlu perhatian"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-100">
+                <AlertTriangle className="size-3.5 text-amber-200" />
+                Perlu Perhatian (Limit & Habis)
+              </div>
+              <ArrowUpRight className="size-3.5 text-amber-200 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+            </div>
+            <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">{ca.pctLimit + ca.pctHabis}%</div>
+            <div className="flex items-center justify-between text-[11px] text-amber-100/90 font-medium">
+              <span>{ca.gabunganLimit + ca.gabunganHabis} item ({ca.gabunganLimit} limit + {ca.gabunganHabis} habis)</span>
+              <span className="text-[10px] text-amber-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                Lihat Barang
+              </span>
             </div>
           </div>
         </div>
+      </div>
+    );
+  };
 
-        {/* Panel B + C — Pie Charts */}
-        <div className="grid md:grid-cols-2 gap-4">
-          {/* Pie Chart: Distribusi Sumber */}
-          <div className="bg-surface-muted/30 border border-border rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Package className="size-3.5 text-blue-500" />
-              <h4 className="text-xs font-bold uppercase text-foreground">Distribusi Sumber Barang</h4>
-            </div>
-            <div className="h-52">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={ca.sourceData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={45}
-                    outerRadius={75}
-                    paddingAngle={3}
-                    dataKey="value"
-                    labelLine={false}
-                    label={renderCustomLabel}
-                  >
-                    {ca.sourceData.map((entry, index) => (
-                      <Cell key={`source-${index}`} fill={entry.color} stroke="none" />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip
-                    content={({ active, payload }) => {
-                      if (active && payload && payload.length && payload[0]?.payload) {
-                        const d = payload[0].payload;
-                        const pct = ca.totalGabungan > 0 ? Math.round((d.value / ca.totalGabungan) * 100) : 0;
-                        return (
-                          <div className="rounded border border-border bg-surface p-2 shadow-md text-xs space-y-0.5">
-                            <p className="font-bold" style={{ color: d.color }}>{d.name}</p>
-                            <p className="text-foreground font-mono">{d.value} item ({pct}%)</p>
-                          </div>
-                        );
-                      }
-                      return null;
-                    }}
-                  />
-                  <Legend
-                    verticalAlign="bottom"
-                    height={30}
-                    formatter={(value: string) => <span className="text-xs text-foreground">{value}</span>}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+  // Render Modal Detail Barang saat Kartu Metrik di-klik
+  const renderMetricItemsModal = () => {
+    if (!selectedMetricModal) return null;
 
-          {/* Pie Chart: Status Stok OBS Sparepart */}
-          <div className="bg-surface-muted/30 border border-border rounded-lg p-4 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between gap-2 mb-3">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="size-3.5 text-emerald-500" />
-                  <h4 className="text-xs font-bold uppercase text-foreground">Status Stok OBS Sparepart</h4>
+    const ca = combinedAnalysis;
+    let modalTitle = "";
+    let modalDesc = "";
+    let modalIcon = null;
+    let modalBadge = "";
+    let baseCount = 0;
+
+    if (selectedMetricModal === "total_gabungan") {
+      modalTitle = "Daftar Seluruh Item Barang";
+      modalDesc = `Total ${ca.totalGabungan} item gabungan dari seluruh gudang OBS Sparepart dan Buffer Stock.`;
+      modalBadge = `${ca.totalGabungan} Total Item`;
+      modalIcon = <BoxIcon className="size-5 text-blue-500" />;
+      baseCount = ca.totalGabungan;
+    } else if (selectedMetricModal === "total_stok") {
+      modalTitle = "Daftar Stok Fisik Barang";
+      modalDesc = `Total ${ca.totalStokGabungan.toLocaleString("id-ID")} pcs stok fisik gabungan OBS & Buffer Stock (diurutkan dari stok terbanyak).`;
+      modalBadge = `${ca.totalStokGabungan.toLocaleString("id-ID")} pcs`;
+      modalIcon = <Activity className="size-5 text-cyan-500" />;
+      baseCount = unifiedMetricItems.length;
+    } else if (selectedMetricModal === "stok_aman") {
+      modalTitle = "Daftar Barang Stok Aman (Normal / Surplus)";
+      modalDesc = `Total ${ca.gabunganAman} item (${ca.pctAman}%) dengan status ketersediaan normal di atas batas minimum stok.`;
+      modalBadge = `${ca.gabunganAman} Item Aman`;
+      modalIcon = <CheckCircle2 className="size-5 text-emerald-500" />;
+      baseCount = ca.gabunganAman;
+    } else if (selectedMetricModal === "perlu_perhatian") {
+      modalTitle = "Daftar Barang Perlu Perhatian (Limit & Habis)";
+      modalDesc = `Total ${ca.gabunganLimit + ca.gabunganHabis} item (${ca.pctLimit + ca.pctHabis}%) kritis yang memerlukan penanganan pengadaan atau restock segera.`;
+      modalBadge = `${ca.gabunganLimit + ca.gabunganHabis} Item Kritis`;
+      modalIcon = <AlertTriangle className="size-5 text-amber-500" />;
+      baseCount = ca.gabunganLimit + ca.gabunganHabis;
+    }
+
+    return (
+      <Dialog
+        open={!!selectedMetricModal}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedMetricModal(null);
+            setMetricSearchQuery("");
+            setMetricCategoryFilter("all");
+            setMetricStatusFilter("all");
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-surface border border-border shadow-2xl">
+          {/* Header Modal */}
+          <DialogHeader className="p-5 pb-4 border-b border-border bg-surface-muted/40">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-surface border border-border/80 shadow-xs shrink-0">
+                  {modalIcon}
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={cn(
-                      "text-[10px] font-bold px-1.5 py-0.5 rounded border inline-flex items-center gap-1",
-                      isKpiHit
-                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                        : "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/40"
-                    )}
-                    title="Target KPI Sparepart: ≥ 92.00% (HIT) | ≤ 91.99% (MISS)"
-                  >
-                    KPI: {kpiStatus} ({kpiExactPct.toFixed(2)}%)
-                  </span>
+                <div>
+                  <DialogTitle className="text-base sm:text-lg font-bold text-foreground flex items-center gap-2 flex-wrap">
+                    {modalTitle}
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                      {modalBadge}
+                    </span>
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                    {modalDesc}
+                  </DialogDescription>
+                </div>
+              </div>
+            </div>
+
+            {/* Filter & Search Bar */}
+            <div className="mt-4 flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between">
+              {/* Search Input */}
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Input
+                  value={metricSearchQuery}
+                  onChange={(e) => setMetricSearchQuery(e.target.value)}
+                  placeholder="Cari nama barang atau kode material..."
+                  className="pl-8 h-9 text-xs bg-surface"
+                />
+              </div>
+
+              {/* Filter Kategori: Semua / OBS / Buffer */}
+              <div className="flex items-center gap-1 bg-surface p-1 rounded-md border border-border self-start sm:self-auto shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setMetricCategoryFilter("all")}
+                  className={cn(
+                    "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
+                    metricCategoryFilter === "all"
+                      ? "bg-primary text-primary-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Semua ({unifiedMetricItems.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMetricCategoryFilter("obs")}
+                  className={cn(
+                    "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
+                    metricCategoryFilter === "obs"
+                      ? "bg-blue-600 text-white shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  OBS ({ca.totalOBS})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMetricCategoryFilter("buffer")}
+                  className={cn(
+                    "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
+                    metricCategoryFilter === "buffer"
+                      ? "bg-orange-600 text-white shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Buffer ({ca.totalBuffer})
+                </button>
+              </div>
+
+              {/* Filter Status (khusus Total Item & Total Stok) */}
+              {(selectedMetricModal === "total_gabungan" || selectedMetricModal === "total_stok") && (
+                <div className="flex items-center gap-1 bg-surface p-1 rounded-md border border-border self-start sm:self-auto shrink-0">
                   <button
                     type="button"
-                    onClick={() => {
-                      document.getElementById("diagram-analisis-status-sparepart")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                    }}
-                    className="text-[11px] font-medium text-primary hover:underline inline-flex items-center gap-0.5 cursor-pointer ml-1"
-                    title="Buka Diagram & Analisis Status Barang & Sparepart"
+                    onClick={() => setMetricStatusFilter("all")}
+                    className={cn(
+                      "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
+                      metricStatusFilter === "all"
+                        ? "bg-secondary text-secondary-foreground font-semibold"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
                   >
-                    Lihat Detail <ExternalLink className="size-3" />
+                    Semua
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMetricStatusFilter("safe")}
+                    className={cn(
+                      "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
+                      metricStatusFilter === "safe"
+                        ? "bg-emerald-600 text-white font-semibold"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Aman
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMetricStatusFilter("limit")}
+                    className={cn(
+                      "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
+                      metricStatusFilter === "limit"
+                        ? "bg-amber-600 text-white font-semibold"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Limit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMetricStatusFilter("empty")}
+                    className={cn(
+                      "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
+                      metricStatusFilter === "empty"
+                        ? "bg-red-600 text-white font-semibold"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Habis
                   </button>
                 </div>
-              </div>
+              )}
+            </div>
+          </DialogHeader>
 
-              <div className="h-52 relative flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={ca.obsStatusData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={48}
-                      outerRadius={75}
-                      paddingAngle={3}
-                      dataKey="value"
-                      labelLine={false}
-                      label={renderCustomLabel}
-                      className="cursor-pointer"
-                      onClick={(entry: any) => {
-                        if (entry?.statusKey) {
-                          setStockStatusTab(entry.statusKey);
-                        }
-                        document.getElementById("diagram-analisis-status-sparepart")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                      }}
-                    >
-                      {ca.obsStatusData.map((entry, index) => (
-                        <Cell
-                          key={`status-${index}`}
-                          fill={entry.color}
-                          stroke="none"
-                          className="cursor-pointer hover:opacity-85 transition-opacity"
-                        />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip
-                      content={({ active, payload }) => {
-                        if (active && payload && payload.length && payload[0]?.payload) {
-                          const d = payload[0].payload;
-                          return (
-                            <div className="rounded border border-border bg-surface p-2 shadow-md text-xs space-y-0.5">
-                              <p className="font-bold" style={{ color: d.color }}>{d.name}</p>
-                              <p className="text-foreground font-mono">{d.value} item ({d.pct}% dari {totalActiveProducts} item OBS)</p>
-                              <p className="text-[10px] text-muted-foreground pt-0.5">Klik untuk lihat rincian barang ↑</p>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
-                    <Legend
-                      verticalAlign="bottom"
-                      height={36}
-                      onClick={(e: any) => {
-                        const item = ca.obsStatusData.find((s) => s.name === e.value);
-                        if (item?.statusKey) {
-                          setStockStatusTab(item.statusKey);
-                        }
-                        document.getElementById("diagram-analisis-status-sparepart")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                      }}
-                      formatter={(value: string) => {
-                        const item = ca.obsStatusData.find((s) => s.name === value);
-                        return (
+          {/* Table Container */}
+          <div className="flex-1 overflow-y-auto max-h-[55vh] p-0 divide-y divide-border">
+            {filteredModalItems.length === 0 ? (
+              <div className="p-10 text-center text-muted-foreground space-y-2">
+                <Package className="size-8 mx-auto text-muted-foreground/50" />
+                <p className="text-sm font-medium">Tidak ada barang yang cocok dengan kriteria pencarian/filter.</p>
+              </div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-surface-muted border-b border-border z-10">
+                  <tr>
+                    <th className="py-2.5 px-3 text-center w-10 text-muted-foreground font-bold">#</th>
+                    <th className="py-2.5 px-3 text-left w-32 font-bold text-muted-foreground">KODE</th>
+                    <th className="py-2.5 px-3 text-left font-bold text-muted-foreground">NAMA BARANG</th>
+                    <th className="py-2.5 px-3 text-center w-28 font-bold text-muted-foreground">KATEGORI</th>
+                    <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">STOK FISIK</th>
+                    <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">MIN. STOK</th>
+                    <th className="py-2.5 px-3 text-center w-28 font-bold text-muted-foreground">STATUS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {filteredModalItems.map((item, idx) => {
+                    const isSafe = item.status === "safe";
+                    const isLimit = item.status === "limit";
+                    const isEmpty = item.status === "empty";
+
+                    return (
+                      <tr key={item.id} className="hover:bg-surface-muted/40 transition-colors">
+                        <td className="py-2.5 px-3 text-center text-muted-foreground font-mono">{idx + 1}</td>
+                        <td className="py-2.5 px-3">
+                          {item.code ? (
+                            <span className="font-mono text-[11px] font-semibold bg-surface-muted px-1.5 py-0.5 rounded border border-border/70 text-foreground">
+                              {item.code}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground font-mono">—</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 font-medium text-foreground">
+                          <span title={item.name}>{item.name}</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
                           <span
-                            className="text-xs text-foreground font-medium cursor-pointer hover:underline"
-                            title="Klik untuk melihat & memfilter barang"
+                            className={cn(
+                              "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                              item.category === "OBS Sparepart"
+                                ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25"
+                                : "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/25"
+                            )}
                           >
-                            {value} {item ? `(${item.value} item · ${item.pct}%)` : ""}
+                            {item.category === "OBS Sparepart" ? "OBS" : "Buffer"}
                           </span>
-                        );
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-                {/* Center Donut KPI & Persentase (Sinkron & Ngelink dengan Diagram Analisis Status Barang & Sparepart) */}
-                <div
-                  onClick={() => {
-                    document.getElementById("diagram-analisis-status-sparepart")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }}
-                  className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center text-center cursor-pointer group"
-                  title="Klik untuk membuka Diagram & Analisis Status Barang & Sparepart"
-                >
-                  <span
-                    className={cn(
-                      "font-mono text-base font-bold leading-tight group-hover:scale-105 transition-transform",
-                      isKpiHit ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"
-                    )}
-                  >
-                    {kpiExactPct.toFixed(2)}%
-                  </span>
-                  <span
-                    className={cn(
-                      "text-[8.5px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider mt-0.5 border shadow-xs",
-                      isKpiHit
-                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                        : "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/40"
-                    )}
-                  >
-                    {kpiStatus}
-                  </span>
-                  <span className="text-[7.5px] font-semibold text-muted-foreground uppercase tracking-wider mt-0.5 group-hover:text-foreground">
-                    Target ≥ 92%
-                  </span>
-                </div>
-              </div>
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-foreground">
+                          {item.current_stock.toLocaleString("id-ID")} <span className="text-[10px] font-normal text-muted-foreground">{item.unit}</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">
+                          {item.min_stock.toLocaleString("id-ID")} {item.unit}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          {isSafe && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                              <span className="size-1.5 rounded-full bg-emerald-500" />
+                              Aman
+                            </span>
+                          )}
+                          {isLimit && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                              <span className="size-1.5 rounded-full bg-amber-500" />
+                              Limit
+                            </span>
+                          )}
+                          {isEmpty && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
+                              <span className="size-1.5 rounded-full bg-rose-500" />
+                              Habis
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Footer Modal */}
+          <DialogFooter className="p-3.5 px-5 border-t border-border bg-surface-muted/30 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <div className="text-xs text-muted-foreground">
+              Menampilkan <span className="font-bold text-foreground">{filteredModalItems.length}</span> dari{" "}
+              <span className="font-bold text-foreground">{baseCount}</span> barang
             </div>
-
-            {/* Target KPI Sparepart Bar Ringkas */}
-            <div className="mt-3 pt-2.5 border-t border-border flex items-center justify-between text-[11px]">
-              <span className="text-muted-foreground">
-                Target KPI: <span className="font-semibold text-foreground">≥ 92.00% (HIT)</span>
-              </span>
-              <span
-                className={cn(
-                  "font-bold font-mono",
-                  isKpiHit ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-500"
-                )}
+            <div className="flex items-center gap-2">
+              <Link to="/products">
+                <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 cursor-pointer">
+                  <ExternalLink className="size-3.5" />
+                  Buka Manajemen Barang
+                </Button>
+              </Link>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setSelectedMetricModal(null);
+                  setMetricSearchQuery("");
+                  setMetricCategoryFilter("all");
+                  setMetricStatusFilter("all");
+                }}
+                className="h-8 text-xs cursor-pointer"
               >
-                Aktual: {kpiExactPct.toFixed(2)}% ({kpiStatus})
-              </span>
+                Tutup
+              </Button>
             </div>
-          </div>
-        </div>
-
-        {/* Panel D — Horizontal Bar Chart Perbandingan OBS vs Buffer per Status */}
-        <div className="bg-surface-muted/30 border border-border rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <BarChart3 className="size-3.5 text-violet-500" />
-            <h4 className="text-xs font-bold uppercase text-foreground">Perbandingan OBS vs Buffer per Status</h4>
-          </div>
-          <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={ca.comparisonData}
-                layout="vertical"
-                margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" opacity={0.6} />
-                <XAxis type="number" tick={{ fontSize: 11, fill: "#64748b" }} stroke="#cbd5e1" allowDecimals={false} />
-                <YAxis
-                  dataKey="name"
-                  type="category"
-                  tick={{ fontSize: 11, fill: "#64748b", fontWeight: 600 }}
-                  stroke="#cbd5e1"
-                  width={50}
-                />
-                <RechartsTooltip
-                  content={({ active, payload, label }) => {
-                    if (active && payload && payload.length) {
-                      return (
-                        <div className="rounded border border-border bg-surface p-2.5 shadow-md text-xs space-y-1">
-                          <p className="font-bold text-foreground">{label}</p>
-                          {payload.map((p: any) => (
-                            <div key={p.dataKey} className="flex items-center gap-2">
-                              <span
-                                className="size-2 rounded-full shrink-0"
-                                style={{ backgroundColor: p.fill || p.color }}
-                              />
-                              <span className="text-muted-foreground">{p.name}:</span>
-                              <span className="font-mono font-bold text-foreground">{p.value} item</span>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Bar dataKey="obs" name="OBS Sparepart" fill="#2563eb" radius={[0, 4, 4, 0]} maxBarSize={24} />
-                <Bar dataKey="buffer" name="Buffer Stok" fill="#f97316" radius={[0, 4, 4, 0]} maxBarSize={24} />
-                <Legend
-                  verticalAlign="top"
-                  height={30}
-                  formatter={(value: string) => <span className="text-xs text-foreground">{value}</span>}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-
-      </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     );
   };
 
@@ -1881,41 +1906,59 @@ function DashboardPage() {
   };
 
   return (
-    <AppShell breadcrumb="DASHBOARD OVERVIEW" contentClassName="bg-[#1268D9]">
+    <AppShell breadcrumb="DASHBOARD OVERVIEW" contentClassName="bg-slate-50/70">
       {/* Header Dashboard */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-white drop-shadow-sm">DASHBOARD OVERVIEW</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">DASHBOARD OVERVIEW</h1>
           </div>
-          <p className="mt-1 text-sm text-blue-100 font-medium">
+          <p className="mt-1 text-sm text-muted-foreground font-medium">
             {userRole === "admin" && "Ringkasan statistik penuh seluruh departemen, manajemen master data, dan kontrol sistem."}
-            {userRole === "qc_field" && "Ringkasan Aktivitas Manajemen"}
+            {userRole === "qc_field" && "Ringkasan Aktivitas"}
             {userRole === "admin_process" && "Overview tugas pemeriksaan checklist harian operasional lini produksi."}
             {userRole === "prod_process_uh" && "Overview inventaris dan mutasi stok barang/sparepart."}
           </p>
         </div>
 
-        {/* Action Button: Master OBS Sparepart */}
+        {/* Kalender Header */}
         <div className="flex items-center gap-2 sm:shrink-0">
-          <Link to="/products">
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-9 gap-2 bg-white/95 hover:bg-white text-slate-800 border-white/40 font-semibold shadow-sm transition-all"
-            >
-              <Package className="size-4 text-[#1268D9] shrink-0" />
-              <span className="whitespace-nowrap">Master OBS Sparepart</span>
-              <span className="font-mono text-xs font-bold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
-                {products.data?.length || 0}
-              </span>
-            </Button>
-          </Link>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-9 gap-2 bg-white hover:bg-slate-50 text-foreground border-border font-semibold shadow-xs transition-all cursor-pointer"
+                title="Buka Kalender"
+              >
+                <CalendarIcon className="size-4 text-primary shrink-0" />
+                <span className="whitespace-nowrap capitalize">
+                  {(selectedDate || new Date()).toLocaleDateString("id-ID", {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0 shadow-lg bg-surface border border-border" align="end">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={(d) => d && setSelectedDate(d)}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
       {(userRole === "admin" || isAdmin) && (
         <div className="space-y-6">
+          {/* Ringkasan Analisis Keseluruhan OBS + Buffer Stock */}
+          {renderCombinedAnalysisPanel()}
+
           {/* Section: Status Stok Barang & TOP 10 Outgoing Berdampingan */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
             {/* Card 1: Diagram & Analisis Status Barang & Sparepart */}
@@ -1924,9 +1967,6 @@ function DashboardPage() {
             {/* Card 2: TOP 10 OUTGOING SPAREPART */}
             {renderInventoryChartPanel()}
           </div>
-
-          {/* Diagram Analisis Keseluruhan OBS + Buffer Stock */}
-          {renderCombinedAnalysisPanel()}
 
           {/* Section Bawah: Aktivitas Mutasi Gudang */}
           <Panel
@@ -2075,6 +2115,9 @@ function DashboardPage() {
 
       {userRole === "qc_field" && (
         <div className="space-y-6">
+          {/* Ringkasan Analisis Keseluruhan OBS + Buffer Stock */}
+          {renderCombinedAnalysisPanel()}
+
           {/* Section: Status Stok Barang & TOP 10 Outgoing Berdampingan */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
             {/* Card 1: Diagram & Analisis Status Barang & Sparepart */}
@@ -2083,9 +2126,6 @@ function DashboardPage() {
             {/* Card 2: TOP 10 OUTGOING SPAREPART */}
             {renderInventoryChartPanel()}
           </div>
-
-          {/* Diagram Analisis Keseluruhan OBS + Buffer Stock */}
-          {renderCombinedAnalysisPanel()}
 
           <Panel
             title="Aktivitas Seluruh Sistem"
@@ -2356,6 +2396,9 @@ function DashboardPage() {
 
       {userRole === "prod_process_uh" && (
         <div className="space-y-6">
+          {/* Ringkasan Analisis Keseluruhan OBS + Buffer Stock */}
+          {renderCombinedAnalysisPanel()}
+
           {/* Section: Status Stok Barang & TOP 10 Outgoing Berdampingan */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
             {/* Card 1: Diagram & Analisis Status Barang & Sparepart */}
@@ -2364,9 +2407,6 @@ function DashboardPage() {
             {/* Card 2: TOP 10 OUTGOING SPAREPART */}
             {renderInventoryChartPanel()}
           </div>
-
-          {/* Diagram Analisis Keseluruhan OBS + Buffer Stock */}
-          {renderCombinedAnalysisPanel()}
 
           <Panel
             title="Aktivitas Seluruh Sistem"
@@ -2722,6 +2762,9 @@ function DashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal Interaktif Daftar Barang saat Kartu Metrik di-klik */}
+      {renderMetricItemsModal()}
     </AppShell>
   );
 }
