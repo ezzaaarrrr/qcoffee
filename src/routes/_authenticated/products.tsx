@@ -3092,8 +3092,8 @@ function WarehouseAndProductsPage() {
           </div>
 
            {/* Card 3: ORDER — Perlu Restock */}
-              <div
-                className="rise-in group relative overflow-hidden rounded-lg border border-emerald-400 bg-emerald-600 p-4 text-white shadow-md transition-all hover:bg-emerald-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+                     <div
+                className="rise-in group relative overflow-hidden rounded-lg border border-red-500 bg-red-600 p-4 text-white shadow-md transition-all hover:bg-red-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
                 style={{ animationDelay: "100ms" }}
                 onClick={() =>
                   setStockStatusFilter(
@@ -3102,7 +3102,7 @@ function WarehouseAndProductsPage() {
                 }
               >
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="flex items-center justify-center size-8 rounded-md bg-emerald-500 text-white border border-emerald-400">
+                  <div className="flex items-center justify-center size-8 rounded-md bg-rose-500 text-white border border-rose-400">
                     <CircleAlert className="size-4" />
                   </div>
 
@@ -3122,7 +3122,7 @@ function WarehouseAndProductsPage() {
                 {stockStatusFilter === "ORDER" && (
                   <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
                 )}
-              </div>    
+              </div>  
 
             {/* Card 4: SAFETY STOK */}
             <div
