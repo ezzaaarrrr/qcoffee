@@ -1276,12 +1276,10 @@ function WarehouseAndProductsPage() {
         .order("code");
       if (error) {
         return [
-          { id: "1", code: "kg", name: "Kilogram" },
-          { id: "2", code: "gram", name: "Gram" },
-          { id: "3", code: "karung", name: "Karung / Sack" },
-          { id: "4", code: "pack", name: "Pack / Pouch" },
-          { id: "5", code: "box", name: "Box / Karton" },
-          { id: "6", code: "pcs", name: "Pieces" },
+          { id: "1", code: "ROLL", name: "ROLL" },
+          { id: "2", code: "LMBR", name: "LEMBAR" },
+          { id: "3", code: "CAN", name: "CAN" },
+          { id: "4", code: "pcs", name: "Pieces" },
         ];
       }
       return data ?? [];
@@ -1502,10 +1500,7 @@ function WarehouseAndProductsPage() {
               .limit(1);
             if (latestTx && latestTx.length > 0) {
               const seqs = latestTx
-                .map((t: any) => {
-                  const m = (t.transaction_number || "").match(/TES\s*-\s*GROUND\s*2\s*-\s*(\d+)/i);
-                  return m ? parseInt(m[1], 10) : 0;
-                })
+                .map((t: any) => {                })
                 .filter((n: number) => !isNaN(n) && n > 0);
               nextSeq = seqs.length > 0 ? Math.max(...seqs) + 1 : latestTx.length + 1;
             }
