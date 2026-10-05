@@ -1378,7 +1378,7 @@ function DashboardPage() {
       <html lang="id">
       <head>
         <meta charset="UTF-8">
-        <title>${tx.transaction_number} - ${titleType}</title>
+        <title>BUKTI TRANSAKSI</title>
         <style>
           @page { size: A4 portrait; margin: 20mm; }
           body {

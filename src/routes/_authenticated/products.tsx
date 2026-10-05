@@ -1365,7 +1365,7 @@ function WarehouseAndProductsPage() {
           { id: "1", code: "ROLL", name: "ROLL" },
           { id: "2", code: "LMBR", name: "LEMBAR" },
           { id: "3", code: "CAN", name: "CAN" },
-          { id: "4", code: "pcs", name: "Pieces" },
+          { id: "4", code: "PCS", name: "Pieces" },
         ];
       }
       return data ?? [];
@@ -1851,7 +1851,7 @@ function WarehouseAndProductsPage() {
     onSuccess: () => {
       toast.success(`Berhasil mencatat transaksi barang ${txType === "IN" ? "masuk" : "keluar"}`);
       setIsTxOpen(false);
-      setTxItems([{ productId: "", quantity: "1", unit: "kg" }]);
+      setTxItems([{ productId: "", quantity: "1", unit: "PCS" }]);
       setTxHeader({
         batchNumber: new Date().toISOString().split("T")[0],
         referenceNo: "",
@@ -1954,7 +1954,11 @@ function WarehouseAndProductsPage() {
     }
 
     const periodStr = txDateFilter
-      ? new Date(txDateFilter).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })
+      ? new Date(txDateFilter).toLocaleDateString("id-ID", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })
       : new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
     exportSparepartInventoryExcel({
@@ -1984,7 +1988,11 @@ function WarehouseAndProductsPage() {
     }
 
     const periodStr = txDateFilter
-      ? new Date(txDateFilter).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })
+      ? new Date(txDateFilter).toLocaleDateString("id-ID", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })
       : new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
     const metaInfoLines = [
@@ -2040,7 +2048,9 @@ function WarehouseAndProductsPage() {
       ];
     });
 
-    const csvContent = [...metaInfoLines, headers.join(","), ...rows.map((e) => e.join(","))].join("\r\n");
+    const csvContent = [...metaInfoLines, headers.join(","), ...rows.map((e) => e.join(","))].join(
+      "\r\n",
+    );
     const bom = "\uFEFF";
     const blob = new Blob([bom + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -2481,7 +2491,6 @@ function WarehouseAndProductsPage() {
     });
   }, [groupedTransactions, txFilterType, txDateFilter, txSearchQuery]);
 
-
   // ── CETAK & UNDUH PDF BUKTI MUTASI BARANG (1 BON / PENCATATAN TRANSAKSI) ────
   const downloadTransactionPDF = (tx: GroupedTransaction) => {
     const isMasuk = tx.tx_type === "IN";
@@ -2531,7 +2540,7 @@ function WarehouseAndProductsPage() {
       <html lang="id">
       <head>
         <meta charset="UTF-8">
-        <title>${tx.transaction_number} - ${titleType}</title>
+        <title>BUKTI TRANSAKSI</title>
         <style>
           @page { size: A4 portrait; margin: 20mm; }
           body {
@@ -3410,7 +3419,6 @@ function WarehouseAndProductsPage() {
             </div>
           )}
 
-
           {/* Tabel Barang */}
           <div className="border border-border bg-surface overflow-x-auto rounded-lg shadow-2xs">
             {loadingProducts ? (
@@ -3903,9 +3911,7 @@ function WarehouseAndProductsPage() {
                 )}
               </div>
             </div>
-
           </div>
-
 
           {/* Tabel Riwayat Mutasi yang Rapih */}
           <div className="border border-border bg-surface overflow-x-auto shadow-xs">
@@ -5088,6 +5094,9 @@ function WarehouseAndProductsPage() {
                         <SelectItem value="CAN" className="text-xs">
                           CAN
                         </SelectItem>
+                        <SelectItem value="PCS" className="text-xs">
+                          PIECES
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -5627,6 +5636,9 @@ function WarehouseAndProductsPage() {
                       </SelectItem>
                       <SelectItem value="CAN" className="text-xs">
                         CAN
+                      </SelectItem>
+                      <SelectItem value="PCS" className="text-xs">
+                        PIECES
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -6352,6 +6364,7 @@ function WarehouseAndProductsPage() {
                     <SelectItem value="Roll">Roll</SelectItem>
                     <SelectItem value="Lmbr">Lmbr</SelectItem>
                     <SelectItem value="CAN">CAN</SelectItem>
+                    <SelectItem value="PCS">Pieces</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -6742,9 +6755,7 @@ function WarehouseAndProductsPage() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground block text-[11px]">
-                      No. PO / Referensi:
-                    </span>
+                    <span className="text-muted-foreground block text-[11px]">No. PO:</span>
                     <span className="font-mono font-semibold text-foreground">
                       {selectedTx.reference_no || "—"}
                     </span>
