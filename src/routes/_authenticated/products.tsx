@@ -55,11 +55,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command,
   CommandEmpty,
@@ -97,10 +93,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/domain";
-import {
-  exportSparepartInventoryExcel,
-  exportSparepartMutasiExcel,
-} from "@/lib/exportUtils";
+import { exportSparepartInventoryExcel } from "@/lib/exportUtils";
 
 type ProductsSearch = {
   tab?: string | undefined;
@@ -113,7 +106,10 @@ export const Route = createFileRoute("/_authenticated/products")({
     return {
       tab: typeof search["tab"] === "string" ? search["tab"] : undefined,
       action: typeof search["action"] === "string" ? search["action"] : undefined,
-      type: search["type"] === "IN" || search["type"] === "OUT" ? (search["type"] as "IN" | "OUT") : undefined,
+      type:
+        search["type"] === "IN" || search["type"] === "OUT"
+          ? (search["type"] as "IN" | "OUT")
+          : undefined,
     };
   },
   head: () => ({
@@ -121,7 +117,8 @@ export const Route = createFileRoute("/_authenticated/products")({
       { title: "Buffer Stok" },
       {
         name: "description",
-        content: "Memantau stok cadangan untuk menjaga ketersediaan barang dan mengantisipasi kebutuhan yang tidak terduga.",
+        content:
+          "Memantau stok cadangan untuk menjaga ketersediaan barang dan mengantisipasi kebutuhan yang tidak terduga.",
       },
     ],
   }),
@@ -140,6 +137,8 @@ type ProductItem = {
   safe_stock?: number | null;
   max_stock?: number | null;
   current_stock?: number | null;
+  qty_in?: number | string | null;
+  qty_out?: number | string | null;
   image_url?: string | null;
   doc_url?: string | null;
   description?: string | null;
@@ -159,6 +158,8 @@ type BufferStockItem = {
   safe_stock?: number | null;
   max_stock?: number | null;
   current_stock?: number | null;
+  qty_in?: number | string | null;
+  qty_out?: number | string | null;
   description?: string | null;
   image_url?: string | null;
   doc_url?: string | null;
@@ -229,7 +230,7 @@ function ProductSearchCombobox({
           aria-expanded={open}
           className={cn(
             "h-9 w-full justify-between text-xs font-normal bg-background hover:bg-surface-muted border-input text-left",
-            !selectedProduct && "text-muted-foreground"
+            !selectedProduct && "text-muted-foreground",
           )}
         >
           <span className="truncate">
@@ -276,13 +277,15 @@ function ProductSearchCombobox({
                   }}
                   className={cn(
                     "flex items-center justify-between p-2 rounded cursor-pointer text-xs transition-colors hover:bg-primary/10 hover:text-primary",
-                    isSelected && "bg-primary/15 font-semibold text-primary"
+                    isSelected && "bg-primary/15 font-semibold text-primary",
                   )}
                 >
                   <div className="min-w-0 pr-2">
                     <div className="font-medium text-foreground truncate">{p.name}</div>
                     <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mt-0.5">
-                      {p.code && <span className="font-mono bg-surface-muted px-1 rounded">{p.code}</span>}
+                      {p.code && (
+                        <span className="font-mono bg-surface-muted px-1 rounded">{p.code}</span>
+                      )}
                       {p.category && <span>• {p.category}</span>}
                       {p.location && <span>• {p.location}</span>}
                     </div>
@@ -311,7 +314,7 @@ interface ParsedExcelSheet {
 
 function parseExcelWorkbookToSheets(
   workbook: XLSX.WorkBook,
-  defaultCategory: string = "Sparepart & Tools"
+  defaultCategory: string = "Sparepart & Tools",
 ): ParsedExcelSheet[] {
   const resultSheets: ParsedExcelSheet[] = [];
 
@@ -353,16 +356,17 @@ function parseExcelWorkbookToSheets(
         .toLowerCase()
         .trim()
         .replace(/\r?\n|\r/g, " ")
-        .replace(/\s+/g, " ")
+        .replace(/\s+/g, " "),
     );
 
-    const safeStockIdx = headers.findIndex((h: string) =>
-      h.includes("batas minimal") ||
-      h.includes("batas min") ||
-      h.includes("safe stock") ||
-      h.includes("safety stock") ||
-      h.includes("safety") ||
-      h.includes("limit")
+    const safeStockIdx = headers.findIndex(
+      (h: string) =>
+        h.includes("batas minimal") ||
+        h.includes("batas min") ||
+        h.includes("safe stock") ||
+        h.includes("safety stock") ||
+        h.includes("safety") ||
+        h.includes("limit"),
     );
 
     const minStockIdx = headers.findIndex(
@@ -373,17 +377,18 @@ function parseExcelWorkbookToSheets(
           h.includes("minimal stock") ||
           h.includes("min stock") ||
           h === "min" ||
-          h === "minimum")
+          h === "minimum"),
     );
 
-    const maxStockIdx = headers.findIndex((h: string) =>
-      h.includes("maksimal") ||
-      h.includes("maks.") ||
-      h.includes("maks") ||
-      h.includes("max stock") ||
-      h.includes("max.stock") ||
-      h.includes("max") ||
-      h.includes("maximum")
+    const maxStockIdx = headers.findIndex(
+      (h: string) =>
+        h.includes("maksimal") ||
+        h.includes("maks.") ||
+        h.includes("maks") ||
+        h.includes("max stock") ||
+        h.includes("max.stock") ||
+        h.includes("max") ||
+        h.includes("maximum"),
     );
 
     const currentStockIdx = headers.findIndex(
@@ -405,16 +410,20 @@ function parseExcelWorkbookToSheets(
           h.includes("quantity") ||
           h.includes("jumlah") ||
           h === "stok" ||
-          h === "stock")
+          h === "stock"),
     );
 
-    let codeIdx = headers.findIndex((h: string) =>
-      h.includes("kode") ||
-      h.includes("code") ||
-      h.includes("sku") ||
-      h.includes("part no") ||
-      h.includes("part_no") ||
-      (h.includes("material") && !h.includes("nama") && !h.includes("type") && !h.includes("desc"))
+    let codeIdx = headers.findIndex(
+      (h: string) =>
+        h.includes("kode") ||
+        h.includes("code") ||
+        h.includes("sku") ||
+        h.includes("part no") ||
+        h.includes("part_no") ||
+        (h.includes("material") &&
+          !h.includes("nama") &&
+          !h.includes("type") &&
+          !h.includes("desc")),
     );
 
     let nameIdx = headers.findIndex(
@@ -425,28 +434,35 @@ function parseExcelWorkbookToSheets(
           h.includes("deskripsi") ||
           h.includes("description") ||
           h.includes("barang") ||
-          h.includes("item"))
+          h.includes("item")),
     );
 
-    const uomIdx = headers.findIndex((h: string) =>
-      h.includes("satuan") ||
-      h.includes("uom") ||
-      h.includes("u.o.m") ||
-      h.includes("unit") ||
-      h.includes("meins") ||
-      h.includes("bunn") ||
-      h === "sat" ||
-      h === "sat."
+    const uomIdx = headers.findIndex(
+      (h: string) =>
+        h.includes("satuan") ||
+        h.includes("uom") ||
+        h.includes("u.o.m") ||
+        h.includes("unit") ||
+        h.includes("meins") ||
+        h.includes("bunn") ||
+        h === "sat" ||
+        h === "sat.",
     );
-    const locIdx = headers.findIndex((h: string) =>
-      h.includes("lokasi") || h.includes("location") || h.includes("gudang")
+    const locIdx = headers.findIndex(
+      (h: string) => h.includes("lokasi") || h.includes("location") || h.includes("gudang"),
     );
-    const shelfIdx = headers.findIndex((h: string) =>
-      h.includes("rak") || h.includes("shelf") || h.includes("bin")
+    const shelfIdx = headers.findIndex(
+      (h: string) => h.includes("rak") || h.includes("shelf") || h.includes("bin"),
     );
 
     const parseNum = (val: any, fallback: number | null = null): number | null => {
-      if (val === undefined || val === null || String(val).trim() === "" || String(val).trim() === "—" || String(val).trim() === "-") {
+      if (
+        val === undefined ||
+        val === null ||
+        String(val).trim() === "" ||
+        String(val).trim() === "—" ||
+        String(val).trim() === "-"
+      ) {
         return fallback;
       }
       const normalized = String(val).trim().replace(",", ".");
@@ -516,16 +532,20 @@ function parseExcelWorkbookToSheets(
       let unit = "pcs";
       if (uomIdx >= 0 && row[uomIdx]) {
         unit = String(row[uomIdx]).trim().toLowerCase();
-      } else if (row[2] && typeof row[2] === "string" && ["pcs", "unit", "set", "rol", "CAN", "LMR", "pack"].includes(row[2].trim().toLowerCase())) {
+      } else if (
+        row[2] &&
+        typeof row[2] === "string" &&
+        ["pcs", "unit", "set", "rol", "CAN", "LMR", "pack"].includes(row[2].trim().toLowerCase())
+      ) {
         unit = row[2].trim().toLowerCase();
       }
 
       parsedItems.push({
         name: rawName,
         code: rawCode || null,
-        current_stock: currentStockIdx >= 0 ? parseNum(row[currentStockIdx], 0) ?? 0 : 0,
-        safe_stock: safeStockIdx >= 0 ? parseNum(row[safeStockIdx], 1) ?? 1 : 1,
-        min_stock: minStockIdx >= 0 ? parseNum(row[minStockIdx], 10) ?? 10 : 10,
+        current_stock: currentStockIdx >= 0 ? (parseNum(row[currentStockIdx], 0) ?? 0) : 0,
+        safe_stock: safeStockIdx >= 0 ? (parseNum(row[safeStockIdx], 1) ?? 1) : 1,
+        min_stock: minStockIdx >= 0 ? (parseNum(row[minStockIdx], 10) ?? 10) : 10,
         max_stock: maxStockIdx >= 0 ? parseNum(row[maxStockIdx], null) : null,
         category: defaultCategory,
         unit: unit || "pcs",
@@ -554,14 +574,13 @@ function WarehouseAndProductsPage() {
   const search = Route.useSearch();
 
   // Hak akses Departemen Warehouse Sparepart & Continuous Improvement
-  const isWarehouseAdmin = isAdmin || roles.includes("prod_process_uh") || roles.includes("admin_process");
+  const isWarehouseAdmin =
+    isAdmin || roles.includes("prod_process_uh") || roles.includes("admin_process");
   const canManageWarehouse = isWarehouseAdmin || roles.includes("qc_field");
   const canDeleteMaster = isAdmin || roles.includes("prod_process_uh");
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<string>(
-    search.tab || "items"
-  );
+  const [activeTab, setActiveTab] = useState<string>(search.tab || "items");
   const [searchQuery, setSearchQuery] = useState("");
   const [stockStatusFilter, setStockStatusFilter] = useState<string>("ALL");
   const [productDateFilter, setProductDateFilter] = useState<string>("");
@@ -582,9 +601,11 @@ function WarehouseAndProductsPage() {
   const [bufferFormData, setBufferFormData] = useState({
     name: "",
     code: "",
-    unit: "pcs",
+    unit: "Roll",
     location: "Gudang Utama",
     shelf: "Rak A-1",
+    qty_in: "0",
+    qty_out: "0",
     min_stock: "10",
     safe_stock: "1",
     max_stock: "",
@@ -615,10 +636,14 @@ function WarehouseAndProductsPage() {
     const copy = [...importPreview];
     copy.sort((a, b) => {
       if (importSortOption === "CODE_ASC") {
-        return String(a.code || "").localeCompare(String(b.code || ""), undefined, { numeric: true });
+        return String(a.code || "").localeCompare(String(b.code || ""), undefined, {
+          numeric: true,
+        });
       }
       if (importSortOption === "CODE_DESC") {
-        return String(b.code || "").localeCompare(String(a.code || ""), undefined, { numeric: true });
+        return String(b.code || "").localeCompare(String(a.code || ""), undefined, {
+          numeric: true,
+        });
       }
       if (importSortOption === "STOCK_ASC") {
         return (a.current_stock ?? 0) - (b.current_stock ?? 0);
@@ -645,10 +670,14 @@ function WarehouseAndProductsPage() {
     const copy = [...bufferImportPreview];
     copy.sort((a, b) => {
       if (bufferImportSortOption === "CODE_ASC") {
-        return String(a.code || "").localeCompare(String(b.code || ""), undefined, { numeric: true });
+        return String(a.code || "").localeCompare(String(b.code || ""), undefined, {
+          numeric: true,
+        });
       }
       if (bufferImportSortOption === "CODE_DESC") {
-        return String(b.code || "").localeCompare(String(a.code || ""), undefined, { numeric: true });
+        return String(b.code || "").localeCompare(String(a.code || ""), undefined, {
+          numeric: true,
+        });
       }
       if (bufferImportSortOption === "STOCK_ASC") {
         return (a.current_stock ?? 0) - (b.current_stock ?? 0);
@@ -708,7 +737,7 @@ function WarehouseAndProductsPage() {
               .replace(/\s+/g, " ")
               .trim()
               .toLowerCase();
-            const key = nName ? `n_${nName}` : (nCode ? `c_${nCode}` : "");
+            const key = nName ? `n_${nName}` : nCode ? `c_${nCode}` : "";
             if (!key || !seen.has(key)) {
               if (key) seen.add(key);
               result.push(it);
@@ -722,14 +751,18 @@ function WarehouseAndProductsPage() {
           const uniqueFirstSheetItems = deduplicateParsedItems(firstSheet.items);
           setSelectedSheet(firstSheet.name);
           setImportPreview(uniqueFirstSheetItems);
-          toast.success(`Berhasil membaca ${uniqueFirstSheetItems.length} barang dari sheet "${firstSheet.name}"`);
+          toast.success(
+            `Berhasil membaca ${uniqueFirstSheetItems.length} barang dari sheet "${firstSheet.name}"`,
+          );
         } else {
           // Gabungkan semua sheet dengan deduplikasi
           const allItems = sheets.flatMap((s) => s.items);
           const uniqueItems = deduplicateParsedItems(allItems);
           setSelectedSheet("ALL");
           setImportPreview(uniqueItems);
-          toast.success(`Berhasil membaca ${uniqueItems.length} barang dari ${sheets.length} sheet`);
+          toast.success(
+            `Berhasil membaca ${uniqueItems.length} barang dari ${sheets.length} sheet`,
+          );
         }
       } catch (err: any) {
         console.error("Error reading file:", err);
@@ -743,7 +776,17 @@ function WarehouseAndProductsPage() {
   // Unduh Template Resmi Excel/CSV Buffer Stok & OBS
   const downloadImportTemplate = () => {
     const templateData = [
-      ["No", "Kode", "Material", "Lokasi", "Rak", "Batas Minimal Stok", "Minimal Stok", "Maks. Stok", "Stok Saat Ini"],
+      [
+        "No",
+        "Kode",
+        "Material",
+        "Lokasi",
+        "Rak",
+        "Batas Minimal Stok",
+        "Minimal Stok",
+        "Maks. Stok",
+        "Stok Saat Ini",
+      ],
       [1, "7100110213", "BEARING 32004", "Gudang Utama", "Rak A-1", 1, 1, 10, 0],
       [2, "7100110339", "BEARING 6001 2Z", "Gudang Utama", "Rak A-1", 10, 1, 40, 0],
       [3, "7100110345", "BEARING 6003 2Z", "Gudang Utama", "Rak A-1", 20, 1, 40, 0],
@@ -812,7 +855,7 @@ function WarehouseAndProductsPage() {
               .replace(/\s+/g, " ")
               .trim()
               .toLowerCase();
-            const key = nName ? `n_${nName}` : (nCode ? `c_${nCode}` : "");
+            const key = nName ? `n_${nName}` : nCode ? `c_${nCode}` : "";
             if (!key || !seen.has(key)) {
               if (key) seen.add(key);
               result.push(it);
@@ -826,13 +869,17 @@ function WarehouseAndProductsPage() {
           const uniqueFirstBufItems = deduplicateParsedBufItems(firstBufSheet.items);
           setBufferSelectedSheet(firstBufSheet.name);
           setBufferImportPreview(uniqueFirstBufItems);
-          toast.success(`Berhasil membaca ${uniqueFirstBufItems.length} barang buffer dari sheet "${firstBufSheet.name}"`);
+          toast.success(
+            `Berhasil membaca ${uniqueFirstBufItems.length} barang buffer dari sheet "${firstBufSheet.name}"`,
+          );
         } else {
           const allItems = sheets.flatMap((s) => s.items);
           const uniqueItems = deduplicateParsedBufItems(allItems);
           setBufferSelectedSheet("ALL");
           setBufferImportPreview(uniqueItems);
-          toast.success(`Berhasil membaca ${uniqueItems.length} barang buffer dari ${sheets.length} sheet`);
+          toast.success(
+            `Berhasil membaca ${uniqueItems.length} barang buffer dari ${sheets.length} sheet`,
+          );
         }
       } catch (err: any) {
         console.error("Error reading buffer file:", err);
@@ -846,10 +893,18 @@ function WarehouseAndProductsPage() {
   // Unduh Template Excel/CSV khusus Buffer Stok
   const downloadBufferImportTemplate = () => {
     const templateData = [
-      ["No", "Kode", "Material", "Lokasi", "Rak", "Batas Minimal Stok", "Minimal Stok", "Maks. Stok", "Stok Saat Ini"],
-      [1, "BUF-001", "BEARING 6204-2RS", "Gudang Utama", "Rak A-1", 1, 10, 50, 0],
-      [2, "BUF-002", "HEATER ELEMENT 2000W", "Gudang Utama", "Rak A-2", 1, 5, 20, 0],
-      [3, "BUF-003", "V-BELT A-52", "Gudang Utama", "Rak B-1", 2, 8, 30, 0],
+      [
+        "No",
+        "Kode",
+        "Material",
+        "Batas Minimal Stok",
+        "Minimal Stok",
+        "Maks. Stok",
+        "Stok Saat Ini",
+      ],
+      [1, "BUF-001", "BEARING 6204-2RS", 1, 10, 50, 0],
+      [2, "BUF-002", "HEATER ELEMENT 2000W", 1, 5, 20, 0],
+      [3, "BUF-003", "V-BELT A-52", 2, 8, 30, 0],
     ];
 
     const worksheet = XLSX.utils.aoa_to_sheet(templateData);
@@ -882,7 +937,9 @@ function WarehouseAndProductsPage() {
     try {
       const { data: existingItems, error: fetchErr } = await (supabase as any)
         .from("buffer_stock")
-        .select("id, name, code, unit, location, shelf, min_stock, safe_stock, max_stock, current_stock");
+        .select(
+          "id, name, code, unit, location, shelf, min_stock, safe_stock, max_stock, current_stock",
+        );
 
       if (fetchErr) {
         console.warn("Could not fetch existing buffer items:", fetchErr.message);
@@ -917,9 +974,9 @@ function WarehouseAndProductsPage() {
           .trim();
         const cleanCode = item.code
           ? String(item.code)
-            .replace(/\u00a0/g, " ")
-            .replace(/\s+/g, " ")
-            .trim()
+              .replace(/\u00a0/g, " ")
+              .replace(/\s+/g, " ")
+              .trim()
           : null;
 
         if (!cleanName && !cleanCode) continue;
@@ -936,7 +993,9 @@ function WarehouseAndProductsPage() {
         if (normCode) seenCodesInBatch.add(normCode);
 
         // Cocokkan data di database: cek nama atau kode
-        const found = (normName ? existingByName.get(normName) : null) || (normCode ? existingByCode.get(normCode) : null);
+        const found =
+          (normName ? existingByName.get(normName) : null) ||
+          (normCode ? existingByCode.get(normCode) : null);
 
         if (found) {
           toUpdate.push({
@@ -971,11 +1030,15 @@ function WarehouseAndProductsPage() {
       const CHUNK_SIZE = 100;
       for (let i = 0; i < toUpdate.length; i += CHUNK_SIZE) {
         const chunk = toUpdate.slice(i, i + CHUNK_SIZE);
-        const { error: updErr } = await (supabase as any).from("buffer_stock").upsert(chunk, { onConflict: "id" });
+        const { error: updErr } = await (supabase as any)
+          .from("buffer_stock")
+          .upsert(chunk, { onConflict: "id" });
         if (updErr) {
           console.warn("Buffer batch upsert on ID fallback due to:", updErr.message);
           for (const it of chunk) {
-            const { error: singleErr } = await (supabase as any).from("buffer_stock").upsert(it, { onConflict: "id" });
+            const { error: singleErr } = await (supabase as any)
+              .from("buffer_stock")
+              .upsert(it, { onConflict: "id" });
             if (singleErr) {
               console.error("Failed to upsert buffer item:", it.name, singleErr.message);
             }
@@ -985,11 +1048,15 @@ function WarehouseAndProductsPage() {
 
       for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
         const chunk = toInsert.slice(i, i + CHUNK_SIZE);
-        const { error: insErr } = await (supabase as any).from("buffer_stock").upsert(chunk, { onConflict: "name" });
+        const { error: insErr } = await (supabase as any)
+          .from("buffer_stock")
+          .upsert(chunk, { onConflict: "name" });
         if (insErr) {
           console.warn("Buffer batch upsert fallback due to:", insErr.message);
           for (const it of chunk) {
-            const { error: singleErr } = await (supabase as any).from("buffer_stock").upsert(it, { onConflict: "name" });
+            const { error: singleErr } = await (supabase as any)
+              .from("buffer_stock")
+              .upsert(it, { onConflict: "name" });
             if (singleErr) {
               console.error("Failed to upsert buffer item:", it.name, singleErr.message);
             }
@@ -999,9 +1066,14 @@ function WarehouseAndProductsPage() {
 
       const totalCount = toInsert.length + toUpdate.length;
       if (typeof recordActivity === "function") {
-        await recordActivity("IMPORT_BUFFER", `Mengimport ${toInsert.length} buffer baru & memperbarui ${toUpdate.length} buffer via Excel/CSV`);
+        await recordActivity(
+          "IMPORT_BUFFER",
+          `Mengimport ${toInsert.length} buffer baru & memperbarui ${toUpdate.length} buffer via Excel/CSV`,
+        );
       }
-      toast.success(`Berhasil mengimport ${totalCount} data buffer stok (${toInsert.length} baru, ${toUpdate.length} diperbarui)!`);
+      toast.success(
+        `Berhasil mengimport ${totalCount} data buffer stok (${toInsert.length} baru, ${toUpdate.length} diperbarui)!`,
+      );
       queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
       setBufferImportPreview([]);
@@ -1028,7 +1100,9 @@ function WarehouseAndProductsPage() {
     try {
       const { data: existingProducts, error: fetchErr } = await supabase
         .from("products")
-        .select("id, name, code, category, unit, location, shelf, min_stock, safe_stock, max_stock, current_stock")
+        .select(
+          "id, name, code, category, unit, location, shelf, min_stock, safe_stock, max_stock, current_stock",
+        )
         .range(0, 4999);
 
       if (fetchErr) {
@@ -1064,9 +1138,9 @@ function WarehouseAndProductsPage() {
           .trim();
         const cleanCode = item.code
           ? String(item.code)
-            .replace(/\u00a0/g, " ")
-            .replace(/\s+/g, " ")
-            .trim()
+              .replace(/\u00a0/g, " ")
+              .replace(/\s+/g, " ")
+              .trim()
           : null;
 
         if (!cleanName && !cleanCode) continue;
@@ -1083,7 +1157,9 @@ function WarehouseAndProductsPage() {
         if (normCode) seenCodesInBatch.add(normCode);
 
         // Cari di database: cek nama terlebih dahulu (karena unique constraint ada pada name), lalu cek code
-        const found = (normName ? existingByName.get(normName) : null) || (normCode ? existingByCode.get(normCode) : null);
+        const found =
+          (normName ? existingByName.get(normName) : null) ||
+          (normCode ? existingByCode.get(normCode) : null);
 
         if (found) {
           // Data master barang: sertakan nama agar memenuhi NOT NULL constraint PostgreSQL saat upsert
@@ -1122,11 +1198,15 @@ function WarehouseAndProductsPage() {
       // 1. Eksekusi update untuk barang yang sudah ada berdasarkan ID
       for (let i = 0; i < toUpdate.length; i += CHUNK_SIZE) {
         const chunk = toUpdate.slice(i, i + CHUNK_SIZE);
-        const { error: updErr } = await supabase.from("products").upsert(chunk as any, { onConflict: "id" });
+        const { error: updErr } = await supabase
+          .from("products")
+          .upsert(chunk as any, { onConflict: "id" });
         if (updErr) {
           console.warn("Products batch upsert on ID fallback due to:", updErr.message);
           for (const it of chunk) {
-            const { error: singleErr } = await supabase.from("products").upsert(it as any, { onConflict: "id" });
+            const { error: singleErr } = await supabase
+              .from("products")
+              .upsert(it as any, { onConflict: "id" });
             if (singleErr) {
               console.error("Failed to upsert existing product item:", it.name, singleErr.message);
             }
@@ -1138,11 +1218,15 @@ function WarehouseAndProductsPage() {
       // Ini mencegah crash "duplicate key value violates unique constraint products_name_key"
       for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
         const chunk = toInsert.slice(i, i + CHUNK_SIZE);
-        const { error: insErr } = await supabase.from("products").upsert(chunk as any, { onConflict: "name" });
+        const { error: insErr } = await supabase
+          .from("products")
+          .upsert(chunk as any, { onConflict: "name" });
         if (insErr) {
           console.warn("Products batch upsert on name fallback due to:", insErr.message);
           for (const it of chunk) {
-            const { error: singleErr } = await supabase.from("products").upsert(it as any, { onConflict: "name" });
+            const { error: singleErr } = await supabase
+              .from("products")
+              .upsert(it as any, { onConflict: "name" });
             if (singleErr) {
               console.error("Failed to upsert product item:", it.name, singleErr.message);
             }
@@ -1152,9 +1236,14 @@ function WarehouseAndProductsPage() {
 
       const totalCount = toInsert.length + toUpdate.length;
       if (typeof recordActivity === "function") {
-        await recordActivity("IMPORT_BARANG", `Mengimport ${toInsert.length} barang baru & memperbarui ${toUpdate.length} stok via Excel/CSV`);
+        await recordActivity(
+          "IMPORT_BARANG",
+          `Mengimport ${toInsert.length} barang baru & memperbarui ${toUpdate.length} stok via Excel/CSV`,
+        );
       }
-      toast.success(`Berhasil mengimport ${totalCount} data barang (${toInsert.length} baru, ${toUpdate.length} diperbarui)!`);
+      toast.success(
+        `Berhasil mengimport ${totalCount} data barang (${toInsert.length} baru, ${toUpdate.length} diperbarui)!`,
+      );
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
@@ -1176,9 +1265,11 @@ function WarehouseAndProductsPage() {
     name: "",
     code: "",
     category: "Sparepart & Tools",
-    unit: "pcs",
+    unit: "Roll",
     location: "Gudang Utama",
     shelf: "Rak A-1",
+    qty_in: "0",
+    qty_out: "0",
     min_stock: "10",
     safe_stock: "1",
     max_stock: "",
@@ -1212,9 +1303,9 @@ function WarehouseAndProductsPage() {
       setActiveTab(search.tab);
     }
   }, [search.action, search.type, search.tab]);
-  const [txItems, setTxItems] = useState<Array<{ productId: string; quantity: string; unit: string }>>([
-    { productId: "", quantity: "1", unit: "kg" },
-  ]);
+  const [txItems, setTxItems] = useState<
+    Array<{ productId: string; quantity: string; unit: string }>
+  >([{ productId: "", quantity: "1", unit: "kg" }]);
   const [txHeader, setTxHeader] = useState({
     batchNumber: new Date().toISOString().split("T")[0],
     referenceNo: "",
@@ -1239,10 +1330,7 @@ function WarehouseAndProductsPage() {
   const { data: products = [], isLoading: loadingProducts } = useQuery({
     queryKey: ["warehouse_products"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("products")
-        .select("*")
-        .order("name");
+      const { data, error } = await supabase.from("products").select("*").order("name");
       if (error) throw error;
       return (data ?? []) as ProductItem[];
     },
@@ -1258,9 +1346,7 @@ function WarehouseAndProductsPage() {
         .eq("name", "Sparepart & Tools")
         .order("name");
       if (error || !data || data.length === 0) {
-        return [
-          { id: "5", name: "Sparepart & Tools" },
-        ];
+        return [{ id: "5", name: "Sparepart & Tools" }];
       }
       return data ?? [];
     },
@@ -1348,12 +1434,28 @@ function WarehouseAndProductsPage() {
         is_active: true,
       });
       if (error) throw error;
-      await recordActivity("TAMBAH_BUFFER", `Menambahkan buffer stok baru: "${bufferFormData.name.trim()}"`);
+      await recordActivity(
+        "TAMBAH_BUFFER",
+        `Menambahkan buffer stok baru: "${bufferFormData.name.trim()}"`,
+      );
     },
     onSuccess: () => {
       toast.success("Barang buffer stok berhasil ditambahkan");
       setIsBufferAddOpen(false);
-      setBufferFormData({ name: "", code: "", unit: "pcs", location: "Gudang Utama", shelf: "Rak A-1", min_stock: "10", safe_stock: "1", max_stock: "", current_stock: "0", description: "" });
+      setBufferFormData({
+        name: "",
+        code: "",
+        unit: "Roll",
+        location: "Gudang Utama",
+        shelf: "Rak A-1",
+        qty_in: "0",
+        qty_out: "0",
+        min_stock: "10",
+        safe_stock: "1",
+        max_stock: "",
+        current_stock: "0",
+        description: "",
+      });
       queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
     },
@@ -1499,9 +1601,7 @@ function WarehouseAndProductsPage() {
               .order("created_at", { ascending: false })
               .limit(1);
             if (latestTx && latestTx.length > 0) {
-              const seqs = latestTx
-                .map((t: any) => {                })
-                .filter((n: number) => !isNaN(n) && n > 0);
+              const seqs = latestTx.map((t: any) => {}).filter((n: number) => !isNaN(n) && n > 0);
               nextSeq = seqs.length > 0 ? Math.max(...seqs) + 1 : latestTx.length + 1;
             }
           } catch {
@@ -1539,9 +1639,11 @@ function WarehouseAndProductsPage() {
         name: "",
         code: "",
         category: "Sparepart & Tools",
-        unit: "pcs",
+        unit: "Roll",
         location: "Gudang Utama",
         shelf: "Rak A-1",
+        qty_in: "0",
+        qty_out: "0",
         min_stock: "10",
         safe_stock: "1",
         max_stock: "",
@@ -1573,7 +1675,12 @@ function WarehouseAndProductsPage() {
           location: editingItem.location,
           shelf: editingItem.shelf,
           min_stock: Number(editingItem.min_stock) || 10,
-          max_stock: editingItem.max_stock !== null && editingItem.max_stock !== undefined && (editingItem.max_stock as any) !== "" ? Number(editingItem.max_stock) : null,
+          max_stock:
+            editingItem.max_stock !== null &&
+            editingItem.max_stock !== undefined &&
+            (editingItem.max_stock as any) !== ""
+              ? Number(editingItem.max_stock)
+              : null,
           current_stock: Number(editingItem.current_stock) || 0,
           description: editingItem.description?.trim() || null,
           image_url: editingItem.image_url || null,
@@ -1583,10 +1690,7 @@ function WarehouseAndProductsPage() {
 
       if (error) throw error;
 
-      await recordActivity(
-        "EDIT_BARANG",
-        `Memperbarui data barang: "${editingItem.name}"`,
-      );
+      await recordActivity("EDIT_BARANG", `Memperbarui data barang: "${editingItem.name}"`);
     },
     onSuccess: () => {
       toast.success("Data barang berhasil diperbarui");
@@ -1598,7 +1702,15 @@ function WarehouseAndProductsPage() {
 
   // ── MUTATION: TOGGLE STATUS AKTIF / NONAKTIF ──────────────────────────────────
   const toggleActive = useMutation({
-    mutationFn: async ({ id, is_active, name }: { id: string; is_active: boolean; name: string }) => {
+    mutationFn: async ({
+      id,
+      is_active,
+      name,
+    }: {
+      id: string;
+      is_active: boolean;
+      name: string;
+    }) => {
       const { error } = await supabase
         .from("products")
         .update({ is_active: !is_active } as any)
@@ -1841,6 +1953,10 @@ function WarehouseAndProductsPage() {
       return;
     }
 
+    const periodStr = txDateFilter
+      ? new Date(txDateFilter).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })
+      : new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+
     exportSparepartInventoryExcel({
       products: dataToExport,
       latestInTxMap,
@@ -1849,6 +1965,10 @@ function WarehouseAndProductsPage() {
       totalOutQtyMap,
       generatedByName: profile?.full_name || profile?.email || "Petugas Warehouse Sparepart",
       categoryFilter: "Sparepart & Tools",
+      plant: "1201",
+      storageLocation: "GDSP",
+      materialType: "ERSA",
+      period: periodStr,
     });
 
     toast.success("Laporan inventaris sparepart berhasil diekspor (.xls)");
@@ -1863,61 +1983,73 @@ function WarehouseAndProductsPage() {
       return;
     }
 
+    const periodStr = txDateFilter
+      ? new Date(txDateFilter).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })
+      : new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+
+    const metaInfoLines = [
+      `"1. PLANT      : 1201"`,
+      `"2. S.LOCATION : GDSP"`,
+      `"3. MAT.TYPE   : ERSA"`,
+      `"4. PERIOD     : ${periodStr}"`,
+      "",
+    ];
+
     const headers = [
       "No",
-      "Kode Part / SKU",
-      "Nama Barang / Sparepart",
-      "Kategori",
-      "Satuan",
-      "Lokasi Gudang",
-      "Posisi Rak",
-      "Stok Terkini",
-      "Batas Min.",
-      "Jumlah Masuk",
-      "Tanggal Masuk",
-      "Jumlah Keluar",
-      "Tanggal Keluar",
-      "Status Stok",
+      "Kode",
+      "MATERIAL",
+      "BEGINNING BALANCE",
+      "MIN.STOK",
+      "RECEIPT",
+      "ISSUED",
+      "ENDING BALANCE",
+      "MAKS.STOK",
+      "STATUS STOCK",
     ];
 
     const rows = dataToExport.map((p, idx) => {
-      const isLimit = (p.current_stock ?? 0) <= (p.min_stock ?? 10);
+      const minStock = p.min_stock ?? 10;
+      const endingStock = p.current_stock ?? 0;
+      const isLimit = endingStock <= minStock;
       const nameKey = p.name ? p.name.trim().toLowerCase() : "";
+      const codeKey = p.code ? p.code.trim().toLowerCase() : "";
 
-      const totalOut = (totalOutQtyMap[p.id] ?? 0) || (nameKey ? totalOutQtyMap[nameKey] ?? 0 : 0);
-      const totalIn = (totalInQtyMap[p.id] ?? 0) || (nameKey ? totalInQtyMap[nameKey] ?? 0 : 0);
+      const totalOut =
+        (totalOutQtyMap[p.id] ?? 0) ||
+        (nameKey ? (totalOutQtyMap[nameKey] ?? 0) : 0) ||
+        (codeKey ? (totalOutQtyMap[codeKey] ?? 0) : 0);
+      const totalIn =
+        (totalInQtyMap[p.id] ?? 0) ||
+        (nameKey ? (totalInQtyMap[nameKey] ?? 0) : 0) ||
+        (codeKey ? (totalInQtyMap[codeKey] ?? 0) : 0);
 
-      const lastIn = latestInTxMap[p.id] || (nameKey ? latestInTxMap[nameKey] : undefined);
-      const lastInTime = lastIn ? formatDate(lastIn.created_at) : (p.created_at ? formatDate(p.created_at) : "-");
-
-      const lastOut = latestOutTxMap[p.id] || (nameKey ? latestOutTxMap[nameKey] : undefined);
-      const lastOutTime = lastOut ? formatDate(lastOut.created_at) : (totalOut > 0 ? formatDate(new Date().toISOString()) : "-");
+      const beginningBalance = Math.max(0, endingStock - totalIn + totalOut);
 
       return [
         String(idx + 1),
         `"${(p.code || "-").replace(/"/g, '""')}"`,
         `"${(p.name || "").replace(/"/g, '""')}"`,
-        `"${(p.category || "Sparepart & Tools").replace(/"/g, '""')}"`,
-        `"${(p.unit || "pcs").replace(/"/g, '""')}"`,
-        `"${(p.location || "Gudang Utama").replace(/"/g, '""')}"`,
-        `"${(p.shelf || "Rak A-1").replace(/"/g, '""')}"`,
-        String(p.current_stock ?? 0),
-        String(p.min_stock ?? 10),
+        String(beginningBalance),
+        String(minStock),
         String(totalIn),
-        `"${lastInTime}"`,
         String(totalOut),
-        `"${lastOutTime}"`,
+        String(endingStock),
+        String(p.max_stock ?? "—"),
         isLimit ? "LIMIT / KRITIS" : "AMAN",
       ];
     });
 
-    const csvContent = [headers.join(","), ...rows.map((e) => e.join(","))].join("\r\n");
+    const csvContent = [...metaInfoLines, headers.join(","), ...rows.map((e) => e.join(","))].join("\r\n");
     const bom = "\uFEFF";
     const blob = new Blob([bom + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `laporan_stok_sparepart_${new Date().toISOString().split("T")[0]}.csv`);
+    link.setAttribute(
+      "download",
+      `laporan_stok_sparepart_${new Date().toISOString().split("T")[0]}.csv`,
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1936,7 +2068,11 @@ function WarehouseAndProductsPage() {
     }
 
     const lastIn = latestInTxMap[p.id];
-    const lastInTime = lastIn ? formatDate(lastIn.created_at) : (p.created_at ? formatDate(p.created_at) : "—");
+    const lastInTime = lastIn
+      ? formatDate(lastIn.created_at)
+      : p.created_at
+        ? formatDate(p.created_at)
+        : "—";
     const lastOut = latestOutTxMap[p.id];
     const lastOutTime = lastOut ? formatDate(lastOut.created_at) : "—";
     const totalOut = totalOutQtyMap[p.id] ?? 0;
@@ -2152,15 +2288,16 @@ function WarehouseAndProductsPage() {
               <td><strong>${(p.min_stock ?? 10).toLocaleString("id-ID")} ${p.unit || "kg"}</strong></td>
               <td>Batas pengingat restock barang</td>
             </tr>
-            ${p.description
-        ? `
+            ${
+              p.description
+                ? `
             <tr>
               <td><strong>Deskripsi / Catatan</strong></td>
               <td colspan="2">${p.description}</td>
             </tr>
             `
-        : ""
-      }
+                : ""
+            }
           </tbody>
         </table>
 
@@ -2219,32 +2356,35 @@ function WarehouseAndProductsPage() {
     }>;
   };
 
-  const groupedTransactions: GroupedTransaction[] = transactions.reduce((acc: GroupedTransaction[], tx) => {
-    let existing = acc.find((g) => g.transaction_number === tx.transaction_number);
-    if (!existing) {
-      existing = {
-        transaction_number: tx.transaction_number,
-        tx_type: tx.tx_type,
-        batch_number: tx.batch_number ?? null,
-        reference_no: tx.reference_no ?? null,
-        supplier_or_dest: tx.supplier_or_dest ?? null,
-        notes: tx.notes ?? null,
-        document_url: tx.document_url ?? null,
-        created_by_name: tx.created_by_name ?? null,
-        created_at: tx.created_at,
-        items: [],
-      };
-      acc.push(existing);
-    }
-    existing.items.push({
-      id: tx.id,
-      product_id: tx.product_id,
-      product_name: tx.product_name,
-      quantity: tx.quantity,
-      unit: tx.unit,
-    });
-    return acc;
-  }, []);
+  const groupedTransactions: GroupedTransaction[] = transactions.reduce(
+    (acc: GroupedTransaction[], tx) => {
+      let existing = acc.find((g) => g.transaction_number === tx.transaction_number);
+      if (!existing) {
+        existing = {
+          transaction_number: tx.transaction_number,
+          tx_type: tx.tx_type,
+          batch_number: tx.batch_number ?? null,
+          reference_no: tx.reference_no ?? null,
+          supplier_or_dest: tx.supplier_or_dest ?? null,
+          notes: tx.notes ?? null,
+          document_url: tx.document_url ?? null,
+          created_by_name: tx.created_by_name ?? null,
+          created_at: tx.created_at,
+          items: [],
+        };
+        acc.push(existing);
+      }
+      existing.items.push({
+        id: tx.id,
+        product_id: tx.product_id,
+        product_name: tx.product_name,
+        quantity: tx.quantity,
+        unit: tx.unit,
+      });
+      return acc;
+    },
+    [],
+  );
 
   // ── STATISTIK TOTAL MUTASI DAILY (HARI INI) ──────────────────────────────────
   const { dailyInCount, dailyOutCount, dailyTotalCount } = useMemo(() => {
@@ -2335,32 +2475,23 @@ function WarehouseAndProductsPage() {
       const matchPetugas = (tx.created_by_name || "").toLowerCase().includes(q);
       const matchNotes = (tx.notes || "").toLowerCase().includes(q);
       const matchItems = tx.items.some((it) => it.product_name.toLowerCase().includes(q));
-      return matchNo || matchBatch || matchRef || matchDest || matchPetugas || matchNotes || matchItems;
+      return (
+        matchNo || matchBatch || matchRef || matchDest || matchPetugas || matchNotes || matchItems
+      );
     });
   }, [groupedTransactions, txFilterType, txDateFilter, txSearchQuery]);
 
-  // ── EXPORT LAPORAN RIWAYAT MUTASI (IN/OUT) KE EXCEL RESMI ─────────────────────
-  const exportMutasiToExcel = () => {
-    if (groupedTransactions.length === 0 && transactions.length === 0) {
-      toast.error("Tidak ada data mutasi untuk diekspor");
-      return;
-    }
-
-    exportSparepartMutasiExcel({
-      groupedTransactions,
-      generatedByName: profile?.full_name || profile?.email || "Petugas Warehouse Sparepart",
-    });
-
-    toast.success("Laporan riwayat mutasi (In/Out) berhasil diekspor (.xls)");
-    recordActivity("EXPORT_DATA", "Mengekspor laporan riwayat mutasi transaksi gudang ke Excel");
-  };
 
   // ── CETAK & UNDUH PDF BUKTI MUTASI BARANG (1 BON / PENCATATAN TRANSAKSI) ────
   const downloadTransactionPDF = (tx: GroupedTransaction) => {
     const isMasuk = tx.tx_type === "IN";
-    const titleType = isMasuk ? "BUKTI PENERIMAAN BARANG (INBOUND)" : "BUKTI PENGELUARAN BARANG (OUTBOUND)";
+    const titleType = isMasuk
+      ? "BUKTI PENERIMAAN BARANG (INBOUND)"
+      : "BUKTI PENGELUARAN BARANG (OUTBOUND)";
     const colorHeader = isMasuk ? "#059669" : "#e11d48";
     const dateFormatted = formatDate(tx.created_at);
+
+    const receiptDate = tx.batch_number ? formatDate(tx.batch_number) : dateFormatted;
 
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
@@ -2377,11 +2508,15 @@ function WarehouseAndProductsPage() {
             <strong style="font-size: 13px; color: #0f172a;">${it.product_name}</strong>
           </td>
           <td>
-            <div>Batch: <code>${tx.batch_number || "—"}</code></div>
-            <div style="font-size: 11px; color: #64748b; margin-top: 1px;">Ref: ${tx.reference_no || "—"}</div>
+            ${
+              isMasuk
+                ? `<div style="font-weight: 600; color: #0f172a;">${tx.reference_no || "—"}</div>`
+                : `<div>Batch: <code>${tx.batch_number || "—"}</code></div>
+                   <div style="font-size: 11px; color: #64748b; margin-top: 1px;">Ref: ${tx.reference_no || "—"}</div>`
+            }
           </td>
           <td style="text-align: center;">
-            <span style="font-weight: 700; font-size: 11px; color: ${colorHeader};">${isMasuk ? "INBOUND" : "OUTBOUND"}</span>
+            <span style="font-weight: 700; font-size: 11px; color: ${colorHeader};">${isMasuk ? "IN" : "OUT"}</span>
           </td>
           <td style="text-align: right;">
             <span class="qty-highlight">${isMasuk ? "+" : "-"}${it.quantity} ${it.unit}</span>
@@ -2488,13 +2623,6 @@ function WarehouseAndProductsPage() {
             color: ${colorHeader};
             font-family: monospace;
           }
-          .notes-card {
-            border-left: 4px solid #cbd5e1;
-            background: #f8fafc;
-            padding: 12px 16px;
-            margin-bottom: 30px;
-            border-radius: 0 6px 6px 0;
-          }
           .signatures {
             margin-top: 50px;
             display: grid;
@@ -2503,7 +2631,6 @@ function WarehouseAndProductsPage() {
             text-align: center;
           }
           .sig-line {
-            border-top: 1px dashed #94a3b8;
             margin-top: 65px;
             padding-top: 6px;
             font-weight: 700;
@@ -2533,11 +2660,7 @@ function WarehouseAndProductsPage() {
 
         <div class="meta-grid">
           <div class="meta-item">
-            <div class="meta-label">Nomor Transaksi (No. Bon)</div>
-            <div class="meta-value" style="font-family: monospace;">${tx.transaction_number}</div>
-          </div>
-          <div class="meta-item">
-            <div class="meta-label">Tanggal & Waktu</div>
+            <div class="meta-label">Tanggal Pencatatan</div>
             <div class="meta-value">${dateFormatted}</div>
           </div>
           <div class="meta-item">
@@ -2545,8 +2668,12 @@ function WarehouseAndProductsPage() {
             <div class="meta-value">${tx.supplier_or_dest || "—"}</div>
           </div>
           <div class="meta-item">
-            <div class="meta-label">Petugas Input</div>
-            <div class="meta-value">${tx.created_by_name || "Petugas Gudang"}</div>
+            <div class="meta-label">PETUGAS SPAREPART SHIFT 1/2/3:</div>
+            <div class="meta-value">${tx.notes || "Petugas Sparepart"}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">${isMasuk ? "Tanggal Penerimaan" : "Tanggal Pengeluaran"}</div>
+            <div class="meta-value">${receiptDate}</div>
           </div>
         </div>
 
@@ -2558,10 +2685,10 @@ function WarehouseAndProductsPage() {
           <thead>
             <tr>
               <th style="width: 5%; text-align: center;">No</th>
-              <th style="width: 40%;">Nama Barang / Produk</th>
-              <th style="width: 25%;">${isMasuk ? "Tanggal Terima / Ref" : "No. Batch / Ref"}</th>
+              <th style="width: 40%;">Nama Barang</th>
+              <th style="width: 25%;">${isMasuk ? "No.PO" : "No. Batch / Ref"}</th>
               <th style="width: 12%; text-align: center;">Tipe</th>
-              <th style="width: 18%; text-align: right;">Jumlah</th>
+              <th style="width: 18%; text-align: right;">Qty</th>
             </tr>
           </thead>
           <tbody>
@@ -2569,28 +2696,18 @@ function WarehouseAndProductsPage() {
           </tbody>
         </table>
 
-        ${tx.notes
-        ? `
-          <div class="notes-card">
-            <div class="meta-label" style="margin-bottom: 4px;">Petugas Sparepart Shift 1/2/3:</div>
-            <div style="font-size: 12px; color: #334155;">${tx.notes}</div>
-          </div>
-        `
-        : ""
-      }
-
         <div class="signatures">
           <div>
-            <div style="font-size: 11px; color: #64748b;">Dibuat oleh Unit Head,</div>
+            <div style="font-size: 11px; color: #64748b;">Dibuat oleh User,</div>
             <div class="sig-line">( ............................................ )</div>
           </div>
           <div>
-            <div style="font-size: 11px; color: #64748b;">Diperiksa oleh Section Head,</div>
-            <div class="sig-line">( Section Head )</div>
+            <div style="font-size: 11px; color: #64748b;">Diperiksa oleh UH/SH,</div>
+            <div class="sig-line">( ............................................ )</div>
           </div>
           <div>
             <div style="font-size: 11px; color: #64748b;">Disetujui oleh Departement Head,</div>
-            <div class="sig-line">( Departement Head )</div>
+            <div class="sig-line">( ............................................ )</div>
           </div>
         </div>
 
@@ -2614,8 +2731,6 @@ function WarehouseAndProductsPage() {
     printWindow.document.close();
   };
 
-
-
   // Filter & Search Logic with Sorting
   const filteredProducts = useMemo(() => {
     const list = products.filter((p) => {
@@ -2630,7 +2745,8 @@ function WarehouseAndProductsPage() {
       const current = p.current_stock ?? 0;
       const minStock = p.min_stock ?? 10;
       const rawMax = (p as any).max_stock;
-      const maxStock = rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
+      const maxStock =
+        rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
 
       const isOutOfStock = maxStock !== null && !isNaN(maxStock) && current > maxStock;
       const isOrder = current <= minStock;
@@ -2665,8 +2781,16 @@ function WarehouseAndProductsPage() {
         const txAIn = latestInTxMap[a.id] || (nameA ? latestInTxMap[nameA] : undefined);
         const txBIn = latestInTxMap[b.id] || (nameB ? latestInTxMap[nameB] : undefined);
 
-        const timeA = txAIn ? new Date(txAIn.created_at).getTime() : a.created_at ? new Date(a.created_at).getTime() : 0;
-        const timeB = txBIn ? new Date(txBIn.created_at).getTime() : b.created_at ? new Date(b.created_at).getTime() : 0;
+        const timeA = txAIn
+          ? new Date(txAIn.created_at).getTime()
+          : a.created_at
+            ? new Date(a.created_at).getTime()
+            : 0;
+        const timeB = txBIn
+          ? new Date(txBIn.created_at).getTime()
+          : b.created_at
+            ? new Date(b.created_at).getTime()
+            : 0;
 
         if (timeA !== timeB) {
           return timeB - timeA; // Waktu penambahan quantity / mutasi terbaru berada paling awal
@@ -2675,10 +2799,14 @@ function WarehouseAndProductsPage() {
       }
 
       if (sortOption === "CODE_ASC") {
-        return String(a.code || "").localeCompare(String(b.code || ""), undefined, { numeric: true });
+        return String(a.code || "").localeCompare(String(b.code || ""), undefined, {
+          numeric: true,
+        });
       }
       if (sortOption === "CODE_DESC") {
-        return String(b.code || "").localeCompare(String(a.code || ""), undefined, { numeric: true });
+        return String(b.code || "").localeCompare(String(a.code || ""), undefined, {
+          numeric: true,
+        });
       }
       if (sortOption === "NAME_ASC") {
         return a.name.localeCompare(b.name);
@@ -2712,7 +2840,8 @@ function WarehouseAndProductsPage() {
     const current = p.current_stock ?? 0;
     const minStock = p.min_stock ?? 10;
     const rawMax = (p as any).max_stock;
-    const maxStock = rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
+    const maxStock =
+      rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
     const isOutOfStock = maxStock !== null && !isNaN(maxStock) && current > maxStock;
     return !isOutOfStock && current <= minStock;
   });
@@ -2720,14 +2849,16 @@ function WarehouseAndProductsPage() {
     const current = p.current_stock ?? 0;
     const minStock = p.min_stock ?? 10;
     const rawMax = (p as any).max_stock;
-    const maxStock = rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
+    const maxStock =
+      rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
     const isOutOfStock = maxStock !== null && !isNaN(maxStock) && current > maxStock;
     return !isOutOfStock && current > minStock;
   });
   const obsOutOfStockItems = activeProductsObs.filter((p) => {
     const current = p.current_stock ?? 0;
     const rawMax = (p as any).max_stock;
-    const maxStock = rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
+    const maxStock =
+      rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
     return maxStock !== null && !isNaN(maxStock) && current > maxStock;
   });
   const obsZeroStockItems = activeProductsObs.filter((p) => (p.current_stock ?? 0) <= 0);
@@ -2738,9 +2869,12 @@ function WarehouseAndProductsPage() {
   const obsZeroStockCount = obsZeroStockItems.length;
 
   // Percentages for progress bar
-  const obsOrderPct = totalActiveItemsObs > 0 ? Math.round((obsOrderCount / totalActiveItemsObs) * 100) : 0;
-  const obsSafetyPct = totalActiveItemsObs > 0 ? Math.round((obsSafetyCount / totalActiveItemsObs) * 100) : 0;
-  const obsOutOfStockPct = totalActiveItemsObs > 0 ? Math.max(0, 100 - obsOrderPct - obsSafetyPct) : 0;
+  const obsOrderPct =
+    totalActiveItemsObs > 0 ? Math.round((obsOrderCount / totalActiveItemsObs) * 100) : 0;
+  const obsSafetyPct =
+    totalActiveItemsObs > 0 ? Math.round((obsSafetyCount / totalActiveItemsObs) * 100) : 0;
+  const obsOutOfStockPct =
+    totalActiveItemsObs > 0 ? Math.max(0, 100 - obsOrderPct - obsSafetyPct) : 0;
 
   // Map untuk lookup kode produk berdasarkan id atau nama
   const productMap = useMemo(() => {
@@ -2753,15 +2887,17 @@ function WarehouseAndProductsPage() {
   }, [products]);
 
   return (
-    <AppShell breadcrumb={
-      activeTab === "buffer_stock"
-        ? "Buffer Stock"
-        : activeTab === "transactions"
-          ? "Riwayat Mutasi"
-          : activeTab === "logs"
-            ? "Aktivitas Seluruh Kegiatan"
-            : "Manajemen & Master Barang"
-    }>
+    <AppShell
+      breadcrumb={
+        activeTab === "buffer_stock"
+          ? "Buffer Stock"
+          : activeTab === "transactions"
+            ? "Riwayat Mutasi"
+            : activeTab === "logs"
+              ? "Aktivitas Seluruh Kegiatan"
+              : "Manajemen & Master Barang"
+      }
+    >
       {/* Header Halaman */}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -2834,19 +2970,29 @@ function WarehouseAndProductsPage() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel className="text-xs text-muted-foreground">Format Unduhan Laporan</DropdownMenuLabel>
+                  <DropdownMenuLabel className="text-xs text-muted-foreground">
+                    Format Unduhan Laporan
+                  </DropdownMenuLabel>
                   <DropdownMenuItem onClick={exportToExcel} className="gap-2.5 cursor-pointer py-2">
                     <FileSpreadsheet className="size-4 text-emerald-600 dark:text-emerald-400" />
                     <div className="flex flex-col">
-                      <span className="font-semibold text-xs text-foreground">Excel Resmi (.xls)</span>
-                      <span className="text-[10px] text-muted-foreground">Format rapi, kop, KPI & tanda tangan</span>
+                      <span className="font-semibold text-xs text-foreground">
+                        Excel Resmi (.xls)
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        Format rapi, kop, KPI & tanda tangan
+                      </span>
                     </div>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={exportToCSV} className="gap-2.5 cursor-pointer py-2">
                     <FileText className="size-4 text-sky-600 dark:text-sky-400" />
                     <div className="flex flex-col">
-                      <span className="font-semibold text-xs text-foreground">CSV Mentah (.csv)</span>
-                      <span className="text-[10px] text-muted-foreground">Tabel data terpisah koma</span>
+                      <span className="font-semibold text-xs text-foreground">
+                        CSV Mentah (.csv)
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        Tabel data terpisah koma
+                      </span>
                     </div>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -2892,7 +3038,20 @@ function WarehouseAndProductsPage() {
                     size="sm"
                     onClick={() => {
                       if (activeTab === "buffer_stock") {
-                        setBufferFormData({ name: "", code: "", unit: "pcs", location: "Gudang Utama", shelf: "Rak A-1", min_stock: "10", safe_stock: "1", max_stock: "", current_stock: "0", description: "" });
+                        setBufferFormData({
+                          name: "",
+                          code: "",
+                          unit: "Roll",
+                          location: "Gudang Utama",
+                          shelf: "Rak A-1",
+                          qty_in: "0",
+                          qty_out: "0",
+                          min_stock: "10",
+                          safe_stock: "1",
+                          max_stock: "",
+                          current_stock: "0",
+                          description: "",
+                        });
                         setIsBufferAddOpen(true);
                       } else {
                         setFormData((prev) => ({ ...prev, category: "Sparepart & Tools" }));
@@ -2902,9 +3061,7 @@ function WarehouseAndProductsPage() {
                     className="gap-1.5 bg-white text-slate-900 font-semibold shadow-sm hover:bg-slate-100 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[155px]"
                   >
                     <Plus className="size-3.5 text-slate-900" />
-                    {activeTab === "buffer_stock"
-                      ? "Tambah Barang Buffer"
-                      : "Tambah Barang OBS"}
+                    {activeTab === "buffer_stock" ? "Tambah Barang Buffer" : "Tambah Barang OBS"}
                   </Button>
                 )}
 
@@ -2919,19 +3076,32 @@ function WarehouseAndProductsPage() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel className="text-xs text-muted-foreground">Format Unduhan Laporan</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={exportToExcel} className="gap-2.5 cursor-pointer py-2">
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">
+                      Format Unduhan Laporan
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem
+                      onClick={exportToExcel}
+                      className="gap-2.5 cursor-pointer py-2"
+                    >
                       <FileSpreadsheet className="size-4 text-emerald-600 dark:text-emerald-400" />
                       <div className="flex flex-col">
-                        <span className="font-semibold text-xs text-foreground">Excel Resmi (.xls)</span>
-                        <span className="text-[10px] text-muted-foreground">Format rapi, kop, KPI & tanda tangan</span>
+                        <span className="font-semibold text-xs text-foreground">
+                          Excel Resmi (.xls)
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          Format rapi, kop, KPI & tanda tangan
+                        </span>
                       </div>
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={exportToCSV} className="gap-2.5 cursor-pointer py-2">
                       <FileText className="size-4 text-sky-600 dark:text-sky-400" />
                       <div className="flex flex-col">
-                        <span className="font-semibold text-xs text-foreground">CSV Mentah (.csv)</span>
-                        <span className="text-[10px] text-muted-foreground">Tabel data terpisah koma</span>
+                        <span className="font-semibold text-xs text-foreground">
+                          CSV Mentah (.csv)
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          Tabel data terpisah koma
+                        </span>
                       </div>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -2944,7 +3114,6 @@ function WarehouseAndProductsPage() {
 
       {/* Tabs Menu Gudang */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-
         {/* ── TAB 1: MASTER & STOK BARANG ─────────────────────────────────────── */}
         <TabsContent value="items" className="space-y-4">
           {/* Filter & Search Bar */}
@@ -2966,14 +3135,19 @@ function WarehouseAndProductsPage() {
                     <SelectValue placeholder="Kondisi Stok" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ALL" className="text-xs">Semua Kondisi</SelectItem>
+                    <SelectItem value="ALL" className="text-xs">
+                      Semua Kondisi
+                    </SelectItem>
                     <SelectItem value="ORDER" className="text-xs font-semibold text-rose-600">
                       ⚠ ORDER (≤ Minimal Stok)
                     </SelectItem>
                     <SelectItem value="SAFETY" className="text-xs font-semibold text-emerald-600">
                       ✓ SAFETY STOK (&gt; Minimal Stok)
                     </SelectItem>
-                    <SelectItem value="OUT_OF_STOCK" className="text-xs font-semibold text-amber-600">
+                    <SelectItem
+                      value="OUT_OF_STOCK"
+                      className="text-xs font-semibold text-amber-600"
+                    >
                       ⚡ OUT OF STOK (&gt; Maksimal Stok)
                     </SelectItem>
                   </SelectContent>
@@ -3010,7 +3184,10 @@ function WarehouseAndProductsPage() {
                     <SelectValue placeholder="Urutkan" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="RECENT_MUTATION" className="text-xs font-semibold text-primary">
+                    <SelectItem
+                      value="RECENT_MUTATION"
+                      className="text-xs font-semibold text-primary"
+                    >
                       ✦ Baru Ditambah / Mutasi
                     </SelectItem>
                     <SelectItem value="CODE_ASC" className="text-xs">
@@ -3040,134 +3217,138 @@ function WarehouseAndProductsPage() {
           {/* ── MONITORING INFO CARDS OBS SPAREPART ────────────────────────── */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {/* Card 1: Total Item OBS */}
-            <div
-              className="rise-in group relative overflow-hidden rounded-lg border border-blue-500 bg-blue-600 p-4 text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
-            >
+            <div className="rise-in group relative overflow-hidden rounded-lg border border-blue-500 bg-blue-600 p-4 text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg cursor-pointer active:scale-[0.99]">
               <div className="flex items-center gap-2 mb-3">
                 <div className="flex items-center justify-center size-8 rounded-md bg-blue-500 text-white border border-blue-400">
                   <Boxes className="size-4" />
                 </div>
 
-                <span className="label-caps !text-white">
-                  Total Item
-                </span>
+                <span className="label-caps !text-white">Total Item</span>
               </div>
 
               <div className="font-mono text-2xl font-bold tabular-nums text-white">
                 {loadingProducts ? "—" : totalActiveItemsObs}
               </div>
 
-              <div className="mt-1 text-[10px] text-white">
-                Barang aktif terdaftar
+              <div className="mt-1 text-[10px] text-white">Barang aktif terdaftar</div>
+            </div>
+
+            {/* Card 2: Total Stok Qty */}
+            <div
+              className="rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all hover:shadow-lg cursor-pointer active:scale-[0.99]"
+              style={{
+                animationDelay: "50ms",
+                backgroundColor: "#0092B8",
+                borderColor: "#0083A6",
+              }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <div
+                  className="flex items-center justify-center size-8 rounded-md text-white border"
+                  style={{
+                    backgroundColor: "#00ACCF",
+                    borderColor: "#00A0C2",
+                  }}
+                >
+                  <Package className="size-4" />
+                </div>
+
+                <span className="label-caps !text-white">Total Stok</span>
               </div>
-            </div>
 
-          {/* Card 2: Total Stok Qty */}
-          <div
-            className="rise-in group relative overflow-hidden rounded-lg border border-blue-500 bg-blue-600 p-4 text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
-            style={{ animationDelay: "50ms" }}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <div className="flex items-center justify-center size-8 rounded-md bg-blue-500 text-white border border-blue-400">
-                <Package className="size-4" />
+              <div className="font-mono text-2xl font-bold tabular-nums text-white">
+                {loadingProducts ? "—" : totalStockQtyObs.toLocaleString("id-ID")}
               </div>
 
-              <span className="label-caps !text-white">
-                Total Stok
-              </span>
+              <div className="mt-1 text-[10px] text-white">Jumlah seluruh pcs/unit</div>
             </div>
 
-            <div className="font-mono text-2xl font-bold tabular-nums text-white">
-              {loadingProducts ? "—" : totalStockQtyObs.toLocaleString("id-ID")}
+            {/* Card 3: ORDER — Perlu Restock */}
+            <div
+              className="rise-in group relative overflow-hidden rounded-lg border border-red-500 bg-red-600 p-4 text-white shadow-md transition-all hover:bg-red-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+              style={{ animationDelay: "100ms" }}
+              onClick={() => setStockStatusFilter(stockStatusFilter === "ORDER" ? "ALL" : "ORDER")}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center justify-center size-8 rounded-md bg-rose-500 text-white border border-rose-400">
+                  <CircleAlert className="size-4" />
+                </div>
+
+                <span className="label-caps !text-white">Order</span>
+              </div>
+
+              <div className="font-mono text-2xl font-bold tabular-nums text-white">
+                {loadingProducts ? "—" : obsOrderCount}
+              </div>
+
+              <div className="mt-1 text-[10px] text-white">Stok ≤ batas minimum</div>
+
+              {stockStatusFilter === "ORDER" && (
+                <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
+              )}
             </div>
-
-            <div className="mt-1 text-[10px] text-white">
-              Jumlah seluruh pcs/unit
-            </div>
-          </div>
-
-           {/* Card 3: ORDER — Perlu Restock */}
-                     <div
-                className="rise-in group relative overflow-hidden rounded-lg border border-red-500 bg-red-600 p-4 text-white shadow-md transition-all hover:bg-red-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
-                style={{ animationDelay: "100ms" }}
-                onClick={() =>
-                  setStockStatusFilter(
-                    stockStatusFilter === "ORDER" ? "ALL" : "ORDER"
-                  )
-                }
-              >
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="flex items-center justify-center size-8 rounded-md bg-rose-500 text-white border border-rose-400">
-                    <CircleAlert className="size-4" />
-                  </div>
-
-                  <span className="label-caps !text-white">
-                    Order
-                  </span>
-                </div>
-
-                <div className="font-mono text-2xl font-bold tabular-nums text-white">
-                  {loadingProducts ? "—" : obsOrderCount}
-                </div>
-
-                <div className="mt-1 text-[10px] text-white">
-                  Stok ≤ batas minimum
-                </div>
-
-                {stockStatusFilter === "ORDER" && (
-                  <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
-                )}
-              </div>  
 
             {/* Card 4: SAFETY STOK */}
             <div
-              className="rise-in group relative overflow-hidden border border-emerald-200 dark:border-emerald-900/60 bg-gradient-to-br from-surface to-emerald-50/40 dark:from-surface dark:to-emerald-950/20 p-4 transition-all hover:shadow-md hover:border-emerald-400/60 cursor-pointer"
-              style={{ animationDelay: '150ms' }}
-              onClick={() => setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")}
+              className="rise-in group relative overflow-hidden rounded-lg border border-green-500 bg-green-600 p-4 text-white shadow-md transition-all hover:bg-green-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+              style={{ animationDelay: "150ms" }}
+              onClick={() =>
+                setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
+              }
             >
-              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-emerald-500/10 to-transparent rounded-bl-3xl" />
               <div className="flex items-center gap-2 mb-3">
-                <div className="flex items-center justify-center size-8 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-200/60 dark:ring-emerald-800/50">
+                <div className="flex items-center justify-center size-8 rounded-md bg-green-500 text-white border border-green-400">
                   <ShieldCheck className="size-4" />
                 </div>
-                <span className="label-caps !text-emerald-600 dark:!text-emerald-400">Safety Stok</span>
+
+                <span className="label-caps !text-white">Safety Stok</span>
               </div>
-              <div className="font-mono text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+
+              <div className="font-mono text-2xl font-bold tabular-nums text-white">
                 {loadingProducts ? "—" : obsSafetyCount}
               </div>
-              <div className="mt-1 text-[10px] text-emerald-500/80 dark:text-emerald-400/60">Stok aman &gt; minimum</div>
+
+              <div className="mt-1 text-[10px] text-white">Stok aman &gt; minimum</div>
+
               {stockStatusFilter === "SAFETY" && (
-                <div className="absolute top-2 right-2 size-2 rounded-full bg-emerald-500 animate-pulse" />
+                <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
               )}
             </div>
 
             {/* Card 5: OUT OF STOK */}
             <div
-              className="rise-in group relative overflow-hidden border border-amber-200 dark:border-amber-900/60 bg-gradient-to-br from-surface to-amber-50/40 dark:from-surface dark:to-amber-950/20 p-4 transition-all hover:shadow-md hover:border-amber-400/60 cursor-pointer"
-              style={{ animationDelay: '200ms' }}
-              onClick={() => setStockStatusFilter(stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK")}
+              className="rise-in group relative overflow-hidden rounded-lg border border-amber-500 bg-amber-600 p-4 text-white shadow-md transition-all hover:bg-amber-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+              style={{ animationDelay: "200ms" }}
+              onClick={() =>
+                setStockStatusFilter(stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK")
+              }
             >
-              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-amber-500/10 to-transparent rounded-bl-3xl" />
               <div className="flex items-center gap-2 mb-3">
-                <div className="flex items-center justify-center size-8 rounded-md bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 ring-1 ring-amber-200/60 dark:ring-amber-800/50">
+                <div className="flex items-center justify-center size-8 rounded-md bg-amber-500 text-white border border-amber-400">
                   <TrendingDown className="size-4" />
                 </div>
-                <span className="label-caps !text-amber-600 dark:!text-amber-400">Out of Stok</span>
+
+                <span className="label-caps !text-white">Out of Stok</span>
               </div>
-              <div className="font-mono text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
+
+              <div className="font-mono text-2xl font-bold tabular-nums text-white">
                 {loadingProducts ? "—" : obsOutOfStockCount}
               </div>
-              <div className="mt-1 text-[10px] text-amber-500/80 dark:text-amber-400/60">Melebihi maks. stok</div>
+
+              <div className="mt-1 text-[10px] text-white">Melebihi maks. stok</div>
+
               {stockStatusFilter === "OUT_OF_STOCK" && (
-                <div className="absolute top-2 right-2 size-2 rounded-full bg-amber-500 animate-pulse" />
+                <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
               )}
             </div>
-
           </div>
 
           {/* ── PROGRESS BAR DISTRIBUSI KONDISI STOK ──────────────────────── */}
           {!loadingProducts && totalActiveItemsObs > 0 && (
-            <div className="rise-in border border-border bg-surface p-4" style={{ animationDelay: '300ms' }}>
+            <div
+              className="rise-in border border-border bg-surface p-4"
+              style={{ animationDelay: "300ms" }}
+            >
               <div className="flex items-center justify-between mb-2.5">
                 <span className="label-caps">Distribusi Kondisi Stok</span>
                 <span className="text-[10px] font-mono text-muted-foreground">
@@ -3200,19 +3381,35 @@ function WarehouseAndProductsPage() {
               <div className="flex items-center gap-4 mt-2.5 flex-wrap">
                 <div className="flex items-center gap-1.5">
                   <div className="size-2.5 rounded-full bg-emerald-500" />
-                  <span className="text-[10px] text-muted-foreground">Safety <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">{obsSafetyPct}%</span></span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Safety{" "}
+                    <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                      {obsSafetyPct}%
+                    </span>
+                  </span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <div className="size-2.5 rounded-full bg-rose-500" />
-                  <span className="text-[10px] text-muted-foreground">Order <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">{obsOrderPct}%</span></span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Order{" "}
+                    <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">
+                      {obsOrderPct}%
+                    </span>
+                  </span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <div className="size-2.5 rounded-full bg-amber-500" />
-                  <span className="text-[10px] text-muted-foreground">Out of Stok <span className="font-mono font-semibold text-amber-600 dark:text-amber-400">{obsOutOfStockPct}%</span></span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Out of Stok{" "}
+                    <span className="font-mono font-semibold text-amber-600 dark:text-amber-400">
+                      {obsOutOfStockPct}%
+                    </span>
+                  </span>
                 </div>
               </div>
             </div>
           )}
+
 
           {/* Tabel Barang */}
           <div className="border border-border bg-surface overflow-x-auto rounded-lg shadow-2xs">
@@ -3232,17 +3429,39 @@ function WarehouseAndProductsPage() {
               <table className="w-full min-w-[880px] text-xs border-collapse border border-slate-300 dark:border-slate-700">
                 <thead>
                   <tr className="bg-[#0f274a] text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
-                    <th className="label-caps px-3 py-3 text-center w-12 whitespace-nowrap text-white font-semibold">No</th>
-                    <th className="label-caps px-3 py-3 text-left min-w-[130px] whitespace-nowrap text-white font-semibold">Kode</th>
-                    <th className="label-caps px-3 py-3 text-left min-w-[220px] whitespace-nowrap text-white font-semibold">Material</th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[85px] whitespace-nowrap text-white font-semibold">Satuan</th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Minimal Stok</th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Masuk</th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Keluar</th>
-                    <th className="label-caps px-3 py-3 text-right min-w-[110px] whitespace-nowrap text-white font-semibold">Stok Saat Ini</th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Maksimal Stok</th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[120px] whitespace-nowrap text-white font-semibold">Kondisi</th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">Aksi</th>
+                    <th className="label-caps px-3 py-3 text-center w-12 whitespace-nowrap text-white font-semibold">
+                      No
+                    </th>
+                    <th className="label-caps px-3 py-3 text-left min-w-[130px] whitespace-nowrap text-white font-semibold">
+                      Kode
+                    </th>
+                    <th className="label-caps px-3 py-3 text-left min-w-[220px] whitespace-nowrap text-white font-semibold">
+                      Material
+                    </th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[85px] whitespace-nowrap text-white font-semibold">
+                      Satuan
+                    </th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
+                      Minimal Stok
+                    </th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
+                      Masuk
+                    </th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
+                      Keluar
+                    </th>
+                    <th className="label-caps px-3 py-3 text-right min-w-[110px] whitespace-nowrap text-white font-semibold">
+                      Stok Saat Ini
+                    </th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
+                      Maksimal Stok
+                    </th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[120px] whitespace-nowrap text-white font-semibold">
+                      Kondisi
+                    </th>
+                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
+                      Aksi
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -3250,21 +3469,27 @@ function WarehouseAndProductsPage() {
                     const current = p.current_stock ?? 0;
                     const minStock = p.min_stock ?? 10;
                     const rawMax = (p as any).max_stock;
-                    const maxStock = rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
+                    const maxStock =
+                      rawMax !== null && rawMax !== undefined && rawMax !== ""
+                        ? Number(rawMax)
+                        : null;
 
                     // Logika Kondisi:
                     // 1. Order warna merah (current <= minStock)
                     // 2. Safety stok warna hijau (current > minStock dan <= maxStock)
                     // 3. Out of stok warna kuning (current > maxStock)
                     let kondisiText = "SAFETY STOK";
-                    let kondisiStyle = "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
+                    let kondisiStyle =
+                      "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
 
                     if (maxStock !== null && !isNaN(maxStock) && current > maxStock) {
                       kondisiText = "OUT OF STOK";
-                      kondisiStyle = "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
+                      kondisiStyle =
+                        "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
                     } else if (current <= minStock) {
                       kondisiText = "ORDER";
-                      kondisiStyle = "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800";
+                      kondisiStyle =
+                        "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800";
                     }
 
                     return (
@@ -3291,7 +3516,13 @@ function WarehouseAndProductsPage() {
                         <td className="px-3 py-3 text-left min-w-[220px]">
                           <div className="flex items-center gap-2">
                             {p.image_url ? (
-                              <a href={p.image_url} target="_blank" rel="noreferrer" title="Lihat Gambar" className="shrink-0">
+                              <a
+                                href={p.image_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Lihat Gambar"
+                                className="shrink-0"
+                              >
                                 <img
                                   src={p.image_url}
                                   alt={p.name}
@@ -3299,7 +3530,9 @@ function WarehouseAndProductsPage() {
                                 />
                               </a>
                             ) : null}
-                            <span className="font-semibold text-foreground break-words leading-tight">{p.name}</span>
+                            <span className="font-semibold text-foreground break-words leading-tight">
+                              {p.name}
+                            </span>
                           </div>
                         </td>
 
@@ -3320,8 +3553,7 @@ function WarehouseAndProductsPage() {
                           {(() => {
                             const nameKey = p.name ? p.name.trim().toLowerCase() : "";
                             const lastIn =
-                              latestInTxMap[p.id] ||
-                              (nameKey ? latestInTxMap[nameKey] : undefined);
+                              latestInTxMap[p.id] || (nameKey ? latestInTxMap[nameKey] : undefined);
 
                             return lastIn
                               ? `${Number(lastIn.quantity).toLocaleString("id-ID")}`
@@ -3352,7 +3584,7 @@ function WarehouseAndProductsPage() {
                                 ? "text-rose-600 dark:text-rose-400 font-extrabold"
                                 : current <= minStock
                                   ? "text-rose-600 dark:text-rose-400"
-                                  : "text-emerald-600 dark:text-emerald-400"
+                                  : "text-emerald-600 dark:text-emerald-400",
                             )}
                           >
                             {current.toLocaleString("id-ID")}
@@ -3361,7 +3593,9 @@ function WarehouseAndProductsPage() {
 
                         {/* 7. Maksimal Stok */}
                         <td className="px-3 py-3 text-center font-mono text-muted-foreground whitespace-nowrap">
-                          {maxStock !== null && !isNaN(maxStock) ? maxStock.toLocaleString("id-ID") : "—"}
+                          {maxStock !== null && !isNaN(maxStock)
+                            ? maxStock.toLocaleString("id-ID")
+                            : "—"}
                         </td>
 
                         {/* 8. Kondisi */}
@@ -3369,7 +3603,7 @@ function WarehouseAndProductsPage() {
                           <span
                             className={cn(
                               "inline-flex items-center justify-center w-28 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs",
-                              kondisiStyle
+                              kondisiStyle,
                             )}
                           >
                             {kondisiText}
@@ -3436,7 +3670,9 @@ function WarehouseAndProductsPage() {
                   <History className="size-4 text-blue-500 group-hover:scale-110 transition-transform" />
                 </div>
                 <div className="mt-2 flex items-baseline gap-2">
-                  <p className="text-2xl font-bold text-foreground group-hover:text-blue-600 transition-colors">{dailyTotalCount}</p>
+                  <p className="text-2xl font-bold text-foreground group-hover:text-blue-600 transition-colors">
+                    {dailyTotalCount}
+                  </p>
                   <span className="text-xs text-muted-foreground">transaksi hari ini</span>
                 </div>
               </div>
@@ -3453,8 +3689,12 @@ function WarehouseAndProductsPage() {
                 >
                   <ArrowDownLeft className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-[10px] uppercase font-semibold text-emerald-700 dark:text-emerald-300 leading-none">Mutasi Masuk</p>
-                    <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{dailyInCount}</p>
+                    <p className="text-[10px] uppercase font-semibold text-emerald-700 dark:text-emerald-300 leading-none">
+                      Mutasi Masuk
+                    </p>
+                    <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      {dailyInCount}
+                    </p>
                   </div>
                 </button>
                 <button
@@ -3469,8 +3709,12 @@ function WarehouseAndProductsPage() {
                 >
                   <ArrowUpRight className="size-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-[10px] uppercase font-semibold text-rose-700 dark:text-rose-300 leading-none">Mutasi Keluar</p>
-                    <p className="text-xs font-bold text-rose-600 dark:text-rose-400 mt-0.5">{dailyOutCount}</p>
+                    <p className="text-[10px] uppercase font-semibold text-rose-700 dark:text-rose-300 leading-none">
+                      Mutasi Keluar
+                    </p>
+                    <p className="text-xs font-bold text-rose-600 dark:text-rose-400 mt-0.5">
+                      {dailyOutCount}
+                    </p>
                   </div>
                 </button>
               </div>
@@ -3485,7 +3729,10 @@ function WarehouseAndProductsPage() {
                     Monitoring Mutasi Global
                   </span>
                   {txDateFilter && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] px-1.5 py-0 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
+                    >
                       Terfilter
                     </Badge>
                   )}
@@ -3570,7 +3817,7 @@ function WarehouseAndProductsPage() {
             </div>
           </div>
 
-          {/* Header Bar Alat Tab Mutasi (Pencarian, Filter Tipe, & Export Laporan Mutasi) */}
+          {/* Header Bar Alat Tab Mutasi (Pencarian & Filter Tipe) */}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border border-border bg-surface p-3 sm:p-4">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 flex-1 max-w-2xl">
               {/* Search Box */}
@@ -3657,17 +3904,8 @@ function WarehouseAndProductsPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 self-end lg:self-auto shrink-0">
-              <Button
-                size="sm"
-                onClick={exportMutasiToExcel}
-                className="h-8 gap-1.5 bg-slate-800 dark:bg-slate-700 text-white font-medium shadow-sm hover:bg-slate-900 dark:hover:bg-slate-600 active:scale-[0.98] transition-all text-xs"
-              >
-                <FileSpreadsheet className="size-3.5 text-emerald-400" />
-                Export Excel (.xls)
-              </Button>
-            </div>
           </div>
+
 
           {/* Tabel Riwayat Mutasi yang Rapih */}
           <div className="border border-border bg-surface overflow-x-auto shadow-xs">
@@ -3686,7 +3924,7 @@ function WarehouseAndProductsPage() {
                 <p className="mt-1 text-xs text-muted-foreground max-w-sm">
                   {txSearchQuery || txFilterType !== "ALL"
                     ? "Silakan coba kata kunci pencarian lain atau reset filter transaksi."
-                    : "Gunakan tombol \"Catat Masuk\" atau \"Catat Keluar\" di atas untuk mencatat perpindahan stok."}
+                    : 'Gunakan tombol "Catat Masuk" atau "Catat Keluar" di atas untuk mencatat perpindahan stok.'}
                 </p>
                 {(txSearchQuery || txFilterType !== "ALL") && (
                   <Button
@@ -3705,16 +3943,35 @@ function WarehouseAndProductsPage() {
             ) : (
               <table className="w-full text-xs text-left border-collapse border border-slate-200 dark:border-slate-800">
                 <thead>
-                  <tr className="border-b border-border bg-[#0f274a] text-white text-[11px] tracking-wider font-semibold divide-x divide-slate-600/60">
-                    <th className="px-3 py-3 whitespace-nowrap text-white">Tanggal</th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white w-28 text-center">Tipe Mutasi (In/Out)</th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[120px]">KODE</th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[220px]">MATERIAL</th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[110px] text-center">QTY</th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[160px]">Vendor / Tujuan</th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[130px]">No. PO</th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px]">User</th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white text-center w-28">Aksi</th>
+                  <tr className="border-b border-border bg-[#0f274a] text-white text-[11px] tracking-wider font-semibold divide-x divide-slate-600/60 text-center">
+                    <th className="px-3 py-3 whitespace-nowrap text-white text-center">Tanggal</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white w-28 text-center">
+                      (Tipe Mutasi)
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[120px] text-center">
+                      KODE
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[220px] text-center">
+                      MATERIAL
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[110px] text-center">
+                      QTY
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
+                      Vendor
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
+                      Alasan Permintaan Barang
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[130px] text-center">
+                      No. PO
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
+                      User
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white text-center w-28">
+                      Aksi
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -3734,16 +3991,19 @@ function WarehouseAndProductsPage() {
                             <Clock className="size-3 text-muted-foreground shrink-0" />
                             <span>{formatDate(tx.created_at)}</span>
                             {isToday && (
-                              <span className="size-1.5 rounded-full bg-blue-500 inline-block ml-1" title="Hari ini" />
+                              <span
+                                className="size-1.5 rounded-full bg-blue-500 inline-block ml-1"
+                                title="Hari ini"
+                              />
                             )}
                           </div>
                         </td>
 
-                        {/* 2. Tipe Mutasi (In/Out) */}
+                        {/* 2. (Tipe Mutasi) */}
                         <td className="px-3 py-3 text-center whitespace-nowrap">
                           <span
                             className={cn(
-                              "inline-flex items-center justify-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-bold uppercase tracking-wide",
+                              "inline-flex items-center justify-center gap-1 w-16 h-6 rounded text-[11px] font-bold uppercase tracking-wide",
                               isMasuk
                                 ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25"
                                 : "bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/25",
@@ -3754,21 +4014,24 @@ function WarehouseAndProductsPage() {
                             ) : (
                               <ArrowUpRight className="size-3 shrink-0 text-rose-600 dark:text-rose-400" />
                             )}
-                            {isMasuk ? "In (Masuk)" : "Out (Keluar)"}
+                            {isMasuk ? "IN" : "OUT"}
                           </span>
                         </td>
 
-                        {/* 3. KODE */}
+                        {/* 3. KODE (Tanpa kotak) */}
                         <td className="px-3 py-3 font-mono text-xs">
                           <div className="space-y-1.5">
                             {tx.items.map((it, idx) => {
-                              const foundProd = productMap.get(it.product_id) || productMap.get(it.product_name.trim().toLowerCase());
+                              const foundProd =
+                                productMap.get(it.product_id) ||
+                                productMap.get(it.product_name.trim().toLowerCase());
                               const itemCode = foundProd?.code || "—";
                               return (
-                                <div key={it.id || idx} className="py-0.5">
-                                  <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 text-[11px]">
-                                    {itemCode}
-                                  </span>
+                                <div
+                                  key={it.id || idx}
+                                  className="py-0.5 font-medium text-foreground"
+                                >
+                                  {itemCode}
                                 </div>
                               );
                             })}
@@ -3779,10 +4042,7 @@ function WarehouseAndProductsPage() {
                         <td className="px-3 py-3">
                           <div className="space-y-1.5">
                             {tx.items.map((it, idx) => (
-                              <div
-                                key={it.id || idx}
-                                className="flex items-center text-xs bg-surface-muted/40 hover:bg-surface-muted px-2.5 py-1 rounded border border-border/50 transition-colors"
-                              >
+                              <div key={it.id || idx} className="py-0.5">
                                 <span className="font-medium text-foreground leading-snug">
                                   {it.product_name}
                                 </span>
@@ -3796,17 +4056,17 @@ function WarehouseAndProductsPage() {
                           </div>
                         </td>
 
-                        {/* 5. QTY */}
+                        {/* 5. QTY (Tanpa kotak) */}
                         <td className="px-3 py-3 text-center whitespace-nowrap">
                           <div className="space-y-1.5">
                             {tx.items.map((it, idx) => (
                               <div key={it.id || idx} className="py-0.5">
                                 <span
                                   className={cn(
-                                    "font-mono font-bold text-xs inline-block px-2 py-0.5 rounded border",
+                                    "font-mono font-bold text-xs inline-block",
                                     isMasuk
-                                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
-                                      : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
+                                      ? "text-emerald-600 dark:text-emerald-400"
+                                      : "text-rose-600 dark:text-rose-400",
                                   )}
                                 >
                                   {isMasuk ? "+" : "-"}
@@ -3817,20 +4077,32 @@ function WarehouseAndProductsPage() {
                           </div>
                         </td>
 
-                        {/* 6. Vendor / Tujuan */}
+                        {/* 6. Vendor */}
                         <td className="px-3 py-3 text-xs">
-                          <span className="font-medium text-foreground block">
-                            {tx.supplier_or_dest || "—"}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground block mt-0.5">
-                            {isMasuk ? "Vendor Pengirim" : "Alasan / Line Tujuan"}
-                          </span>
+                          {isMasuk ? (
+                            <span className="font-medium text-foreground block">
+                              {tx.supplier_or_dest || "—"}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/60 block">—</span>
+                          )}
                         </td>
 
-                        {/* 7. No. PO */}
+                        {/* 7. Alasan Permintaan Barang */}
+                        <td className="px-3 py-3 text-xs">
+                          {!isMasuk ? (
+                            <span className="font-medium text-foreground block">
+                              {tx.supplier_or_dest || "—"}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/60 block">—</span>
+                          )}
+                        </td>
+
+                        {/* 8. No. PO */}
                         <td className="px-3 py-3 text-xs">
                           {tx.reference_no ? (
-                            <span className="font-mono text-xs text-foreground bg-surface-muted px-1.5 py-0.5 rounded border border-border/40 inline-block font-semibold">
+                            <span className="font-mono text-xs text-foreground font-semibold">
                               {tx.reference_no}
                             </span>
                           ) : tx.batch_number ? (
@@ -3842,19 +4114,11 @@ function WarehouseAndProductsPage() {
                           )}
                         </td>
 
-                        {/* 8. User */}
+                        {/* 9. User (Nama Petugas Shift) */}
                         <td className="px-3 py-3 text-xs">
                           <span className="font-medium text-foreground block">
-                            {tx.created_by_name || "Petugas Gudang"}
+                            {tx.notes || tx.created_by_name || "Petugas Sparepart"}
                           </span>
-                          {tx.notes && (
-                            <span
-                              className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1 italic block"
-                              title={tx.notes}
-                            >
-                              &ldquo;{tx.notes}&rdquo;
-                            </span>
-                          )}
                         </td>
 
                         {/* 9. Aksi */}
@@ -3913,7 +4177,8 @@ function WarehouseAndProductsPage() {
                 <div>
                   <h3 className="font-semibold text-base">Daftar Shelf & Lokasi Rak Gudang</h3>
                   <p className="text-xs text-muted-foreground">
-                    Monitoring penataan lokasi rak, daftar sparepart tersimpan, dan riwayat catatan masuk.
+                    Monitoring penataan lokasi rak, daftar sparepart tersimpan, dan riwayat catatan
+                    masuk.
                   </p>
                 </div>
               </div>
@@ -3927,9 +4192,12 @@ function WarehouseAndProductsPage() {
             {shelfLocationGroups.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <MapPin className="mb-3 size-10 text-muted-foreground/40" />
-                <p className="text-sm font-semibold text-foreground">Belum Ada Data Shelf / Rak yang Tercatat</p>
+                <p className="text-sm font-semibold text-foreground">
+                  Belum Ada Data Shelf / Rak yang Tercatat
+                </p>
                 <p className="mt-1 text-xs text-muted-foreground max-w-sm">
-                  Daftar lokasi rak akan otomatis terisi dan dikelompokkan sesuai data input master barang serta catatan transaksi barang masuk.
+                  Daftar lokasi rak akan otomatis terisi dan dikelompokkan sesuai data input master
+                  barang serta catatan transaksi barang masuk.
                 </p>
               </div>
             ) : (
@@ -3952,11 +4220,18 @@ function WarehouseAndProductsPage() {
                       </div>
                       <div className="flex items-center gap-3 text-xs">
                         <span className="text-muted-foreground">
-                          <strong className="text-foreground font-semibold">{group.items.length}</strong> SKU Sparepart
+                          <strong className="text-foreground font-semibold">
+                            {group.items.length}
+                          </strong>{" "}
+                          SKU Sparepart
                         </span>
                         <span className="text-border">|</span>
                         <span className="text-muted-foreground">
-                          Total Saldo: <strong className="text-primary font-bold font-mono">{group.totalStock.toLocaleString("id-ID")}</strong> Unit
+                          Total Saldo:{" "}
+                          <strong className="text-primary font-bold font-mono">
+                            {group.totalStock.toLocaleString("id-ID")}
+                          </strong>{" "}
+                          Unit
                         </span>
                       </div>
                     </div>
@@ -3967,8 +4242,11 @@ function WarehouseAndProductsPage() {
                         <div className="flex items-center gap-2">
                           <ArrowDownLeft className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                           <span>
-                            <strong>Catatan Masuk Terakhir:</strong> {formatDate(group.latestInbound.created_at)}
-                            {group.latestInbound.supplier_or_dest ? ` (Dari: ${group.latestInbound.supplier_or_dest})` : ""}
+                            <strong>Catatan Masuk Terakhir:</strong>{" "}
+                            {formatDate(group.latestInbound.created_at)}
+                            {group.latestInbound.supplier_or_dest
+                              ? ` (Dari: ${group.latestInbound.supplier_or_dest})`
+                              : ""}
                           </span>
                         </div>
                         <span className="font-mono text-[11px] opacity-80">
@@ -3984,9 +4262,13 @@ function WarehouseAndProductsPage() {
                           <tr className="border-b border-border bg-surface-muted/30 text-muted-foreground">
                             <th className="px-3.5 py-2 text-left font-medium w-10">No</th>
                             <th className="px-3.5 py-2 text-left font-medium w-32">Kode SKU</th>
-                            <th className="px-3.5 py-2 text-left font-medium min-w-[320px] md:min-w-[420px]">Nama Sparepart</th>
+                            <th className="px-3.5 py-2 text-left font-medium min-w-[320px] md:min-w-[420px]">
+                              Nama Sparepart
+                            </th>
                             <th className="px-3.5 py-2 text-center font-medium w-20">Satuan</th>
-                            <th className="px-3.5 py-2 text-right font-medium w-24">Stok Terkini</th>
+                            <th className="px-3.5 py-2 text-right font-medium w-24">
+                              Stok Terkini
+                            </th>
                             <th className="px-3.5 py-2 text-right font-medium w-20">Min.</th>
                             <th className="px-3.5 py-2 text-center font-medium w-24">Status</th>
                           </tr>
@@ -3995,13 +4277,28 @@ function WarehouseAndProductsPage() {
                           {group.items.map((item, itIdx) => {
                             const isLimit = (item.current_stock ?? 0) <= (item.min_stock ?? 10);
                             return (
-                              <tr key={item.id || itIdx} className="hover:bg-surface-muted/40 transition-colors">
+                              <tr
+                                key={item.id || itIdx}
+                                className="hover:bg-surface-muted/40 transition-colors"
+                              >
                                 <td className="px-3.5 py-2 text-muted-foreground">{itIdx + 1}</td>
-                                <td className="px-3.5 py-2 font-mono font-medium text-foreground">{item.code || "—"}</td>
-                                <td className="px-3.5 py-2 font-medium text-foreground min-w-[320px] md:min-w-[420px]">{item.name}</td>
-                                <td className="px-3.5 py-2 text-center font-mono text-muted-foreground">{item.unit || "pcs"}</td>
+                                <td className="px-3.5 py-2 font-mono font-medium text-foreground">
+                                  {item.code || "—"}
+                                </td>
+                                <td className="px-3.5 py-2 font-medium text-foreground min-w-[320px] md:min-w-[420px]">
+                                  {item.name}
+                                </td>
+                                <td className="px-3.5 py-2 text-center font-mono text-muted-foreground">
+                                  {item.unit || "pcs"}
+                                </td>
                                 <td className="px-3.5 py-2 text-right font-mono font-bold">
-                                  <span className={isLimit ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}>
+                                  <span
+                                    className={
+                                      isLimit
+                                        ? "text-rose-600 dark:text-rose-400"
+                                        : "text-emerald-600 dark:text-emerald-400"
+                                    }
+                                  >
                                     {(item.current_stock ?? 0).toLocaleString("id-ID")}
                                   </span>
                                 </td>
@@ -4010,11 +4307,17 @@ function WarehouseAndProductsPage() {
                                 </td>
                                 <td className="px-3.5 py-2 text-center">
                                   {isLimit ? (
-                                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-5">
+                                    <Badge
+                                      variant="destructive"
+                                      className="text-[10px] px-1.5 py-0 h-5"
+                                    >
                                       Limit
                                     </Badge>
                                   ) : (
-                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 text-emerald-600 border-emerald-500/30 bg-emerald-500/10">
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] px-1.5 py-0 h-5 text-emerald-600 border-emerald-500/30 bg-emerald-500/10"
+                                    >
                                       Aman
                                     </Badge>
                                   )}
@@ -4063,7 +4366,9 @@ function WarehouseAndProductsPage() {
                         </Badge>
                       </td>
                       <td className="px-4 py-3 font-medium">{log.description}</td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">{log.user_name || "Sistem"}</td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                        {log.user_name || "Sistem"}
+                      </td>
                       <td className="px-4 py-3 text-right text-xs text-muted-foreground">
                         {formatDate(log.created_at)}
                       </td>
@@ -4096,10 +4401,21 @@ function WarehouseAndProductsPage() {
                     <SelectValue placeholder="Kondisi Stok" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ALL" className="text-xs">Semua Kondisi</SelectItem>
-                    <SelectItem value="ORDER" className="text-xs font-semibold text-rose-600">⚠ ORDER (≤ Minimal Stok)</SelectItem>
-                    <SelectItem value="SAFETY" className="text-xs font-semibold text-emerald-600">✓ SAFETY STOK (&gt; Minimal Stok)</SelectItem>
-                    <SelectItem value="OUT_OF_STOCK" className="text-xs font-semibold text-amber-600">⚡ OUT OF STOK (&gt; Maksimal Stok)</SelectItem>
+                    <SelectItem value="ALL" className="text-xs">
+                      Semua Kondisi
+                    </SelectItem>
+                    <SelectItem value="ORDER" className="text-xs font-semibold text-rose-600">
+                      ⚠ ORDER (≤ Minimal Stok)
+                    </SelectItem>
+                    <SelectItem value="SAFETY" className="text-xs font-semibold text-emerald-600">
+                      ✓ SAFETY STOK (&gt; Minimal Stok)
+                    </SelectItem>
+                    <SelectItem
+                      value="OUT_OF_STOCK"
+                      className="text-xs font-semibold text-amber-600"
+                    >
+                      ⚡ OUT OF STOK (&gt; Maksimal Stok)
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -4134,7 +4450,10 @@ function WarehouseAndProductsPage() {
                     <SelectValue placeholder="Urutkan" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="RECENT_MUTATION" className="text-xs font-semibold text-primary">
+                    <SelectItem
+                      value="RECENT_MUTATION"
+                      className="text-xs font-semibold text-primary"
+                    >
                       ✦ Baru Ditambah / Mutasi
                     </SelectItem>
                     <SelectItem value="CODE_ASC" className="text-xs">
@@ -4165,7 +4484,10 @@ function WarehouseAndProductsPage() {
           {(() => {
             const activeBuffers = bufferItems.filter((b) => b.is_active);
             const totalBufferItems = activeBuffers.length;
-            const totalBufferQty = activeBuffers.reduce((acc, b) => acc + (b.current_stock ?? 0), 0);
+            const totalBufferQty = activeBuffers.reduce(
+              (acc, b) => acc + (b.current_stock ?? 0),
+              0,
+            );
 
             const bufOrderItems = activeBuffers.filter((b) => {
               const current = b.current_stock ?? 0;
@@ -4194,113 +4516,153 @@ function WarehouseAndProductsPage() {
             const bufSafetyCount = bufSafetyItems.length;
             const bufOutOfStockCount = bufOutOfStockItems.length;
 
-            const bufOrderPct = totalBufferItems > 0 ? Math.round((bufOrderCount / totalBufferItems) * 100) : 0;
-            const bufSafetyPct = totalBufferItems > 0 ? Math.round((bufSafetyCount / totalBufferItems) * 100) : 0;
-            const bufOutOfStockPct = totalBufferItems > 0 ? Math.max(0, 100 - bufOrderPct - bufSafetyPct) : 0;
+            const bufOrderPct =
+              totalBufferItems > 0 ? Math.round((bufOrderCount / totalBufferItems) * 100) : 0;
+            const bufSafetyPct =
+              totalBufferItems > 0 ? Math.round((bufSafetyCount / totalBufferItems) * 100) : 0;
+            const bufOutOfStockPct =
+              totalBufferItems > 0 ? Math.max(0, 100 - bufOrderPct - bufSafetyPct) : 0;
 
             return (
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   {/* Card 1: Total Item Buffer */}
-                  <div className="rise-in group relative overflow-hidden border border-border bg-surface p-4 transition-all hover:shadow-md hover:border-primary/30">
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-blue-500/8 to-transparent rounded-bl-3xl" />
+                  <div className="rise-in group relative overflow-hidden rounded-lg border border-blue-500 bg-blue-600 p-4 text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg cursor-pointer active:scale-[0.99]">
                     <div className="flex items-center gap-2 mb-3">
-                      <div className="flex items-center justify-center size-8 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 ring-1 ring-blue-200/60 dark:ring-blue-800/50">
+                      <div className="flex items-center justify-center size-8 rounded-md bg-blue-500 text-white border border-blue-400">
                         <Boxes className="size-4" />
                       </div>
-                      <span className="label-caps !text-blue-600 dark:!text-blue-400">Total Item</span>
+
+                      <span className="label-caps !text-white">Total Item</span>
                     </div>
-                    <div className="font-mono text-2xl font-bold tabular-nums text-foreground">
+
+                    <div className="font-mono text-2xl font-bold tabular-nums text-white">
                       {loadingBuffer ? "—" : totalBufferItems}
                     </div>
-                    <div className="mt-1 text-[10px] text-muted-foreground">Item buffer aktif</div>
+
+                    <div className="mt-1 text-[10px] text-white">Item buffer aktif</div>
                   </div>
 
                   {/* Card 2: Total Stok Qty */}
-                  <div className="rise-in group relative overflow-hidden border border-border bg-surface p-4 transition-all hover:shadow-md hover:border-primary/30" style={{ animationDelay: '50ms' }}>
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-indigo-500/8 to-transparent rounded-bl-3xl" />
+                  <div
+                    className="rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all hover:shadow-lg cursor-pointer active:scale-[0.99]"
+                    style={{
+                      animationDelay: "50ms",
+                      backgroundColor: "#0092B8",
+                      borderColor: "#0083A6",
+                    }}
+                  >
                     <div className="flex items-center gap-2 mb-3">
-                      <div className="flex items-center justify-center size-8 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 ring-1 ring-indigo-200/60 dark:ring-indigo-800/50">
+                      <div
+                        className="flex items-center justify-center size-8 rounded-md text-white border"
+                        style={{
+                          backgroundColor: "#00ACCF",
+                          borderColor: "#00A0C2",
+                        }}
+                      >
                         <Package className="size-4" />
                       </div>
-                      <span className="label-caps !text-indigo-600 dark:!text-indigo-400">Total Stok</span>
+
+                      <span className="label-caps !text-white">Total Stok</span>
                     </div>
-                    <div className="font-mono text-2xl font-bold tabular-nums text-foreground">
+
+                    <div className="font-mono text-2xl font-bold tabular-nums text-white">
                       {loadingBuffer ? "—" : totalBufferQty.toLocaleString("id-ID")}
                     </div>
-                    <div className="mt-1 text-[10px] text-muted-foreground">Jumlah seluruh pcs/unit</div>
+
+                    <div className="mt-1 text-[10px] text-white">Jumlah seluruh pcs/unit</div>
                   </div>
 
                   {/* Card 3: ORDER */}
                   <div
-                    className="rise-in group relative overflow-hidden border border-rose-200 dark:border-rose-900/60 bg-gradient-to-br from-surface to-rose-50/40 dark:from-surface dark:to-rose-950/20 p-4 transition-all hover:shadow-md hover:border-rose-400/60 cursor-pointer"
-                    style={{ animationDelay: '100ms' }}
-                    onClick={() => setBufferStatusFilter(bufferStatusFilter === "ORDER" ? "ALL" : "ORDER")}
+                    className="rise-in group relative overflow-hidden rounded-lg border border-red-500 bg-red-600 p-4 text-white shadow-md transition-all hover:bg-red-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+                    style={{ animationDelay: "100ms" }}
+                    onClick={() =>
+                      setBufferStatusFilter(bufferStatusFilter === "ORDER" ? "ALL" : "ORDER")
+                    }
                   >
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-rose-500/10 to-transparent rounded-bl-3xl" />
                     <div className="flex items-center gap-2 mb-3">
-                      <div className="flex items-center justify-center size-8 rounded-md bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 ring-1 ring-rose-200/60 dark:ring-rose-800/50">
+                      <div className="flex items-center justify-center size-8 rounded-md bg-rose-500 text-white border border-rose-400">
                         <CircleAlert className="size-4" />
                       </div>
-                      <span className="label-caps !text-rose-600 dark:!text-rose-400">Order</span>
+
+                      <span className="label-caps !text-white">Order</span>
                     </div>
-                    <div className="font-mono text-2xl font-bold tabular-nums text-rose-600 dark:text-rose-400">
+
+                    <div className="font-mono text-2xl font-bold tabular-nums text-white">
                       {loadingBuffer ? "—" : bufOrderCount}
                     </div>
-                    <div className="mt-1 text-[10px] text-rose-500/80 dark:text-rose-400/60">Stok ≤ batas minimum</div>
+
+                    <div className="mt-1 text-[10px] text-white">Stok ≤ batas minimum</div>
+
                     {bufferStatusFilter === "ORDER" && (
-                      <div className="absolute top-2 right-2 size-2 rounded-full bg-rose-500 animate-pulse" />
+                      <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
                     )}
                   </div>
 
                   {/* Card 4: SAFETY STOK */}
                   <div
-                    className="rise-in group relative overflow-hidden border border-emerald-200 bg-gradient-to-br from-surface to-emerald-50/40 dark:from-surface dark:to-emerald-950/20 p-4 transition-all hover:shadow-md hover:border-emerald-400/60 cursor-pointer"
-                    style={{ animationDelay: '150ms' }}
-                    onClick={() => setBufferStatusFilter(bufferStatusFilter === "SAFETY" ? "ALL" : "SAFETY")}
+                    className="rise-in group relative overflow-hidden rounded-lg border border-green-500 bg-green-600 p-4 text-white shadow-md transition-all hover:bg-green-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+                    style={{ animationDelay: "150ms" }}
+                    onClick={() =>
+                      setBufferStatusFilter(bufferStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
+                    }
                   >
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-emerald-500/10 to-transparent rounded-bl-3xl" />
                     <div className="flex items-center gap-2 mb-3">
-                      <div className="flex items-center justify-center size-8 rounded-md bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-200/60 dark:ring-emerald-800/50">
+                      <div className="flex items-center justify-center size-8 rounded-md bg-green-500 text-white border border-green-400">
                         <ShieldCheck className="size-4" />
                       </div>
-                      <span className="label-caps !text-emerald-600 dark:!text-emerald-400">Safety Stok</span>
+
+                      <span className="label-caps !text-white">Safety Stok</span>
                     </div>
-                    <div className="font-mono text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+
+                    <div className="font-mono text-2xl font-bold tabular-nums text-white">
                       {loadingBuffer ? "—" : bufSafetyCount}
                     </div>
-                    <div className="mt-1 text-[10px] text-emerald-500/80 dark:text-emerald-400/60">Stok aman &gt; minimum</div>
+
+                    <div className="mt-1 text-[10px] text-white">Stok aman &gt; minimum</div>
+
                     {bufferStatusFilter === "SAFETY" && (
-                      <div className="absolute top-2 right-2 size-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
                     )}
                   </div>
 
                   {/* Card 5: OUT OF STOK */}
                   <div
-                    className="rise-in group relative overflow-hidden border border-amber-200 dark:border-amber-900/60 bg-gradient-to-br from-surface to-amber-50/40 dark:from-surface dark:to-amber-950/20 p-4 transition-all hover:shadow-md hover:border-amber-400/60 cursor-pointer"
-                    style={{ animationDelay: '200ms' }}
-                    onClick={() => setBufferStatusFilter(bufferStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK")}
+                    className="rise-in group relative overflow-hidden rounded-lg border border-amber-500 bg-amber-600 p-4 text-white shadow-md transition-all hover:bg-amber-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+                    style={{ animationDelay: "200ms" }}
+                    onClick={() =>
+                      setBufferStatusFilter(
+                        bufferStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK",
+                      )
+                    }
                   >
-                    <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-amber-500/10 to-transparent rounded-bl-3xl" />
                     <div className="flex items-center gap-2 mb-3">
-                      <div className="flex items-center justify-center size-8 rounded-md bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 ring-1 ring-amber-200/60 dark:ring-amber-800/50">
+                      <div className="flex items-center justify-center size-8 rounded-md bg-amber-500 text-white border border-amber-400">
                         <TrendingDown className="size-4" />
                       </div>
-                      <span className="label-caps !text-amber-600 dark:!text-amber-400">Out of Stok</span>
+
+                      <span className="label-caps !text-white">Out of Stok</span>
                     </div>
-                    <div className="font-mono text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
+
+                    <div className="font-mono text-2xl font-bold tabular-nums text-white">
                       {loadingBuffer ? "—" : bufOutOfStockCount}
                     </div>
-                    <div className="mt-1 text-[10px] text-amber-500/80 dark:text-amber-400/60">Melebihi maks. stok</div>
+
+                    <div className="mt-1 text-[10px] text-white">Melebihi maks. stok</div>
+
                     {bufferStatusFilter === "OUT_OF_STOCK" && (
-                      <div className="absolute top-2 right-2 size-2 rounded-full bg-amber-500 animate-pulse" />
+                      <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
                     )}
                   </div>
                 </div>
 
                 {/* Progress Bar Distribusi Kondisi Buffer Stok */}
                 {!loadingBuffer && totalBufferItems > 0 && (
-                  <div className="rise-in border border-border bg-surface p-4" style={{ animationDelay: '250ms' }}>
+                  <div
+                    className="rise-in border border-border bg-surface p-4"
+                    style={{ animationDelay: "250ms" }}
+                  >
                     <div className="flex items-center justify-between mb-2.5">
                       <span className="label-caps">Distribusi Kondisi Buffer Stok</span>
                       <span className="text-[10px] font-mono text-muted-foreground">
@@ -4333,15 +4695,30 @@ function WarehouseAndProductsPage() {
                     <div className="flex items-center gap-4 mt-2.5 flex-wrap">
                       <div className="flex items-center gap-1.5">
                         <div className="size-2.5 rounded-full bg-emerald-500" />
-                        <span className="text-[10px] text-muted-foreground">Safety <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">{bufSafetyPct}%</span></span>
+                        <span className="text-[10px] text-muted-foreground">
+                          Safety{" "}
+                          <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                            {bufSafetyPct}%
+                          </span>
+                        </span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <div className="size-2.5 rounded-full bg-rose-500" />
-                        <span className="text-[10px] text-muted-foreground">Order <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">{bufOrderPct}%</span></span>
+                        <span className="text-[10px] text-muted-foreground">
+                          Order{" "}
+                          <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">
+                            {bufOrderPct}%
+                          </span>
+                        </span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <div className="size-2.5 rounded-full bg-amber-500" />
-                        <span className="text-[10px] text-muted-foreground">Out of Stok <span className="font-mono font-semibold text-amber-600 dark:text-amber-400">{bufOutOfStockPct}%</span></span>
+                        <span className="text-[10px] text-muted-foreground">
+                          Out of Stok{" "}
+                          <span className="font-mono font-semibold text-amber-600 dark:text-amber-400">
+                            {bufOutOfStockPct}%
+                          </span>
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -4356,177 +4733,276 @@ function WarehouseAndProductsPage() {
               <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
                 Memuat data buffer stok...
               </div>
-            ) : (() => {
-              const filtered = bufferItems.filter((item) => {
-                const q = bufferSearchQuery.toLowerCase().trim();
-                const matchSearch = !q ||
-                  item.name.toLowerCase().includes(q) ||
-                  (item.code && item.code.toLowerCase().includes(q)) ||
-                  (item.shelf && item.shelf.toLowerCase().includes(q));
-                const current = item.current_stock ?? 0;
-                const minStock = item.min_stock ?? 10;
-                const maxStock = item.max_stock ? Number(item.max_stock) : null;
-                const isOutOfStock = maxStock !== null && !isNaN(maxStock) && current > maxStock;
-                const isOrder = !isOutOfStock && current <= minStock;
-                const isSafety = !isOutOfStock && !isOrder;
-                const matchStock =
-                  bufferStatusFilter === "ALL" ||
-                  (bufferStatusFilter === "ORDER" && isOrder) ||
-                  (bufferStatusFilter === "SAFETY" && isSafety) ||
-                  (bufferStatusFilter === "OUT_OF_STOCK" && isOutOfStock);
+            ) : (
+              (() => {
+                const filtered = bufferItems.filter((item) => {
+                  const q = bufferSearchQuery.toLowerCase().trim();
+                  const matchSearch =
+                    !q ||
+                    item.name.toLowerCase().includes(q) ||
+                    (item.code && item.code.toLowerCase().includes(q)) ||
+                    (item.shelf && item.shelf.toLowerCase().includes(q));
+                  const current = item.current_stock ?? 0;
+                  const minStock = item.min_stock ?? 10;
+                  const maxStock = item.max_stock ? Number(item.max_stock) : null;
+                  const isOutOfStock = maxStock !== null && !isNaN(maxStock) && current > maxStock;
+                  const isOrder = !isOutOfStock && current <= minStock;
+                  const isSafety = !isOutOfStock && !isOrder;
+                  const matchStock =
+                    bufferStatusFilter === "ALL" ||
+                    (bufferStatusFilter === "ORDER" && isOrder) ||
+                    (bufferStatusFilter === "SAFETY" && isSafety) ||
+                    (bufferStatusFilter === "OUT_OF_STOCK" && isOutOfStock);
 
-                const matchDate =
-                  !bufferDateFilter ||
-                  (() => {
-                    const pDate = item.created_at ? item.created_at.slice(0, 10) : "";
-                    const nameKey = item.name ? item.name.trim().toLowerCase() : "";
-                    const tx = latestInTxMap[item.id] || (nameKey ? latestInTxMap[nameKey] : undefined);
-                    const txDate = tx?.created_at ? tx.created_at.slice(0, 10) : "";
-                    return pDate === bufferDateFilter || txDate === bufferDateFilter;
-                  })();
+                  const matchDate =
+                    !bufferDateFilter ||
+                    (() => {
+                      const pDate = item.created_at ? item.created_at.slice(0, 10) : "";
+                      const nameKey = item.name ? item.name.trim().toLowerCase() : "";
+                      const tx =
+                        latestInTxMap[item.id] || (nameKey ? latestInTxMap[nameKey] : undefined);
+                      const txDate = tx?.created_at ? tx.created_at.slice(0, 10) : "";
+                      return pDate === bufferDateFilter || txDate === bufferDateFilter;
+                    })();
 
-                return matchSearch && matchStock && matchDate;
-              });
+                  return matchSearch && matchStock && matchDate;
+                });
 
-              // Urutkan list barang buffer
-              const sortedFiltered = [...filtered].sort((a, b) => {
-                if (bufferSortOption === "RECENT_MUTATION") {
-                  const nameA = a.name ? a.name.trim().toLowerCase() : "";
-                  const nameB = b.name ? b.name.trim().toLowerCase() : "";
+                // Urutkan list barang buffer
+                const sortedFiltered = [...filtered].sort((a, b) => {
+                  if (bufferSortOption === "RECENT_MUTATION") {
+                    const nameA = a.name ? a.name.trim().toLowerCase() : "";
+                    const nameB = b.name ? b.name.trim().toLowerCase() : "";
 
-                  const txAIn = latestInTxMap[a.id] || (nameA ? latestInTxMap[nameA] : undefined);
-                  const txBIn = latestInTxMap[b.id] || (nameB ? latestInTxMap[nameB] : undefined);
+                    const txAIn = latestInTxMap[a.id] || (nameA ? latestInTxMap[nameA] : undefined);
+                    const txBIn = latestInTxMap[b.id] || (nameB ? latestInTxMap[nameB] : undefined);
 
-                  const timeA = txAIn ? new Date(txAIn.created_at).getTime() : a.created_at ? new Date(a.created_at).getTime() : 0;
-                  const timeB = txBIn ? new Date(txBIn.created_at).getTime() : b.created_at ? new Date(b.created_at).getTime() : 0;
+                    const timeA = txAIn
+                      ? new Date(txAIn.created_at).getTime()
+                      : a.created_at
+                        ? new Date(a.created_at).getTime()
+                        : 0;
+                    const timeB = txBIn
+                      ? new Date(txBIn.created_at).getTime()
+                      : b.created_at
+                        ? new Date(b.created_at).getTime()
+                        : 0;
 
-                  if (timeA !== timeB) {
-                    return timeB - timeA;
+                    if (timeA !== timeB) {
+                      return timeB - timeA;
+                    }
+                    return a.name.localeCompare(b.name);
                   }
-                  return a.name.localeCompare(b.name);
-                }
-                if (bufferSortOption === "CODE_ASC") {
-                  return String(a.code || "").localeCompare(String(b.code || ""), undefined, { numeric: true });
-                }
-                if (bufferSortOption === "CODE_DESC") {
-                  return String(b.code || "").localeCompare(String(a.code || ""), undefined, { numeric: true });
-                }
-                if (bufferSortOption === "NAME_ASC") {
-                  return a.name.localeCompare(b.name);
-                }
-                if (bufferSortOption === "NAME_DESC") {
-                  return b.name.localeCompare(a.name);
-                }
-                if (bufferSortOption === "STOCK_DESC") {
-                  return (b.current_stock ?? 0) - (a.current_stock ?? 0);
-                }
-                if (bufferSortOption === "STOCK_ASC") {
-                  return (a.current_stock ?? 0) - (b.current_stock ?? 0);
-                }
-                return 0;
-              });
+                  if (bufferSortOption === "CODE_ASC") {
+                    return String(a.code || "").localeCompare(String(b.code || ""), undefined, {
+                      numeric: true,
+                    });
+                  }
+                  if (bufferSortOption === "CODE_DESC") {
+                    return String(b.code || "").localeCompare(String(a.code || ""), undefined, {
+                      numeric: true,
+                    });
+                  }
+                  if (bufferSortOption === "NAME_ASC") {
+                    return a.name.localeCompare(b.name);
+                  }
+                  if (bufferSortOption === "NAME_DESC") {
+                    return b.name.localeCompare(a.name);
+                  }
+                  if (bufferSortOption === "STOCK_DESC") {
+                    return (b.current_stock ?? 0) - (a.current_stock ?? 0);
+                  }
+                  if (bufferSortOption === "STOCK_ASC") {
+                    return (a.current_stock ?? 0) - (b.current_stock ?? 0);
+                  }
+                  return 0;
+                });
 
-              if (sortedFiltered.length === 0) return (
-                <div className="flex flex-col items-center justify-center py-20 text-center">
-                  <Package className="mb-3 size-10 text-muted-foreground/40" />
-                  <p className="text-sm font-medium">
-                    {bufferSearchQuery || bufferStatusFilter !== "ALL" || bufferDateFilter
-                      ? "Tidak ada item buffer stok yang cocok"
-                      : "Belum ada data buffer stok"}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground max-w-sm">
-                    {bufferSearchQuery || bufferStatusFilter !== "ALL" || bufferDateFilter
-                      ? "Coba ubah kata kunci atau reset filter."
-                      : "Klik \"Tambah Barang Buffer\" untuk menambahkan item baru ke buffer stok (tidak akan muncul di OBS Sparepart)."}
-                  </p>
-                  {canManageWarehouse && !bufferSearchQuery && bufferStatusFilter === "ALL" && !bufferDateFilter && (
-                    <Button
-                      size="sm"
-                      onClick={() => { setBufferFormData({ name: "", code: "", unit: "pcs", location: "Gudang Utama", shelf: "Rak A-1", min_stock: "10", safe_stock: "1", max_stock: "", current_stock: "0", description: "" }); setIsBufferAddOpen(true); }}
-                      className="mt-4 gap-1.5 bg-primary text-primary-foreground text-xs h-8"
-                    >
-                      <Plus className="size-3.5" />
-                      Tambah Barang Buffer
-                    </Button>
-                  )}
-                </div>
-              );
+                if (sortedFiltered.length === 0)
+                  return (
+                    <div className="flex flex-col items-center justify-center py-20 text-center">
+                      <Package className="mb-3 size-10 text-muted-foreground/40" />
+                      <p className="text-sm font-medium">
+                        {bufferSearchQuery || bufferStatusFilter !== "ALL" || bufferDateFilter
+                          ? "Tidak ada item buffer stok yang cocok"
+                          : "Belum ada data buffer stok"}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground max-w-sm">
+                        {bufferSearchQuery || bufferStatusFilter !== "ALL" || bufferDateFilter
+                          ? "Coba ubah kata kunci atau reset filter."
+                          : 'Klik "Tambah Barang Buffer" untuk menambahkan item baru ke buffer stok (tidak akan muncul di OBS Sparepart).'}
+                      </p>
+                      {canManageWarehouse &&
+                        !bufferSearchQuery &&
+                        bufferStatusFilter === "ALL" &&
+                        !bufferDateFilter && (
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              setBufferFormData({
+                                name: "",
+                                code: "",
+                                unit: "Roll",
+                                location: "Gudang Utama",
+                                shelf: "Rak A-1",
+                                qty_in: "0",
+                                qty_out: "0",
+                                min_stock: "10",
+                                safe_stock: "1",
+                                max_stock: "",
+                                current_stock: "0",
+                                description: "",
+                              });
+                              setIsBufferAddOpen(true);
+                            }}
+                            className="mt-4 gap-1.5 bg-primary text-primary-foreground text-xs h-8"
+                          >
+                            <Plus className="size-3.5" />
+                            Tambah Barang Buffer
+                          </Button>
+                        )}
+                    </div>
+                  );
 
-              return (
-                <table className="w-full min-w-[780px] text-xs border-collapse border border-slate-300 dark:border-slate-700">
-                  <thead>
-                    <tr className="bg-[#0f274a] text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
-                      <th className="label-caps px-3 py-3 text-center w-10 text-white font-semibold">No</th>
-                      <th className="label-caps px-3 py-3 text-left min-w-[120px] text-white font-semibold">Kode</th>
-                      <th className="label-caps px-3 py-3 text-left min-w-[220px] text-white font-semibold">Nama Barang</th>
-                      <th className="label-caps px-3 py-3 text-center min-w-[100px] text-white font-semibold">Batas Min</th>
-                      <th className="label-caps px-3 py-3 text-center min-w-[90px] text-white font-semibold">Min Stok</th>
-                      <th className="label-caps px-3 py-3 text-center min-w-[90px] text-white font-semibold">Maks Stok</th>
-                      <th className="label-caps px-3 py-3 text-right min-w-[100px] text-white font-semibold">Stok Saat Ini</th>
-                      <th className="label-caps px-3 py-3 text-center min-w-[100px] text-white font-semibold">Kondisi</th>
-                      <th className="label-caps px-3 py-3 text-center min-w-[90px] text-white font-semibold">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                    {sortedFiltered.map((item, index) => {
-                      const current = item.current_stock ?? 0;
-                      const minStock = item.min_stock ?? 10;
-                      const maxStock = item.max_stock ? Number(item.max_stock) : null;
-                      const isOrder = current <= minStock;
-                      const isOutOfStock = maxStock !== null && current > maxStock;
-                      let kondisiText = "AMAN";
-                      let kondisiStyle = "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
-                      if (isOutOfStock) {
-                        kondisiText = "OUT OF STOK";
-                        kondisiStyle = "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
-                      } else if (isOrder) {
-                        kondisiText = "ORDER";
-                        kondisiStyle = "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800";
-                      }
-                      return (
-                        <tr key={item.id} className={cn("group transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 divide-x divide-slate-200 dark:divide-slate-700", !item.is_active && "opacity-55 bg-surface-muted/20")}>
-                          <td className="px-3 py-3 text-center font-mono text-muted-foreground w-10 bg-slate-50/40 dark:bg-slate-900/20">{index + 1}</td>
-                          <td className="px-3 py-3 font-mono font-medium">
-                            <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
-                              {item.code || "—"}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 font-semibold text-foreground min-w-[220px]">{item.name}</td>
-                          <td className="px-3 py-3 text-center font-mono text-muted-foreground">{(item.safe_stock ?? 1)} {item.unit || "pcs"}</td>
-                          <td className="px-3 py-3 text-center font-mono text-muted-foreground">{minStock} {item.unit || "pcs"}</td>
-                          <td className="px-3 py-3 text-center font-mono text-muted-foreground">{maxStock !== null ? `${maxStock} ${item.unit || "pcs"}` : "—"}</td>
-                          <td className="px-3 py-3 text-right font-mono font-bold">
-                            <span className={cn("tabular-nums text-sm", current <= 0 ? "text-rose-600 dark:text-rose-400 font-extrabold" : isOrder ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400")}>
-                              {current.toLocaleString("id-ID")} {item.unit || "pcs"}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 text-center">
-                            <span className={cn("inline-flex items-center justify-center w-24 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs", kondisiStyle)}>
-                              {kondisiText}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3 text-center bg-slate-50/30 dark:bg-slate-900/10">
-                            <div className="flex items-center justify-center gap-1">
-                              {canManageWarehouse && (
-                                <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800" onClick={() => setEditingBufferItem(item)} title="Edit">
-                                  <Pencil className="size-3 text-amber-600" />
-                                  <span>Edit</span>
-                                </Button>
-                              )}
-                              {canDeleteMaster && (
-                                <Button size="sm" variant="ghost" className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30" onClick={() => setDeletingBufferItem(item)} title="Hapus">
-                                  <Trash2 className="size-3.5" />
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              );
-            })()}
+                return (
+                  <table className="w-full min-w-[780px] text-xs border-collapse border border-slate-300 dark:border-slate-700">
+                    <thead>
+                      <tr className="bg-[#0f274a] text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
+                        <th className="label-caps px-3 py-3 text-center w-10 text-white font-semibold">
+                          No
+                        </th>
+                        <th className="label-caps px-3 py-3 text-left min-w-[120px] text-white font-semibold">
+                          Kode
+                        </th>
+                        <th className="label-caps px-3 py-3 text-left min-w-[220px] text-white font-semibold">
+                          Nama Barang
+                        </th>
+                        <th className="label-caps px-3 py-3 text-center min-w-[100px] text-white font-semibold">
+                          Batas Min
+                        </th>
+                        <th className="label-caps px-3 py-3 text-center min-w-[90px] text-white font-semibold">
+                          Min Stok
+                        </th>
+                        <th className="label-caps px-3 py-3 text-center min-w-[90px] text-white font-semibold">
+                          Maks Stok
+                        </th>
+                        <th className="label-caps px-3 py-3 text-right min-w-[100px] text-white font-semibold">
+                          Stok Saat Ini
+                        </th>
+                        <th className="label-caps px-3 py-3 text-center min-w-[100px] text-white font-semibold">
+                          Kondisi
+                        </th>
+                        <th className="label-caps px-3 py-3 text-center min-w-[90px] text-white font-semibold">
+                          Aksi
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                      {sortedFiltered.map((item, index) => {
+                        const current = item.current_stock ?? 0;
+                        const minStock = item.min_stock ?? 10;
+                        const maxStock = item.max_stock ? Number(item.max_stock) : null;
+                        const isOrder = current <= minStock;
+                        const isOutOfStock = maxStock !== null && current > maxStock;
+                        let kondisiText = "AMAN";
+                        let kondisiStyle =
+                          "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
+                        if (isOutOfStock) {
+                          kondisiText = "OUT OF STOK";
+                          kondisiStyle =
+                            "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
+                        } else if (isOrder) {
+                          kondisiText = "ORDER";
+                          kondisiStyle =
+                            "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800";
+                        }
+                        return (
+                          <tr
+                            key={item.id}
+                            className={cn(
+                              "group transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 divide-x divide-slate-200 dark:divide-slate-700",
+                              !item.is_active && "opacity-55 bg-surface-muted/20",
+                            )}
+                          >
+                            <td className="px-3 py-3 text-center font-mono text-muted-foreground w-10 bg-slate-50/40 dark:bg-slate-900/20">
+                              {index + 1}
+                            </td>
+                            <td className="px-3 py-3 font-mono font-medium">
+                              <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                                {item.code || "—"}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 font-semibold text-foreground min-w-[220px]">
+                              {item.name}
+                            </td>
+                            <td className="px-3 py-3 text-center font-mono text-muted-foreground">
+                              {item.safe_stock ?? 1} {item.unit || "pcs"}
+                            </td>
+                            <td className="px-3 py-3 text-center font-mono text-muted-foreground">
+                              {minStock} {item.unit || "pcs"}
+                            </td>
+                            <td className="px-3 py-3 text-center font-mono text-muted-foreground">
+                              {maxStock !== null ? `${maxStock} ${item.unit || "pcs"}` : "—"}
+                            </td>
+                            <td className="px-3 py-3 text-right font-mono font-bold">
+                              <span
+                                className={cn(
+                                  "tabular-nums text-sm",
+                                  current <= 0
+                                    ? "text-rose-600 dark:text-rose-400 font-extrabold"
+                                    : isOrder
+                                      ? "text-rose-600 dark:text-rose-400"
+                                      : "text-emerald-600 dark:text-emerald-400",
+                                )}
+                              >
+                                {current.toLocaleString("id-ID")} {item.unit || "pcs"}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 text-center">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center justify-center w-24 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs",
+                                  kondisiStyle,
+                                )}
+                              >
+                                {kondisiText}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 text-center bg-slate-50/30 dark:bg-slate-900/10">
+                              <div className="flex items-center justify-center gap-1">
+                                {canManageWarehouse && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 px-2 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    onClick={() => setEditingBufferItem(item)}
+                                    title="Edit"
+                                  >
+                                    <Pencil className="size-3 text-amber-600" />
+                                    <span>Edit</span>
+                                  </Button>
+                                )}
+                                {canDeleteMaster && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                    onClick={() => setDeletingBufferItem(item)}
+                                    title="Hapus"
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                );
+              })()
+            )}
           </div>
         </TabsContent>
       </Tabs>
@@ -4537,15 +5013,21 @@ function WarehouseAndProductsPage() {
           <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
             <DialogTitle className="text-lg font-bold">Tambah Data Barang Buffer Stok</DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Tambahkan data buffer stok secara manual atau upload file Excel / CSV. Data hanya masuk ke tabel Buffer Stok, tidak muncul di OBS Sparepart.
+              Tambahkan data buffer stok secara manual atau upload file Excel / CSV. Data hanya
+              masuk ke tabel Buffer Stok, tidak muncul di OBS Sparepart.
             </DialogDescription>
           </DialogHeader>
 
           {/* Tab Mode: Manual vs Upload File Excel/CSV */}
-          <Tabs defaultValue="manual" className="w-full flex-1 flex flex-col min-h-0 overflow-hidden mt-3">
+          <Tabs
+            defaultValue="manual"
+            className="w-full flex-1 flex flex-col min-h-0 overflow-hidden mt-3"
+          >
             <div className="flex items-center justify-between border-b pb-2 mb-3 shrink-0">
               <TabsList className="grid w-72 grid-cols-2">
-                <TabsTrigger value="manual" className="text-xs">Manual Input</TabsTrigger>
+                <TabsTrigger value="manual" className="text-xs">
+                  Manual Input
+                </TabsTrigger>
                 <TabsTrigger value="upload" className="text-xs gap-1.5">
                   <FileSpreadsheet className="size-3.5 text-emerald-600 dark:text-emerald-400" />
                   Upload Excel/CSV
@@ -4559,55 +5041,153 @@ function WarehouseAndProductsPage() {
               <TabsContent value="manual" className="mt-0 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                   <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="buf-name" className="text-xs font-semibold">Nama Barang *</Label>
-                    <Input id="buf-name" value={bufferFormData.name} onChange={(e) => setBufferFormData({ ...bufferFormData, name: e.target.value })} placeholder="cth. BEARING 6204-2RS / HEATER ELEMENT 2000W" className="h-9 text-xs" autoFocus />
+                    <Label htmlFor="buf-name" className="text-xs font-semibold">
+                      Nama Barang *
+                    </Label>
+                    <Input
+                      id="buf-name"
+                      value={bufferFormData.name}
+                      onChange={(e) =>
+                        setBufferFormData({ ...bufferFormData, name: e.target.value })
+                      }
+                      placeholder="cth. BEARING 6204-2RS / HEATER ELEMENT 2000W"
+                      className="h-9 text-xs"
+                      autoFocus
+                    />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="buf-code" className="text-xs font-semibold">Kode Material</Label>
-                    <Input id="buf-code" value={bufferFormData.code} onChange={(e) => setBufferFormData({ ...bufferFormData, code: e.target.value })} placeholder="cth. 7100110213 / SP-BRG-6204" className="h-9 text-xs font-mono" />
+                    <Label htmlFor="buf-code" className="text-xs font-semibold">
+                      Kode Material
+                    </Label>
+                    <Input
+                      id="buf-code"
+                      value={bufferFormData.code}
+                      onChange={(e) =>
+                        setBufferFormData({ ...bufferFormData, code: e.target.value })
+                      }
+                      placeholder="cth. 7100110213 / SP-BRG-6204"
+                      className="h-9 text-xs font-mono"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold">Satuan (UoM)</Label>
-                    <Select value={bufferFormData.unit} onValueChange={(v) => setBufferFormData({ ...bufferFormData, unit: v })}>
-                      <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                    <Select
+                      value={bufferFormData.unit}
+                      onValueChange={(v) => setBufferFormData({ ...bufferFormData, unit: v })}
+                    >
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
-                        {units.map((u: any) => <SelectItem key={u.id} value={u.code} className="text-xs">{u.name} ({u.code})</SelectItem>)}
+                        <SelectItem value="Roll" className="text-xs">
+                          Roll
+                        </SelectItem>
+                        <SelectItem value="Lmbr" className="text-xs">
+                          Lmbr
+                        </SelectItem>
+                        <SelectItem value="CAN" className="text-xs">
+                          CAN
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Lokasi Gudang</Label>
-                    <Input value={bufferFormData.location} onChange={(e) => setBufferFormData({ ...bufferFormData, location: e.target.value })} placeholder="Gudang Utama" className="h-9 text-xs" />
+                    <Label className="text-xs font-semibold">Qty Masuk</Label>
+                    <Input
+                      type="number"
+                      value={bufferFormData.qty_in}
+                      onChange={(e) =>
+                        setBufferFormData({ ...bufferFormData, qty_in: e.target.value })
+                      }
+                      placeholder="0"
+                      className="h-9 text-xs font-mono"
+                    />
                   </div>
+
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Shelf / Rak</Label>
-                    <Input value={bufferFormData.shelf} onChange={(e) => setBufferFormData({ ...bufferFormData, shelf: e.target.value })} placeholder="Rak A-1" className="h-9 text-xs font-mono" />
+                    <Label className="text-xs font-semibold">Qty Keluar</Label>
+                    <Input
+                      type="number"
+                      value={bufferFormData.qty_out}
+                      onChange={(e) =>
+                        setBufferFormData({ ...bufferFormData, qty_out: e.target.value })
+                      }
+                      placeholder="0"
+                      className="h-9 text-xs font-mono"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold">Stok Awal / Saat Ini</Label>
-                    <Input type="number" value={bufferFormData.current_stock} onChange={(e) => setBufferFormData({ ...bufferFormData, current_stock: e.target.value })} placeholder="0" className="h-9 text-xs font-mono" />
+                    <Input
+                      type="number"
+                      value={bufferFormData.current_stock}
+                      onChange={(e) =>
+                        setBufferFormData({ ...bufferFormData, current_stock: e.target.value })
+                      }
+                      placeholder="0"
+                      className="h-9 text-xs font-mono"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold">Batas Minimum Stok</Label>
-                    <Input type="number" value={bufferFormData.safe_stock} onChange={(e) => setBufferFormData({ ...bufferFormData, safe_stock: e.target.value })} placeholder="1" className="h-9 text-xs font-mono" />
+                    <Input
+                      type="number"
+                      value={bufferFormData.safe_stock}
+                      onChange={(e) =>
+                        setBufferFormData({ ...bufferFormData, safe_stock: e.target.value })
+                      }
+                      placeholder="1"
+                      className="h-9 text-xs font-mono"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold">Minimal Stok (Trigger Order)</Label>
-                    <Input type="number" value={bufferFormData.min_stock} onChange={(e) => setBufferFormData({ ...bufferFormData, min_stock: e.target.value })} placeholder="10" className="h-9 text-xs font-mono" />
+                    <Input
+                      type="number"
+                      value={bufferFormData.min_stock}
+                      onChange={(e) =>
+                        setBufferFormData({ ...bufferFormData, min_stock: e.target.value })
+                      }
+                      placeholder="10"
+                      className="h-9 text-xs font-mono"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold">Maksimal Stok</Label>
-                    <Input type="number" value={bufferFormData.max_stock} onChange={(e) => setBufferFormData({ ...bufferFormData, max_stock: e.target.value })} placeholder="opsional" className="h-9 text-xs font-mono" />
+                    <Input
+                      type="number"
+                      value={bufferFormData.max_stock}
+                      onChange={(e) =>
+                        setBufferFormData({ ...bufferFormData, max_stock: e.target.value })
+                      }
+                      placeholder="opsional"
+                      className="h-9 text-xs font-mono"
+                    />
                   </div>
                   <div className="space-y-1.5 sm:col-span-2">
                     <Label className="text-xs font-semibold">Keterangan (Opsional)</Label>
-                    <Input value={bufferFormData.description} onChange={(e) => setBufferFormData({ ...bufferFormData, description: e.target.value })} placeholder="Keterangan tambahan..." className="h-9 text-xs" />
+                    <Input
+                      value={bufferFormData.description}
+                      onChange={(e) =>
+                        setBufferFormData({ ...bufferFormData, description: e.target.value })
+                      }
+                      placeholder="Keterangan tambahan..."
+                      className="h-9 text-xs"
+                    />
                   </div>
                 </div>
 
                 <div className="flex items-center justify-end gap-2 pt-4 border-t mt-4">
-                  <Button variant="outline" size="sm" onClick={() => setIsBufferAddOpen(false)}>Batal</Button>
-                  <Button size="sm" onClick={() => addBufferItem.mutate()} disabled={addBufferItem.isPending || !bufferFormData.name.trim()} className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium">
+                  <Button variant="outline" size="sm" onClick={() => setIsBufferAddOpen(false)}>
+                    Batal
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => addBufferItem.mutate()}
+                    disabled={addBufferItem.isPending || !bufferFormData.name.trim()}
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
+                  >
                     {addBufferItem.isPending ? "Menyimpan..." : "Simpan Buffer Stok"}
                   </Button>
                 </div>
@@ -4638,7 +5218,9 @@ function WarehouseAndProductsPage() {
                           Pilih File Excel / CSV (.xlsx, .xls, .csv)
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          Format kolom: <strong>Kode</strong>, <strong>Material</strong>, <strong>Batas Minimal Stok</strong>, <strong>Minimal Stok</strong>, <strong>Maks. Stok</strong>, dan <strong>Stok Saat Ini</strong>
+                          Format kolom: <strong>Kode</strong>, <strong>Material</strong>,{" "}
+                          <strong>Batas Minimal Stok</strong>, <strong>Minimal Stok</strong>,{" "}
+                          <strong>Maks. Stok</strong>, dan <strong>Stok Saat Ini</strong>
                         </p>
                       </div>
 
@@ -4678,7 +5260,12 @@ function WarehouseAndProductsPage() {
                           <span className="truncate">{bufferImportFile.name}</span>
                         </div>
                         <p className="text-[11px] text-muted-foreground mt-0.5">
-                          Total {bufferImportPreview.length} item buffer terdeteksi &bull; Total Stok: {bufferImportPreview.reduce((acc: number, it: any) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
+                          Total {bufferImportPreview.length} item buffer terdeteksi &bull; Total
+                          Stok:{" "}
+                          {bufferImportPreview
+                            .reduce((acc: number, it: any) => acc + (it.current_stock || 0), 0)
+                            .toLocaleString("id-ID")}{" "}
+                          pcs
                         </p>
                       </div>
                     </div>
@@ -4735,7 +5322,8 @@ function WarehouseAndProductsPage() {
                           Pilih Lembar Kerja (Sheet)
                         </p>
                         <p className="text-[11px] text-muted-foreground">
-                          File memiliki {bufferImportSheets.length} sheet dengan data yang siap diimport
+                          File memiliki {bufferImportSheets.length} sheet dengan data yang siap
+                          diimport
                         </p>
                       </div>
                     </div>
@@ -4747,9 +5335,17 @@ function WarehouseAndProductsPage() {
                           const seen = new Set<string>();
                           const result: any[] = [];
                           for (const it of items) {
-                            const nName = String(it.name || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
-                            const nCode = String(it.code || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
-                            const key = nName ? `n_${nName}` : (nCode ? `c_${nCode}` : "");
+                            const nName = String(it.name || "")
+                              .replace(/\u00a0/g, " ")
+                              .replace(/\s+/g, " ")
+                              .trim()
+                              .toLowerCase();
+                            const nCode = String(it.code || "")
+                              .replace(/\u00a0/g, " ")
+                              .replace(/\s+/g, " ")
+                              .trim()
+                              .toLowerCase();
+                            const key = nName ? `n_${nName}` : nCode ? `c_${nCode}` : "";
                             if (!key || !seen.has(key)) {
                               if (key) seen.add(key);
                               result.push(it);
@@ -4770,8 +5366,12 @@ function WarehouseAndProductsPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="max-h-60">
-                        <SelectItem value="ALL" className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                          ✨ Gabungkan Semua Sheet ({bufferImportSheets.reduce((a, b) => a + b.count, 0)} barang)
+                        <SelectItem
+                          value="ALL"
+                          className="text-xs font-semibold text-emerald-700 dark:text-emerald-400"
+                        >
+                          ✨ Gabungkan Semua Sheet (
+                          {bufferImportSheets.reduce((a, b) => a + b.count, 0)} barang)
                         </SelectItem>
                         {bufferImportSheets.map((s) => (
                           <SelectItem key={s.name} value={s.name} className="text-xs">
@@ -4796,7 +5396,10 @@ function WarehouseAndProductsPage() {
                       <div className="flex items-center gap-1.5">
                         <ArrowUpDown className="size-3.5 text-muted-foreground" />
                         <span className="text-xs text-muted-foreground">Urutkan:</span>
-                        <Select value={bufferImportSortOption} onValueChange={setBufferImportSortOption}>
+                        <Select
+                          value={bufferImportSortOption}
+                          onValueChange={setBufferImportSortOption}
+                        >
                           <SelectTrigger className="h-8 text-xs min-w-[220px] bg-background font-medium">
                             <SelectValue placeholder="Urutkan..." />
                           </SelectTrigger>
@@ -4839,32 +5442,52 @@ function WarehouseAndProductsPage() {
                             </th>
                             <th
                               className="p-2.5 w-36 text-center cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
-                              onClick={() => setBufferImportSortOption(bufferImportSortOption === "CODE_ASC" ? "CODE_DESC" : "CODE_ASC")}
+                              onClick={() =>
+                                setBufferImportSortOption(
+                                  bufferImportSortOption === "CODE_ASC" ? "CODE_DESC" : "CODE_ASC",
+                                )
+                              }
                               title="Urutkan kode angka terkecil / terbesar"
                             >
                               <div className="flex items-center justify-center gap-1">
                                 <span>Kode</span>
-                                <ArrowUpDown className={`size-3 ${bufferImportSortOption.startsWith("CODE") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
+                                <ArrowUpDown
+                                  className={`size-3 ${bufferImportSortOption.startsWith("CODE") ? "text-primary font-bold" : "text-muted-foreground/60"}`}
+                                />
                               </div>
                             </th>
                             <th
                               className="p-2.5 min-w-[200px] cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
-                              onClick={() => setBufferImportSortOption(bufferImportSortOption === "NAME_ASC" ? "NAME_DESC" : "NAME_ASC")}
+                              onClick={() =>
+                                setBufferImportSortOption(
+                                  bufferImportSortOption === "NAME_ASC" ? "NAME_DESC" : "NAME_ASC",
+                                )
+                              }
                               title="Urutkan nama A-Z / Z-A"
                             >
                               <div className="flex items-center gap-1">
                                 <span>Material</span>
-                                <ArrowUpDown className={`size-3 ${bufferImportSortOption.startsWith("NAME") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
+                                <ArrowUpDown
+                                  className={`size-3 ${bufferImportSortOption.startsWith("NAME") ? "text-primary font-bold" : "text-muted-foreground/60"}`}
+                                />
                               </div>
                             </th>
                             <th
                               className="p-2.5 text-center w-28 cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
-                              onClick={() => setBufferImportSortOption(bufferImportSortOption === "STOCK_ASC" ? "STOCK_DESC" : "STOCK_ASC")}
+                              onClick={() =>
+                                setBufferImportSortOption(
+                                  bufferImportSortOption === "STOCK_ASC"
+                                    ? "STOCK_DESC"
+                                    : "STOCK_ASC",
+                                )
+                              }
                               title="Urutkan stok angka terkecil / terbesar"
                             >
                               <div className="flex items-center justify-center gap-1">
                                 <span>Stok Saat Ini</span>
-                                <ArrowUpDown className={`size-3 ${bufferImportSortOption.startsWith("STOCK") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
+                                <ArrowUpDown
+                                  className={`size-3 ${bufferImportSortOption.startsWith("STOCK") ? "text-primary font-bold" : "text-muted-foreground/60"}`}
+                                />
                               </div>
                             </th>
                             <th className="p-2.5 text-center w-24">Min. Stok</th>
@@ -4874,17 +5497,25 @@ function WarehouseAndProductsPage() {
                         <tbody className="divide-y divide-border/60">
                           {sortedBufferImportPreview.slice(0, 100).map((it: any, idx: number) => (
                             <tr key={idx} className="hover:bg-surface-muted/50 transition-colors">
-                              <td className="p-2.5 text-center text-muted-foreground font-mono">{idx + 1}</td>
-                              <td className="p-2.5 text-center font-mono text-primary font-medium">{it.code || "-"}</td>
+                              <td className="p-2.5 text-center text-muted-foreground font-mono">
+                                {idx + 1}
+                              </td>
+                              <td className="p-2.5 text-center font-mono text-primary font-medium">
+                                {it.code || "-"}
+                              </td>
                               <td className="p-2.5 font-medium text-foreground">{it.name}</td>
                               <td className="p-2.5 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
                                 {it.current_stock ?? 0} {it.unit || "pcs"}
                               </td>
                               <td className="p-2.5 text-center font-mono text-muted-foreground">
-                                {it.min_stock !== null && it.min_stock !== undefined ? `${it.min_stock} ${it.unit || "pcs"}` : "-"}
+                                {it.min_stock !== null && it.min_stock !== undefined
+                                  ? `${it.min_stock} ${it.unit || "pcs"}`
+                                  : "-"}
                               </td>
                               <td className="p-2.5 text-center font-mono text-muted-foreground">
-                                {it.max_stock !== null && it.max_stock !== undefined ? `${it.max_stock} ${it.unit || "pcs"}` : "-"}
+                                {it.max_stock !== null && it.max_stock !== undefined
+                                  ? `${it.max_stock} ${it.unit || "pcs"}`
+                                  : "-"}
                               </td>
                             </tr>
                           ))}
@@ -4892,9 +5523,17 @@ function WarehouseAndProductsPage() {
                       </table>
                     </div>
                     <div className="flex items-center justify-between text-xs px-1 text-muted-foreground pt-1.5 border-t border-border/40">
-                      <span>Menampilkan {Math.min(sortedBufferImportPreview.length, 100)} dari seluruh <strong>{sortedBufferImportPreview.length}</strong> barang buffer yang siap ditambahkan</span>
+                      <span>
+                        Menampilkan {Math.min(sortedBufferImportPreview.length, 100)} dari seluruh{" "}
+                        <strong>{sortedBufferImportPreview.length}</strong> barang buffer yang siap
+                        ditambahkan
+                      </span>
                       <span className="font-mono font-bold text-foreground">
-                        Total Stok: {sortedBufferImportPreview.reduce((acc: number, it: any) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
+                        Total Stok:{" "}
+                        {sortedBufferImportPreview
+                          .reduce((acc: number, it: any) => acc + (it.current_stock || 0), 0)
+                          .toLocaleString("id-ID")}{" "}
+                        pcs
                       </span>
                     </div>
                   </div>
@@ -4922,7 +5561,9 @@ function WarehouseAndProductsPage() {
                     className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 font-medium"
                   >
                     <FileSpreadsheet className="size-4" />
-                    {isBufferImporting ? "Mengimport..." : "Import " + bufferImportPreview.length + " Barang Buffer"}
+                    {isBufferImporting
+                      ? "Mengimport..."
+                      : "Import " + bufferImportPreview.length + " Barang Buffer"}
                   </Button>
                 </div>
               </TabsContent>
@@ -4932,66 +5573,174 @@ function WarehouseAndProductsPage() {
       </Dialog>
 
       {/* ── MODAL DIALOG: EDIT BARANG BUFFER STOK ────────────────────────────── */}
-      <Dialog open={!!editingBufferItem} onOpenChange={(o) => { if (!o) setEditingBufferItem(null); }}>
+      <Dialog
+        open={!!editingBufferItem}
+        onOpenChange={(o) => {
+          if (!o) setEditingBufferItem(null);
+        }}
+      >
         <DialogContent className="sm:max-w-2xl w-full max-h-[90vh] flex flex-col p-6 overflow-hidden">
           <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
             <DialogTitle className="text-lg font-bold">Edit Data Buffer Stok</DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground">Perubahan hanya berlaku di tabel Buffer Stok, tidak mempengaruhi OBS Sparepart.</DialogDescription>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Perubahan hanya berlaku di tabel Buffer Stok, tidak mempengaruhi OBS Sparepart.
+            </DialogDescription>
           </DialogHeader>
           {editingBufferItem && (
             <div className="flex-1 overflow-y-auto pr-1 mt-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label className="text-xs font-semibold">Nama Barang *</Label>
-                  <Input value={editingBufferItem.name} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, name: e.target.value })} className="h-9 text-xs" />
+                  <Input
+                    value={editingBufferItem.name}
+                    onChange={(e) =>
+                      setEditingBufferItem({ ...editingBufferItem, name: e.target.value })
+                    }
+                    className="h-9 text-xs"
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold">Kode Material</Label>
-                  <Input value={editingBufferItem.code || ""} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, code: e.target.value })} className="h-9 text-xs font-mono" />
+                  <Input
+                    value={editingBufferItem.code || ""}
+                    onChange={(e) =>
+                      setEditingBufferItem({ ...editingBufferItem, code: e.target.value })
+                    }
+                    className="h-9 text-xs font-mono"
+                  />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Satuan</Label>
-                  <Select value={editingBufferItem.unit || "pcs"} onValueChange={(v) => setEditingBufferItem({ ...editingBufferItem, unit: v })}>
-                    <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                  <Label className="text-xs font-semibold">Satuan (UoM)</Label>
+                  <Select
+                    value={editingBufferItem.unit || "Roll"}
+                    onValueChange={(v) => setEditingBufferItem({ ...editingBufferItem, unit: v })}
+                  >
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
-                      {units.map((u: any) => <SelectItem key={u.id} value={u.code} className="text-xs">{u.name} ({u.code})</SelectItem>)}
+                      <SelectItem value="Roll" className="text-xs">
+                        Roll
+                      </SelectItem>
+                      <SelectItem value="Lmbr" className="text-xs">
+                        Lmbr
+                      </SelectItem>
+                      <SelectItem value="CAN" className="text-xs">
+                        CAN
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Lokasi</Label>
-                  <Input value={editingBufferItem.location || ""} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, location: e.target.value })} className="h-9 text-xs" />
+                  <Label className="text-xs font-semibold">Qty Masuk</Label>
+                  <Input
+                    type="number"
+                    value={editingBufferItem.qty_in ?? ""}
+                    onChange={(e) =>
+                      setEditingBufferItem({
+                        ...editingBufferItem,
+                        qty_in: e.target.value !== "" ? Number(e.target.value) : "",
+                      })
+                    }
+                    placeholder="0"
+                    className="h-9 text-xs font-mono"
+                  />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Shelf / Rak</Label>
-                  <Input value={editingBufferItem.shelf || ""} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, shelf: e.target.value })} className="h-9 text-xs font-mono" />
+                  <Label className="text-xs font-semibold">Qty Keluar</Label>
+                  <Input
+                    type="number"
+                    value={editingBufferItem.qty_out ?? ""}
+                    onChange={(e) =>
+                      setEditingBufferItem({
+                        ...editingBufferItem,
+                        qty_out: e.target.value !== "" ? Number(e.target.value) : "",
+                      })
+                    }
+                    placeholder="0"
+                    className="h-9 text-xs font-mono"
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold">Stok Saat Ini</Label>
-                  <Input type="number" value={editingBufferItem.current_stock ?? 0} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, current_stock: Number(e.target.value) })} className="h-9 text-xs font-mono" />
+                  <Input
+                    type="number"
+                    value={editingBufferItem.current_stock ?? 0}
+                    onChange={(e) =>
+                      setEditingBufferItem({
+                        ...editingBufferItem,
+                        current_stock: Number(e.target.value),
+                      })
+                    }
+                    className="h-9 text-xs font-mono"
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold">Batas Minimum</Label>
-                  <Input type="number" value={editingBufferItem.safe_stock ?? 1} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, safe_stock: Number(e.target.value) })} className="h-9 text-xs font-mono" />
+                  <Input
+                    type="number"
+                    value={editingBufferItem.safe_stock ?? 1}
+                    onChange={(e) =>
+                      setEditingBufferItem({
+                        ...editingBufferItem,
+                        safe_stock: Number(e.target.value),
+                      })
+                    }
+                    className="h-9 text-xs font-mono"
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold">Minimal Stok</Label>
-                  <Input type="number" value={editingBufferItem.min_stock ?? 10} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, min_stock: Number(e.target.value) })} className="h-9 text-xs font-mono" />
+                  <Input
+                    type="number"
+                    value={editingBufferItem.min_stock ?? 10}
+                    onChange={(e) =>
+                      setEditingBufferItem({
+                        ...editingBufferItem,
+                        min_stock: Number(e.target.value),
+                      })
+                    }
+                    className="h-9 text-xs font-mono"
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold">Maksimal Stok</Label>
-                  <Input type="number" value={editingBufferItem.max_stock ?? ""} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, max_stock: e.target.value ? Number(e.target.value) : null })} placeholder="opsional" className="h-9 text-xs font-mono" />
+                  <Input
+                    type="number"
+                    value={editingBufferItem.max_stock ?? ""}
+                    onChange={(e) =>
+                      setEditingBufferItem({
+                        ...editingBufferItem,
+                        max_stock: e.target.value ? Number(e.target.value) : null,
+                      })
+                    }
+                    placeholder="opsional"
+                    className="h-9 text-xs font-mono"
+                  />
                 </div>
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label className="text-xs font-semibold">Keterangan</Label>
-                  <Input value={editingBufferItem.description || ""} onChange={(e) => setEditingBufferItem({ ...editingBufferItem, description: e.target.value })} className="h-9 text-xs" />
+                  <Input
+                    value={editingBufferItem.description || ""}
+                    onChange={(e) =>
+                      setEditingBufferItem({ ...editingBufferItem, description: e.target.value })
+                    }
+                    className="h-9 text-xs"
+                  />
                 </div>
               </div>
             </div>
           )}
           <div className="flex items-center justify-end gap-2 pt-4 border-t mt-2 shrink-0">
-            <Button variant="outline" size="sm" onClick={() => setEditingBufferItem(null)}>Batal</Button>
-            <Button size="sm" onClick={() => updateBufferItem.mutate()} disabled={updateBufferItem.isPending} className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium">
+            <Button variant="outline" size="sm" onClick={() => setEditingBufferItem(null)}>
+              Batal
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => updateBufferItem.mutate()}
+              disabled={updateBufferItem.isPending}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium"
+            >
               {updateBufferItem.isPending ? "Menyimpan..." : "Simpan Perubahan"}
             </Button>
           </div>
@@ -4999,17 +5748,26 @@ function WarehouseAndProductsPage() {
       </Dialog>
 
       {/* ── MODAL KONFIRMASI HAPUS BUFFER STOK ───────────────────────────────── */}
-      <AlertDialog open={!!deletingBufferItem} onOpenChange={(o) => { if (!o) setDeletingBufferItem(null); }}>
+      <AlertDialog
+        open={!!deletingBufferItem}
+        onOpenChange={(o) => {
+          if (!o) setDeletingBufferItem(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus Item Buffer Stok?</AlertDialogTitle>
             <AlertDialogDescription>
-              Item <strong>"{deletingBufferItem?.name}"</strong> akan dihapus dari buffer stok secara permanen. Tindakan ini tidak dapat dibatalkan.
+              Item <strong>"{deletingBufferItem?.name}"</strong> akan dihapus dari buffer stok
+              secara permanen. Tindakan ini tidak dapat dibatalkan.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Batal</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deletingBufferItem && deleteBufferItem.mutate(deletingBufferItem)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={() => deletingBufferItem && deleteBufferItem.mutate(deletingBufferItem)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Ya, Hapus
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -5024,15 +5782,21 @@ function WarehouseAndProductsPage() {
               Tambah Data Barang OBS Sparepart
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Tambahkan data master inventaris secara manual atau upload file Excel / CSV (khusus kategori Sparepart & Tools).
+              Tambahkan data master inventaris secara manual atau upload file Excel / CSV (khusus
+              kategori Sparepart & Tools).
             </DialogDescription>
           </DialogHeader>
 
           {/* Tab Mode: Manual vs Upload File Excel/CSV */}
-          <Tabs defaultValue="manual" className="w-full flex-1 flex flex-col min-h-0 overflow-hidden mt-3">
+          <Tabs
+            defaultValue="manual"
+            className="w-full flex-1 flex flex-col min-h-0 overflow-hidden mt-3"
+          >
             <div className="flex items-center justify-between border-b pb-2 mb-3 shrink-0">
               <TabsList className="grid w-72 grid-cols-2">
-                <TabsTrigger value="manual" className="text-xs">Manual Input</TabsTrigger>
+                <TabsTrigger value="manual" className="text-xs">
+                  Manual Input
+                </TabsTrigger>
                 <TabsTrigger value="upload" className="text-xs gap-1.5">
                   <FileSpreadsheet className="size-3.5 text-emerald-600 dark:text-emerald-400" />
                   Upload Excel/CSV
@@ -5046,7 +5810,9 @@ function WarehouseAndProductsPage() {
               <TabsContent value="manual" className="mt-0 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                   <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="add-name" className="text-xs font-semibold">Nama Barang *</Label>
+                    <Label htmlFor="add-name" className="text-xs font-semibold">
+                      Nama Barang *
+                    </Label>
                     <Input
                       id="add-name"
                       value={formData.name}
@@ -5058,7 +5824,9 @@ function WarehouseAndProductsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label htmlFor="add-code" className="text-xs font-semibold">Kode Material</Label>
+                    <Label htmlFor="add-code" className="text-xs font-semibold">
+                      Kode Material
+                    </Label>
                     <Input
                       id="add-code"
                       value={formData.code}
@@ -5066,25 +5834,6 @@ function WarehouseAndProductsPage() {
                       placeholder="cth. 7100110213 / SP-BRG-6204"
                       className="h-9 text-xs font-mono"
                     />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Kategori Barang</Label>
-                    <Select
-                      value={formData.category}
-                      onValueChange={(v) => setFormData({ ...formData, category: v })}
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map((c: any) => (
-                          <SelectItem key={c.id} value={c.name} className="text-xs">
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
                   </div>
 
                   <div className="space-y-1.5">
@@ -5097,31 +5846,37 @@ function WarehouseAndProductsPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {units.map((u: any) => (
-                          <SelectItem key={u.id} value={u.code} className="text-xs">
-                            {u.name} ({u.code})
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="Roll" className="text-xs">
+                          Roll
+                        </SelectItem>
+                        <SelectItem value="Lmbr" className="text-xs">
+                          Lmbr
+                        </SelectItem>
+                        <SelectItem value="CAN" className="text-xs">
+                          CAN
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Lokasi Gudang</Label>
+                    <Label className="text-xs font-semibold">Qty Masuk</Label>
                     <Input
-                      value={formData.location}
-                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                      placeholder="Gudang Utama"
-                      className="h-9 text-xs"
+                      type="number"
+                      value={formData.qty_in}
+                      onChange={(e) => setFormData({ ...formData, qty_in: e.target.value })}
+                      placeholder="0"
+                      className="h-9 text-xs font-mono"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Shelf / Rak</Label>
+                    <Label className="text-xs font-semibold">Qty Keluar</Label>
                     <Input
-                      value={formData.shelf}
-                      onChange={(e) => setFormData({ ...formData, shelf: e.target.value })}
-                      placeholder="Rak A-1"
+                      type="number"
+                      value={formData.qty_out}
+                      onChange={(e) => setFormData({ ...formData, qty_out: e.target.value })}
+                      placeholder="0"
                       className="h-9 text-xs font-mono"
                     />
                   </div>
@@ -5211,7 +5966,10 @@ function WarehouseAndProductsPage() {
                           Pilih File Excel / CSV (.xlsx, .xls, .csv)
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          Format kolom yang didukung: <strong>Kode</strong>, <strong>Material</strong>, <strong>Batas Minimal Stok</strong>, <strong>Minimal Stok</strong>, <strong>Maks. Stok</strong>, dan <strong>Stok Saat Ini</strong>
+                          Format kolom yang didukung: <strong>Kode</strong>,{" "}
+                          <strong>Material</strong>, <strong>Batas Minimal Stok</strong>,{" "}
+                          <strong>Minimal Stok</strong>, <strong>Maks. Stok</strong>, dan{" "}
+                          <strong>Stok Saat Ini</strong>
                         </p>
                       </div>
 
@@ -5251,7 +6009,11 @@ function WarehouseAndProductsPage() {
                           <span className="truncate">{importFile.name}</span>
                         </div>
                         <p className="text-[11px] text-muted-foreground mt-0.5">
-                          Total {importPreview.length} item barang terdeteksi • Total Stok: {importPreview.reduce((acc, it) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
+                          Total {importPreview.length} item barang terdeteksi • Total Stok:{" "}
+                          {importPreview
+                            .reduce((acc, it) => acc + (it.current_stock || 0), 0)
+                            .toLocaleString("id-ID")}{" "}
+                          pcs
                         </p>
                       </div>
                     </div>
@@ -5320,9 +6082,17 @@ function WarehouseAndProductsPage() {
                           const seen = new Set<string>();
                           const result: any[] = [];
                           for (const it of items) {
-                            const nName = String(it.name || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
-                            const nCode = String(it.code || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
-                            const key = nName ? `n_${nName}` : (nCode ? `c_${nCode}` : "");
+                            const nName = String(it.name || "")
+                              .replace(/\u00a0/g, " ")
+                              .replace(/\s+/g, " ")
+                              .trim()
+                              .toLowerCase();
+                            const nCode = String(it.code || "")
+                              .replace(/\u00a0/g, " ")
+                              .replace(/\s+/g, " ")
+                              .trim()
+                              .toLowerCase();
+                            const key = nName ? `n_${nName}` : nCode ? `c_${nCode}` : "";
                             if (!key || !seen.has(key)) {
                               if (key) seen.add(key);
                               result.push(it);
@@ -5343,8 +6113,12 @@ function WarehouseAndProductsPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="max-h-60">
-                        <SelectItem value="ALL" className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                          ✨ Gabungkan Semua Sheet ({importSheets.reduce((a, b) => a + b.count, 0)} barang)
+                        <SelectItem
+                          value="ALL"
+                          className="text-xs font-semibold text-emerald-700 dark:text-emerald-400"
+                        >
+                          ✨ Gabungkan Semua Sheet ({importSheets.reduce((a, b) => a + b.count, 0)}{" "}
+                          barang)
                         </SelectItem>
                         {importSheets.map((s) => (
                           <SelectItem key={s.name} value={s.name} className="text-xs">
@@ -5412,33 +6186,51 @@ function WarehouseAndProductsPage() {
                             </th>
                             <th
                               className="p-2.5 w-36 text-center cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
-                              onClick={() => setImportSortOption(importSortOption === "CODE_ASC" ? "CODE_DESC" : "CODE_ASC")}
+                              onClick={() =>
+                                setImportSortOption(
+                                  importSortOption === "CODE_ASC" ? "CODE_DESC" : "CODE_ASC",
+                                )
+                              }
                               title="Urutkan kode angka terkecil / terbesar"
                             >
                               <div className="flex items-center justify-center gap-1">
                                 <span>Kode</span>
-                                <ArrowUpDown className={`size-3 ${importSortOption.startsWith("CODE") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
+                                <ArrowUpDown
+                                  className={`size-3 ${importSortOption.startsWith("CODE") ? "text-primary font-bold" : "text-muted-foreground/60"}`}
+                                />
                               </div>
                             </th>
                             <th
                               className="p-2.5 min-w-[200px] cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
-                              onClick={() => setImportSortOption(importSortOption === "NAME_ASC" ? "NAME_DESC" : "NAME_ASC")}
+                              onClick={() =>
+                                setImportSortOption(
+                                  importSortOption === "NAME_ASC" ? "NAME_DESC" : "NAME_ASC",
+                                )
+                              }
                               title="Urutkan nama A-Z / Z-A"
                             >
                               <div className="flex items-center gap-1">
                                 <span>Material</span>
-                                <ArrowUpDown className={`size-3 ${importSortOption.startsWith("NAME") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
+                                <ArrowUpDown
+                                  className={`size-3 ${importSortOption.startsWith("NAME") ? "text-primary font-bold" : "text-muted-foreground/60"}`}
+                                />
                               </div>
                             </th>
                             <th className="p-2.5 text-center w-20 font-semibold">Satuan</th>
                             <th
                               className="p-2.5 text-center w-28 cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
-                              onClick={() => setImportSortOption(importSortOption === "STOCK_ASC" ? "STOCK_DESC" : "STOCK_ASC")}
+                              onClick={() =>
+                                setImportSortOption(
+                                  importSortOption === "STOCK_ASC" ? "STOCK_DESC" : "STOCK_ASC",
+                                )
+                              }
                               title="Urutkan stok angka terkecil / terbesar"
                             >
                               <div className="flex items-center justify-center gap-1">
                                 <span>Stok Saat Ini</span>
-                                <ArrowUpDown className={`size-3 ${importSortOption.startsWith("STOCK") ? "text-primary font-bold" : "text-muted-foreground/60"}`} />
+                                <ArrowUpDown
+                                  className={`size-3 ${importSortOption.startsWith("STOCK") ? "text-primary font-bold" : "text-muted-foreground/60"}`}
+                                />
                               </div>
                             </th>
                             <th className="p-2.5 text-center w-24">Min. Stok</th>
@@ -5448,8 +6240,12 @@ function WarehouseAndProductsPage() {
                         <tbody className="divide-y divide-border/60">
                           {sortedImportPreview.slice(0, 100).map((it, idx) => (
                             <tr key={idx} className="hover:bg-surface-muted/50 transition-colors">
-                              <td className="p-2.5 text-center text-muted-foreground font-mono">{idx + 1}</td>
-                              <td className="p-2.5 text-center font-mono text-primary font-medium">{it.code || "-"}</td>
+                              <td className="p-2.5 text-center text-muted-foreground font-mono">
+                                {idx + 1}
+                              </td>
+                              <td className="p-2.5 text-center font-mono text-primary font-medium">
+                                {it.code || "-"}
+                              </td>
                               <td className="p-2.5 font-medium text-foreground">{it.name}</td>
                               <td className="p-2.5 text-center font-mono font-semibold uppercase text-slate-700 dark:text-slate-300">
                                 <span className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[11px] border border-slate-200 dark:border-slate-700">
@@ -5460,10 +6256,14 @@ function WarehouseAndProductsPage() {
                                 {it.current_stock ?? 0}
                               </td>
                               <td className="p-2.5 text-center font-mono text-muted-foreground">
-                                {it.min_stock !== null && it.min_stock !== undefined ? it.min_stock : "-"}
+                                {it.min_stock !== null && it.min_stock !== undefined
+                                  ? it.min_stock
+                                  : "-"}
                               </td>
                               <td className="p-2.5 text-center font-mono text-muted-foreground">
-                                {it.max_stock !== null && it.max_stock !== undefined ? it.max_stock : "-"}
+                                {it.max_stock !== null && it.max_stock !== undefined
+                                  ? it.max_stock
+                                  : "-"}
                               </td>
                             </tr>
                           ))}
@@ -5471,9 +6271,16 @@ function WarehouseAndProductsPage() {
                       </table>
                     </div>
                     <div className="flex items-center justify-between text-xs px-1 text-muted-foreground pt-1.5 border-t border-border/40">
-                      <span>Menampilkan {Math.min(sortedImportPreview.length, 100)} dari seluruh <strong>{sortedImportPreview.length}</strong> barang yang siap ditambahkan</span>
+                      <span>
+                        Menampilkan {Math.min(sortedImportPreview.length, 100)} dari seluruh{" "}
+                        <strong>{sortedImportPreview.length}</strong> barang yang siap ditambahkan
+                      </span>
                       <span className="font-mono font-bold text-foreground">
-                        Total Stok: {sortedImportPreview.reduce((acc, it) => acc + (it.current_stock || 0), 0).toLocaleString("id-ID")} pcs
+                        Total Stok:{" "}
+                        {sortedImportPreview
+                          .reduce((acc, it) => acc + (it.current_stock || 0), 0)
+                          .toLocaleString("id-ID")}{" "}
+                        pcs
                       </span>
                     </div>
                   </div>
@@ -5532,54 +6339,48 @@ function WarehouseAndProductsPage() {
                   onChange={(e) => setEditingItem({ ...editingItem, code: e.target.value })}
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label>Kategori Barang</Label>
-                <Select
-                  value={editingItem.category || "Sparepart & Tools"}
-                  onValueChange={(v) => setEditingItem({ ...editingItem, category: v })}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((c: any) => (
-                      <SelectItem key={c.id} value={c.name}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 col-span-2 sm:col-span-1">
                 <Label>Satuan (UoM)</Label>
                 <Select
-                  value={editingItem.unit || "pcs"}
+                  value={editingItem.unit || "Roll"}
                   onValueChange={(v) => setEditingItem({ ...editingItem, unit: v })}
                 >
                   <SelectTrigger className="h-9">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {units.map((u: any) => (
-                      <SelectItem key={u.id} value={u.code}>
-                        {u.name} ({u.code})
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="Roll">Roll</SelectItem>
+                    <SelectItem value="Lmbr">Lmbr</SelectItem>
+                    <SelectItem value="CAN">CAN</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label>Lokasi Gudang</Label>
+              <div className="space-y-1.5 col-span-2 sm:col-span-1">
+                <Label>Qty Masuk</Label>
                 <Input
-                  value={editingItem.location || ""}
-                  onChange={(e) => setEditingItem({ ...editingItem, location: e.target.value })}
+                  type="number"
+                  value={editingItem.qty_in ?? ""}
+                  onChange={(e) =>
+                    setEditingItem({
+                      ...editingItem,
+                      qty_in: e.target.value !== "" ? Number(e.target.value) : "",
+                    })
+                  }
+                  placeholder="0"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label>Shelf / Rak</Label>
+              <div className="space-y-1.5 col-span-2 sm:col-span-1">
+                <Label>Qty Keluar</Label>
                 <Input
-                  value={editingItem.shelf || ""}
-                  onChange={(e) => setEditingItem({ ...editingItem, shelf: e.target.value })}
+                  type="number"
+                  value={editingItem.qty_out ?? ""}
+                  onChange={(e) =>
+                    setEditingItem({
+                      ...editingItem,
+                      qty_out: e.target.value !== "" ? Number(e.target.value) : "",
+                    })
+                  }
+                  placeholder="0"
                 />
               </div>
               <div className="col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -5588,7 +6389,9 @@ function WarehouseAndProductsPage() {
                   <Input
                     type="number"
                     value={editingItem.min_stock ?? 10}
-                    onChange={(e) => setEditingItem({ ...editingItem, min_stock: Number(e.target.value) })}
+                    onChange={(e) =>
+                      setEditingItem({ ...editingItem, min_stock: Number(e.target.value) })
+                    }
                     placeholder="Contoh: 10"
                   />
                 </div>
@@ -5597,7 +6400,12 @@ function WarehouseAndProductsPage() {
                   <Input
                     type="number"
                     value={editingItem.max_stock ?? ""}
-                    onChange={(e) => setEditingItem({ ...editingItem, max_stock: e.target.value ? Number(e.target.value) : null })}
+                    onChange={(e) =>
+                      setEditingItem({
+                        ...editingItem,
+                        max_stock: e.target.value ? Number(e.target.value) : null,
+                      })
+                    }
                     placeholder="Contoh: 50 (opsional)"
                   />
                 </div>
@@ -5606,7 +6414,12 @@ function WarehouseAndProductsPage() {
                   <Input
                     type="number"
                     value={editingItem.current_stock ?? ""}
-                    onChange={(e) => setEditingItem({ ...editingItem, current_stock: e.target.value !== "" ? Number(e.target.value) : 0 })}
+                    onChange={(e) =>
+                      setEditingItem({
+                        ...editingItem,
+                        current_stock: e.target.value !== "" ? Number(e.target.value) : 0,
+                      })
+                    }
                     placeholder="Contoh: 0"
                   />
                 </div>
@@ -5617,7 +6430,11 @@ function WarehouseAndProductsPage() {
             <Button variant="outline" onClick={() => setEditingItem(null)}>
               Batal
             </Button>
-            <Button onClick={() => updateProduct.mutate()} disabled={updateProduct.isPending} className="bg-primary hover:bg-primary/90 min-w-[80px]">
+            <Button
+              onClick={() => updateProduct.mutate()}
+              disabled={updateProduct.isPending}
+              className="bg-primary hover:bg-primary/90 min-w-[80px]"
+            >
               {updateProduct.isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
@@ -5640,7 +6457,9 @@ function WarehouseAndProductsPage() {
                   <Label className="text-xs font-bold uppercase tracking-wider text-foreground">
                     Daftar Barang ({txItems.length}/15 Barang)
                   </Label>
-                  <p className="text-[11px] text-muted-foreground">Pilih barang dan tentukan kuantitas yang dicatat</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Pilih barang dan tentukan kuantitas yang dicatat
+                  </p>
                 </div>
                 {txItems.length < 15 && (
                   <Button
@@ -5687,8 +6506,8 @@ function WarehouseAndProductsPage() {
                           onChange={(productId, unit) => {
                             setTxItems((prev) =>
                               prev.map((it, i) =>
-                                i === idx ? { productId, unit, quantity: it.quantity } : it
-                              )
+                                i === idx ? { productId, unit, quantity: it.quantity } : it,
+                              ),
                             );
                           }}
                         />
@@ -5706,8 +6525,10 @@ function WarehouseAndProductsPage() {
                             const newQty = e.target.value;
                             setTxItems((prev) =>
                               prev.map((it, i) =>
-                                i === idx ? { productId: it.productId, unit: it.unit, quantity: newQty } : it
-                              )
+                                i === idx
+                                  ? { productId: it.productId, unit: it.unit, quantity: newQty }
+                                  : it,
+                              ),
                             );
                           }}
                           placeholder="cth. 10"
@@ -5783,7 +6604,11 @@ function WarehouseAndProductsPage() {
               <Input
                 value={txHeader.supplierOrDest}
                 onChange={(e) => setTxHeader({ ...txHeader, supplierOrDest: e.target.value })}
-                placeholder={txType === "IN" ? "cth. PT Kopi Nusantara" : "cth. Penggantian Bearing Rusak Line Roasting 1"}
+                placeholder={
+                  txType === "IN"
+                    ? "cth. PT Kopi Nusantara"
+                    : "cth. Penggantian Bearing Rusak Line Roasting 1"
+                }
                 className="h-9 text-xs"
               />
             </div>
@@ -5805,7 +6630,11 @@ function WarehouseAndProductsPage() {
             <Button
               onClick={() => createTransaction.mutate()}
               disabled={createTransaction.isPending || txItems.every((it) => !it.productId)}
-              className={txType === "IN" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"}
+              className={
+                txType === "IN"
+                  ? "bg-emerald-600 hover:bg-emerald-700"
+                  : "bg-rose-600 hover:bg-rose-700"
+              }
             >
               {createTransaction.isPending
                 ? "Menyimpan..."
@@ -5821,7 +6650,9 @@ function WarehouseAndProductsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus Data Barang?</AlertDialogTitle>
             <AlertDialogDescription>
-              Apakah Anda yakin ingin menghapus barang <strong>&ldquo;{deletingItem?.name}&rdquo;</strong>? Tindakan ini tidak dapat dibatalkan.
+              Apakah Anda yakin ingin menghapus barang{" "}
+              <strong>&ldquo;{deletingItem?.name}&rdquo;</strong>? Tindakan ini tidak dapat
+              dibatalkan.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -5873,7 +6704,9 @@ function WarehouseAndProductsPage() {
                       {selectedTx.tx_type === "IN" ? "Tanggal Terima:" : "Tanggal Keluar:"}
                     </span>
                     <span className="font-mono font-bold text-foreground text-sm">
-                      {selectedTx.batch_number ? formatDate(selectedTx.batch_number) : formatDate(selectedTx.created_at)}
+                      {selectedTx.batch_number
+                        ? formatDate(selectedTx.batch_number)
+                        : formatDate(selectedTx.created_at)}
                     </span>
                   </div>
                   <div>
@@ -5884,23 +6717,37 @@ function WarehouseAndProductsPage() {
                   </div>
                   <div>
                     <span className="text-muted-foreground block text-[11px]">
-                      {selectedTx.tx_type === "IN" ? "Vendor / Supplier:" : "Alasan Permintaan / Tujuan:"}
+                      {selectedTx.tx_type === "IN"
+                        ? "Vendor / Supplier:"
+                        : "Alasan Permintaan / Tujuan:"}
                     </span>
-                    <span className="font-medium text-foreground">{selectedTx.supplier_or_dest || "—"}</span>
+                    <span className="font-medium text-foreground">
+                      {selectedTx.supplier_or_dest || "—"}
+                    </span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground block text-[11px]">Tanggal Pencatatan:</span>
+                    <span className="text-muted-foreground block text-[11px]">
+                      Tanggal Pencatatan:
+                    </span>
                     <span className="font-mono font-bold text-foreground text-sm">
                       {formatDate(selectedTx.created_at)}
                     </span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground block text-[11px]">Petugas Sparepart Shift 1/2/3:</span>
-                    <span className="font-medium text-foreground">{selectedTx.notes || selectedTx.reference_no || "—"}</span>
+                    <span className="text-muted-foreground block text-[11px]">
+                      Petugas Sparepart Shift 1/2/3:
+                    </span>
+                    <span className="font-medium text-foreground">
+                      {selectedTx.notes || selectedTx.reference_no || "—"}
+                    </span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground block text-[11px]">No. PO / Referensi:</span>
-                    <span className="font-mono font-semibold text-foreground">{selectedTx.reference_no || "—"}</span>
+                    <span className="text-muted-foreground block text-[11px]">
+                      No. PO / Referensi:
+                    </span>
+                    <span className="font-mono font-semibold text-foreground">
+                      {selectedTx.reference_no || "—"}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -5923,7 +6770,9 @@ function WarehouseAndProductsPage() {
                       {selectedTx.items.map((it, idx) => (
                         <tr key={it.id || idx} className="hover:bg-surface-muted/30">
                           <td className="px-3 py-2 text-muted-foreground font-mono">{idx + 1}</td>
-                          <td className="px-3 py-2 font-medium text-foreground">{it.product_name}</td>
+                          <td className="px-3 py-2 font-medium text-foreground">
+                            {it.product_name}
+                          </td>
                           <td className="px-3 py-2 text-right font-mono font-bold">
                             <span
                               className={
@@ -5982,132 +6831,173 @@ function WarehouseAndProductsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          {selectedProduct && (() => {
-            const current = selectedProduct.current_stock ?? 0;
-            const minStock = selectedProduct.min_stock ?? 10;
-            const safeStock = (selectedProduct as any).safe_stock ?? 1;
-            const rawMax = (selectedProduct as any).max_stock;
-            const maxStock = rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
+          {selectedProduct &&
+            (() => {
+              const current = selectedProduct.current_stock ?? 0;
+              const minStock = selectedProduct.min_stock ?? 10;
+              const safeStock = (selectedProduct as any).safe_stock ?? 1;
+              const rawMax = (selectedProduct as any).max_stock;
+              const maxStock =
+                rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
 
-            let kondisiText = "SAFETY STOK";
-            let kondisiBadgeClass = "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30";
-            let stokSaatIniBoxClass = "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+              let kondisiText = "SAFETY STOK";
+              let kondisiBadgeClass =
+                "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30";
+              let stokSaatIniBoxClass =
+                "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
 
-            if (maxStock !== null && !isNaN(maxStock) && current > maxStock) {
-              kondisiText = "OUT OF STOK";
-              kondisiBadgeClass = "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30";
-              stokSaatIniBoxClass = "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400";
-            } else if (current <= minStock) {
-              kondisiText = "ORDER";
-              kondisiBadgeClass = "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30";
-              stokSaatIniBoxClass = "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400";
-            }
+              if (maxStock !== null && !isNaN(maxStock) && current > maxStock) {
+                kondisiText = "OUT OF STOK";
+                kondisiBadgeClass =
+                  "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30";
+                stokSaatIniBoxClass =
+                  "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400";
+              } else if (current <= minStock) {
+                kondisiText = "ORDER";
+                kondisiBadgeClass =
+                  "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30";
+                stokSaatIniBoxClass =
+                  "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400";
+              }
 
-            const formattedDate = selectedProduct.created_at
-              ? new Date(selectedProduct.created_at).toLocaleDateString("id-ID", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })
-              : "23 September 2026";
+              const formattedDate = selectedProduct.created_at
+                ? new Date(selectedProduct.created_at).toLocaleDateString("id-ID", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })
+                : "23 September 2026";
 
-            return (
-              <div className="space-y-4 py-2 text-xs">
-                {/* Info Utama Layout Baru */}
-                <div className="rounded-lg border border-border bg-surface-muted/40 p-3.5 space-y-3">
-                  {/* 1. Tanggal Input Header */}
-                  <div className="flex items-center justify-between border-b border-border/60 pb-2 text-[11px]">
-                    <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <CalendarIcon className="size-3.5 text-primary shrink-0" />
-                      <span>Tanggal Input:</span>
-                      <span className="font-semibold text-foreground">{formattedDate}</span>
+              return (
+                <div className="space-y-4 py-2 text-xs">
+                  {/* Info Utama Layout Baru */}
+                  <div className="rounded-lg border border-border bg-surface-muted/40 p-3.5 space-y-3">
+                    {/* 1. Tanggal Input Header */}
+                    <div className="flex items-center justify-between border-b border-border/60 pb-2 text-[11px]">
+                      <div className="flex items-center gap-1.5 text-muted-foreground">
+                        <CalendarIcon className="size-3.5 text-primary shrink-0" />
+                        <span>Tanggal Input:</span>
+                        <span className="font-semibold text-foreground">{formattedDate}</span>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* 2. Nama Material > Kode Material */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <span className="text-muted-foreground block text-[11px]">Nama Material / Sparepart:</span>
-                      <span className="text-sm font-bold text-foreground leading-tight block">{selectedProduct.name}</span>
+                    {/* 2. Nama Material > Kode Material */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">
+                          Nama Material / Sparepart:
+                        </span>
+                        <span className="text-sm font-bold text-foreground leading-tight block">
+                          {selectedProduct.name}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">
+                          Kode Material:
+                        </span>
+                        <span className="font-mono font-bold text-sm text-foreground">
+                          {selectedProduct.code || "—"}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-muted-foreground block text-[11px]">Kode Material:</span>
-                      <span className="font-mono font-bold text-sm text-foreground">{selectedProduct.code || "—"}</span>
-                    </div>
-                  </div>
 
-                  {/* 3. Status Kondisi */}
-                  <div className="flex items-center gap-3 pt-2 border-t border-border/60">
-                    <div>
-                      <span className="text-muted-foreground block text-[11px]">Status Kondisi:</span>
-                      <div className="mt-1">
-                        <Badge className={cn("text-[10px] font-bold uppercase", kondisiBadgeClass)}>
-                          {kondisiText}
-                        </Badge>
+                    {/* 3. Status Kondisi */}
+                    <div className="flex items-center gap-3 pt-2 border-t border-border/60">
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">
+                          Status Kondisi:
+                        </span>
+                        <div className="mt-1">
+                          <Badge
+                            className={cn("text-[10px] font-bold uppercase", kondisiBadgeClass)}
+                          >
+                            {kondisiText}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 4. Kategori > Nomor Rak */}
+                    <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border/60">
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">Kategori:</span>
+                        <span className="font-medium text-foreground">
+                          {selectedProduct.category || "Sparepart & Tools"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">
+                          Shelf / Nomor Rak:
+                        </span>
+                        <span className="font-mono font-medium text-foreground">
+                          {selectedProduct.shelf || "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">
+                          Lokasi Gudang:
+                        </span>
+                        <span className="font-medium text-foreground">
+                          {selectedProduct.location || "Gudang Utama"}
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* 4. Kategori > Nomor Rak */}
-                  <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border/60">
-                    <div>
-                      <span className="text-muted-foreground block text-[11px]">Kategori:</span>
-                      <span className="font-medium text-foreground">{selectedProduct.category || "Sparepart & Tools"}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground block text-[11px]">Shelf / Nomor Rak:</span>
-                      <span className="font-mono font-medium text-foreground">{selectedProduct.shelf || "—"}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground block text-[11px]">Lokasi Gudang:</span>
-                      <span className="font-medium text-foreground">{selectedProduct.location || "Gudang Utama"}</span>
+                  {/* Parameter Buffer Stok */}
+                  <div className="space-y-1.5">
+                    <div className="font-semibold text-foreground">Parameter Buffer Stok:</div>
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      <div className="p-2 rounded border border-border bg-surface">
+                        <div className="text-[10px] text-muted-foreground">Batas Min.</div>
+                        <div className="font-mono font-bold text-sm text-foreground mt-0.5">
+                          {safeStock} {selectedProduct.unit || "pcs"}
+                        </div>
+                      </div>
+                      <div className="p-2 rounded border border-rose-500/30 bg-rose-500/5">
+                        <div className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">
+                          Min. Stok (Order)
+                        </div>
+                        <div className="font-mono font-bold text-sm text-rose-600 dark:text-rose-400 mt-0.5">
+                          {minStock} {selectedProduct.unit || "pcs"}
+                        </div>
+                      </div>
+                      <div className="p-2 rounded border border-border bg-surface">
+                        <div className="text-[10px] text-muted-foreground">Maks. Stok</div>
+                        <div className="font-mono font-bold text-sm text-foreground mt-0.5">
+                          {maxStock !== null && !isNaN(maxStock)
+                            ? `${maxStock} ${selectedProduct.unit || "pcs"}`
+                            : "—"}
+                        </div>
+                      </div>
+                      <div
+                        className={cn(
+                          "p-2 rounded border text-center transition-colors",
+                          stokSaatIniBoxClass,
+                        )}
+                      >
+                        <div className="text-[10px] font-medium">Stok Saat Ini</div>
+                        <div className="font-mono font-bold text-sm mt-0.5">
+                          {current} {selectedProduct.unit || "pcs"}
+                        </div>
+                      </div>
                     </div>
                   </div>
+
+                  {/* Deskripsi Tambahan jika ada */}
+                  {selectedProduct.description && (
+                    <div className="space-y-1">
+                      <div className="font-semibold text-foreground">
+                        Deskripsi / Catatan Teknis:
+                      </div>
+                      <p className="p-2.5 rounded border border-border bg-surface text-muted-foreground leading-relaxed">
+                        {selectedProduct.description}
+                      </p>
+                    </div>
+                  )}
                 </div>
-
-                {/* Parameter Buffer Stok */}
-                <div className="space-y-1.5">
-                  <div className="font-semibold text-foreground">Parameter Buffer Stok:</div>
-                  <div className="grid grid-cols-4 gap-2 text-center">
-                    <div className="p-2 rounded border border-border bg-surface">
-                      <div className="text-[10px] text-muted-foreground">Batas Min.</div>
-                      <div className="font-mono font-bold text-sm text-foreground mt-0.5">
-                        {safeStock} {selectedProduct.unit || "pcs"}
-                      </div>
-                    </div>
-                    <div className="p-2 rounded border border-rose-500/30 bg-rose-500/5">
-                      <div className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">Min. Stok (Order)</div>
-                      <div className="font-mono font-bold text-sm text-rose-600 dark:text-rose-400 mt-0.5">
-                        {minStock} {selectedProduct.unit || "pcs"}
-                      </div>
-                    </div>
-                    <div className="p-2 rounded border border-border bg-surface">
-                      <div className="text-[10px] text-muted-foreground">Maks. Stok</div>
-                      <div className="font-mono font-bold text-sm text-foreground mt-0.5">
-                        {maxStock !== null && !isNaN(maxStock) ? `${maxStock} ${selectedProduct.unit || "pcs"}` : "—"}
-                      </div>
-                    </div>
-                    <div className={cn("p-2 rounded border text-center transition-colors", stokSaatIniBoxClass)}>
-                      <div className="text-[10px] font-medium">Stok Saat Ini</div>
-                      <div className="font-mono font-bold text-sm mt-0.5">
-                        {current} {selectedProduct.unit || "pcs"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Deskripsi Tambahan jika ada */}
-                {selectedProduct.description && (
-                  <div className="space-y-1">
-                    <div className="font-semibold text-foreground">Deskripsi / Catatan Teknis:</div>
-                    <p className="p-2.5 rounded border border-border bg-surface text-muted-foreground leading-relaxed">
-                      {selectedProduct.description}
-                    </p>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+              );
+            })()}
 
           <DialogFooter className="flex flex-col-reverse sm:flex-row justify-between sm:justify-end items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setSelectedProduct(null)}>

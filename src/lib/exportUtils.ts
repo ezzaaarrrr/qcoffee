@@ -13,6 +13,7 @@ export interface ExportProductItem {
   unit?: string | null;
   current_stock?: number | null;
   min_stock?: number | null;
+  max_stock?: number | null;
   location?: string | null;
   shelf?: string | null;
   is_active?: boolean;
@@ -313,6 +314,10 @@ export interface ExportInventoryOptions {
   totalOutQtyMap?: Record<string, number>;
   generatedByName?: string;
   categoryFilter?: string;
+  plant?: string;
+  storageLocation?: string;
+  materialType?: string;
+  period?: string;
 }
 
 export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
@@ -323,61 +328,52 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
     totalInQtyMap = {},
     totalOutQtyMap = {},
     generatedByName = "Staff Gudang Sparepart",
-    categoryFilter,
+    plant = "2000",
+    storageLocation = "Gudang Sparepart & Tools",
+    materialType = "Sparepart",
+    period,
   } = options;
 
   const printDate = formatReportDateTime(new Date());
   const fileDate = new Date().toISOString().split("T")[0];
+  const periodText = period || new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
   const totalSKU = products.length;
-  const totalStokFisik = products.reduce((acc, p) => acc + (p.current_stock ?? 0), 0);
+  const totalEndingStock = products.reduce((acc, p) => acc + (p.current_stock ?? 0), 0);
   const limitProducts = products.filter((p) => (p.current_stock ?? 0) <= (p.min_stock ?? 10));
-  const safeProducts = products.filter((p) => (p.current_stock ?? 0) > (p.min_stock ?? 10));
 
   let totalMasukAll = 0;
   let totalPengeluaranAll = 0;
+  let totalBeginningAll = 0;
 
   const rowsHtml = products
     .map((p, idx) => {
-      const isLimit = (p.current_stock ?? 0) <= (p.min_stock ?? 10);
+      const minStock = p.min_stock ?? 10;
+      const endingStock = p.current_stock ?? 0;
+      const isLimit = endingStock <= minStock;
       const nameKey = p.name ? p.name.trim().toLowerCase() : "";
       const codeKey = p.code ? p.code.trim().toLowerCase() : "";
 
-      // 1. Data Riwayat Keluar
-      const totalOutFromTx =
+      // 1. Data Riwayat Keluar (ISSUED)
+      const totalOut =
         (totalOutQtyMap[p.id] ?? 0) ||
         (nameKey ? totalOutQtyMap[nameKey] ?? 0 : 0) ||
         (codeKey ? totalOutQtyMap[codeKey] ?? 0 : 0);
-      const totalOut = totalOutFromTx;
       totalPengeluaranAll += totalOut;
 
-      const lastOut =
-        latestOutTxMap[p.id] ||
-        (nameKey ? latestOutTxMap[nameKey] : undefined) ||
-        (codeKey ? latestOutTxMap[codeKey] : undefined);
-      const lastOutStr = lastOut?.created_at
-        ? formatReportDateShort(lastOut.created_at)
-        : totalOut > 0
-          ? formatReportDateShort(new Date())
-          : "—";
-
-      // 2. Data Riwayat Masuk
+      // 2. Data Riwayat Masuk (RECEIPT)
       const totalIn =
         (totalInQtyMap[p.id] ?? 0) ||
         (nameKey ? totalInQtyMap[nameKey] ?? 0 : 0) ||
         (codeKey ? totalInQtyMap[codeKey] ?? 0 : 0);
       totalMasukAll += totalIn;
 
-      const lastIn =
-        latestInTxMap[p.id] ||
-        (nameKey ? latestInTxMap[nameKey] : undefined) ||
-        (codeKey ? latestInTxMap[codeKey] : undefined);
-      
-      const lastInStr = lastIn?.created_at
-        ? formatReportDateShort(lastIn.created_at)
-        : p.created_at
-          ? formatReportDateShort(p.created_at)
-          : formatReportDateShort(new Date());
+      // 3. BEGINNING BALANCE = Ending Balance - Receipt + Issued
+      const beginningBalance = Math.max(0, endingStock - totalIn + totalOut);
+      totalBeginningAll += beginningBalance;
+
+      const maxStockStr = p.max_stock != null ? p.max_stock.toLocaleString("id-ID") : "—";
+      const statusStockStr = isLimit ? "LIMIT / KRITIS" : "AMAN";
 
       const rowClass = isLimit ? "limit-row" : (idx % 2 === 0 ? "even" : "odd");
 
@@ -390,31 +386,27 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
           <td style="font-weight: 600; color: #0f172a;">
             ${p.name}
           </td>
-          <td>${p.category || "Sparepart & Tools"}</td>
-          <td style="text-align: center; font-weight: 500;">${p.unit || "pcs"}</td>
-          <td>${p.location || "Gudang Utama"}</td>
-          <td style="text-align: center;">${p.shelf || "Rak A-1"}</td>
-          <td style="text-align: right; font-weight: bold; font-size: 10.5pt; ${isLimit ? "color: #be123c;" : "color: #047857;"}">
-            ${(p.current_stock ?? 0).toLocaleString("id-ID")}
+          <td style="text-align: right; font-weight: 600; color: #0f172a;">
+            ${beginningBalance.toLocaleString("id-ID")}
           </td>
-          <td style="text-align: right; color: #64748b;">
-            ${(p.min_stock ?? 10).toLocaleString("id-ID")}
+          <td style="text-align: right; color: #64748b; font-weight: 500;">
+            ${minStock.toLocaleString("id-ID")}
           </td>
           <td style="text-align: right; font-weight: 600; color: #047857;">
-            ${totalIn > 0 ? totalIn.toLocaleString("id-ID") : "0"}
-          </td>
-          <td style="text-align: center; font-size: 9pt; color: #0f172a; font-weight: 500;">
-            ${lastInStr}
+            ${totalIn.toLocaleString("id-ID")}
           </td>
           <td style="text-align: right; font-weight: 600; color: ${totalOut > 0 ? "#be123c" : "#64748b"};">
             ${totalOut.toLocaleString("id-ID")}
           </td>
-          <td style="text-align: center; font-size: 9pt; color: #475569;">
-            ${lastOutStr}
+          <td style="text-align: right; font-weight: bold; font-size: 10.5pt; ${isLimit ? "color: #be123c;" : "color: #047857;"}">
+            ${endingStock.toLocaleString("id-ID")}
+          </td>
+          <td style="text-align: right; color: #64748b; font-weight: 500;">
+            ${maxStockStr}
           </td>
           <td style="text-align: center;">
             <span class="${isLimit ? "badge-limit" : "badge-safe"}">
-              ${isLimit ? "LIMIT / KRITIS" : "AMAN"}
+              ${statusStockStr}
             </span>
           </td>
         </tr>
@@ -427,10 +419,9 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
     <table class="header-table">
       <tr>
         <td style="width: 70%; vertical-align: top;">
-          <div class="header-title">DEPARTEMEN WAREHOUSE — LAPORAN INVENTARIS & MONITORING STOK SPAREPART</div>
+          <div class="header-title">DEPARTEMEN WAREHOUSE — LAPORAN MUTASI & STATUS STOK SPAREPART</div>
           <div class="header-meta">
             Sistem Informasi Operasional Q-Coffee M2 &bull; 
-            Kategori: <strong>${categoryFilter || "Semua Kategori"}</strong> &bull; 
             Dicetak: <strong>${printDate}</strong> &bull; 
             Petugas: <strong>${generatedByName}</strong>
           </div>
@@ -443,54 +434,40 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
       </tr>
     </table>
 
-    <!-- Ringkasan Eksekutif KPI -->
-    <table class="card-table" style="width: 100%;">
+    <!-- Parameter & Informasi Laporan SAP/ERP Sesuai Ketentuan -->
+    <table style="width: 100%; max-width: 600px; margin-bottom: 16px; border-collapse: collapse; font-family: Calibri, 'Segoe UI', Arial, sans-serif; font-size: 10pt;">
       <tr>
-        <td class="card-cell" style="width: 16.6%;">
-          <div class="card-label">Total SKU Terdaftar</div>
-          <div class="card-value">${totalSKU} <span style="font-size: 9pt; font-weight: normal; color: #64748b;">Item</span></div>
-        </td>
-        <td class="card-cell" style="width: 16.6%;">
-          <div class="card-label">Stok Fisik Tersedia</div>
-          <div class="card-value" style="color: #0369a1;">${totalStokFisik.toLocaleString("id-ID")} <span style="font-size: 9pt; font-weight: normal; color: #64748b;">Unit/Kg</span></div>
-        </td>
-        <td class="card-cell" style="width: 16.6%;">
-          <div class="card-label">Item Stok Aman</div>
-          <div class="card-value" style="color: #15803d;">${safeProducts.length} <span style="font-size: 9pt; font-weight: normal; color: #64748b;">SKU</span></div>
-        </td>
-        <td class="card-cell" style="width: 16.6%; background-color: #fff1f2; border-color: #fecdd3;">
-          <div class="card-label" style="color: #be123c;">Item Stok Limit / Kritis</div>
-          <div class="card-value" style="color: #be123c;">${limitProducts.length} <span style="font-size: 9pt; font-weight: normal; color: #be123c;">SKU</span></div>
-        </td>
-        <td class="card-cell" style="width: 16.6%; background-color: #f0fdf4; border-color: #bbf7d0;">
-          <div class="card-label" style="color: #15803d;">Total Akumulasi Masuk</div>
-          <div class="card-value" style="color: #15803d;">+${totalMasukAll.toLocaleString("id-ID")} <span style="font-size: 9pt; font-weight: normal; color: #64748b;">Unit/Kg</span></div>
-        </td>
-        <td class="card-cell" style="width: 16.6%; background-color: #fff1f2; border-color: #fecdd3;">
-          <div class="card-label" style="color: #be123c;">Total Akumulasi Keluar</div>
-          <div class="card-value" style="color: #be123c;">-${totalPengeluaranAll.toLocaleString("id-ID")} <span style="font-size: 9pt; font-weight: normal; color: #64748b;">Unit/Kg</span></div>
-        </td>
+        <td style="width: 140px; font-weight: bold; padding: 3px 0; color: #0f172a;">1. PLANT</td>
+        <td style="padding: 3px 0; font-weight: 600; color: #334155;">: ${plant}</td>
+      </tr>
+      <tr>
+        <td style="font-weight: bold; padding: 3px 0; color: #0f172a;">2. S.LOCATION</td>
+        <td style="padding: 3px 0; font-weight: 600; color: #334155;">: ${storageLocation}</td>
+      </tr>
+      <tr>
+        <td style="font-weight: bold; padding: 3px 0; color: #0f172a;">3. MAT.TYPE</td>
+        <td style="padding: 3px 0; font-weight: 600; color: #334155;">: ${materialType}</td>
+      </tr>
+      <tr>
+        <td style="font-weight: bold; padding: 3px 0; color: #0f172a;">4. PERIOD</td>
+        <td style="padding: 3px 0; font-weight: 600; color: #334155;">: ${periodText}</td>
       </tr>
     </table>
 
-    <!-- Tabel Data Utama Laporan -->
+    <!-- Tabel Data Utama Laporan (Header Kuning) -->
     <table class="main-table">
       <thead>
         <tr>
-          <th style="width: 35px; text-align: center;">No</th>
-          <th style="width: 140px;">Kode Part / SKU</th>
-          <th style="width: 250px;">Nama Barang / Sparepart</th>
-          <th style="width: 130px;">Kategori</th>
-          <th style="width: 65px; text-align: center;">Satuan</th>
-          <th style="width: 120px;">Lokasi Gudang</th>
-          <th style="width: 85px; text-align: center;">Posisi Rak</th>
-          <th style="width: 95px; text-align: right;">Stok Terkini</th>
-          <th style="width: 85px; text-align: right;">Batas Min.</th>
-          <th style="width: 100px; text-align: right;">Jumlah Masuk</th>
-          <th style="width: 110px; text-align: center;">Tanggal Masuk</th>
-          <th style="width: 100px; text-align: right;">Jumlah Keluar</th>
-          <th style="width: 110px; text-align: center;">Tanggal Keluar</th>
-          <th style="width: 110px; text-align: center;">Status Stok</th>
+          <th style="width: 40px; text-align: center; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">No</th>
+          <th style="width: 140px; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">Kode Part / SKU</th>
+          <th style="width: 320px; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">Nama Barang / Sparepart</th>
+          <th style="width: 150px; text-align: right; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">BEGINNING BALANCE</th>
+          <th style="width: 100px; text-align: right; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">MIN.STOK</th>
+          <th style="width: 110px; text-align: right; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">RECEIPT</th>
+          <th style="width: 110px; text-align: right; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">ISSUED</th>
+          <th style="width: 150px; text-align: right; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">ENDING BALANCE</th>
+          <th style="width: 100px; text-align: right; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">MAKS.STOK</th>
+          <th style="width: 130px; text-align: center; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">STATUS STOCK</th>
         </tr>
       </thead>
       <tbody>
@@ -498,15 +475,15 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="7" class="footer-total" style="text-align: right;">TOTAL KESELURUHAN:</td>
-          <td class="footer-total" style="text-align: right; color: #0369a1;">${totalStokFisik.toLocaleString("id-ID")}</td>
+          <td colspan="3" class="footer-total" style="text-align: right;">TOTAL:</td>
+          <td class="footer-total" style="text-align: right; color: #0f172a;">${totalBeginningAll.toLocaleString("id-ID")}</td>
           <td class="footer-total" style="text-align: right; color: #64748b;">—</td>
           <td class="footer-total" style="text-align: right; color: #15803d;">+${totalMasukAll.toLocaleString("id-ID")}</td>
-          <td class="footer-total" style="text-align: center; color: #64748b;">—</td>
           <td class="footer-total" style="text-align: right; color: #be123c;">-${totalPengeluaranAll.toLocaleString("id-ID")}</td>
-          <td class="footer-total" style="text-align: center; color: #64748b;">—</td>
+          <td class="footer-total" style="text-align: right; color: #0369a1;">${totalEndingStock.toLocaleString("id-ID")}</td>
+          <td class="footer-total" style="text-align: right; color: #64748b;">—</td>
           <td class="footer-total" style="text-align: center; font-size: 9pt; color: #64748b;">
-            ${limitProducts.length > 0 ? `<strong style="color: #be123c;">${limitProducts.length} item perlu restock</strong>` : "Semua stok optimal"}
+            ${limitProducts.length > 0 ? `<strong style="color: #be123c;">${limitProducts.length} item limit</strong>` : "Aman"}
           </td>
         </tr>
       </tfoot>
@@ -554,6 +531,10 @@ export interface ExportMutasiOptions {
   generatedByName?: string;
   startDate?: string;
   endDate?: string;
+  plant?: string;
+  storageLocation?: string;
+  materialType?: string;
+  period?: string;
 }
 
 export function exportSparepartMutasiExcel(options: ExportMutasiOptions) {
@@ -562,10 +543,19 @@ export function exportSparepartMutasiExcel(options: ExportMutasiOptions) {
     generatedByName = "Petugas Gudang",
     startDate,
     endDate,
+    plant = "2000",
+    storageLocation = "Gudang Sparepart & Tools",
+    materialType = "Sparepart",
+    period,
   } = options;
 
   const printDate = formatReportDateTime(new Date());
   const fileDate = new Date().toISOString().split("T")[0];
+  const periodText =
+    period ||
+    (startDate && endDate
+      ? `${startDate} s/d ${endDate}`
+      : new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" }));
 
   const totalTx = groupedTransactions.length;
   const inTx = groupedTransactions.filter((t) => t.tx_type === "IN");
@@ -674,6 +664,26 @@ export function exportSparepartMutasiExcel(options: ExportMutasiOptions) {
           <div class="card-label">Penyesuaian (Adjustment)</div>
           <div class="card-value" style="color: #475569;">${adjTx.length} <span style="font-size: 9pt; font-weight: normal;">Transaksi</span></div>
         </td>
+      </tr>
+    </table>
+
+    <!-- Parameter & Informasi Laporan SAP/ERP Sesuai Ketentuan -->
+    <table style="width: 100%; max-width: 600px; margin-top: 16px; margin-bottom: 16px; border-collapse: collapse; font-family: Calibri, 'Segoe UI', Arial, sans-serif; font-size: 10pt;">
+      <tr>
+        <td style="width: 140px; font-weight: bold; padding: 3px 0; color: #0f172a;">1. PLANT</td>
+        <td style="padding: 3px 0; font-weight: 600; color: #334155;">: ${plant}</td>
+      </tr>
+      <tr>
+        <td style="font-weight: bold; padding: 3px 0; color: #0f172a;">2. S.LOCATION</td>
+        <td style="padding: 3px 0; font-weight: 600; color: #334155;">: ${storageLocation}</td>
+      </tr>
+      <tr>
+        <td style="font-weight: bold; padding: 3px 0; color: #0f172a;">3. MAT.TYPE</td>
+        <td style="padding: 3px 0; font-weight: 600; color: #334155;">: ${materialType}</td>
+      </tr>
+      <tr>
+        <td style="font-weight: bold; padding: 3px 0; color: #0f172a;">4. PERIOD</td>
+        <td style="padding: 3px 0; font-weight: 600; color: #334155;">: ${periodText}</td>
       </tr>
     </table>
 

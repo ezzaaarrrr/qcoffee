@@ -1330,6 +1330,8 @@ function DashboardPage() {
     const colorHeader = isMasuk ? "#059669" : "#e11d48";
     const dateFormatted = formatDate(tx.created_at);
 
+    const receiptDate = tx.batch_number ? formatDate(tx.batch_number) : dateFormatted;
+
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
       alert("Pop-up diblokir browser. Mohon izinkan pop-up untuk mencetak dokumen PDF.");
@@ -1353,11 +1355,15 @@ function DashboardPage() {
             <strong style="font-size: 13px; color: #0f172a;">${it.product_name}</strong>
           </td>
           <td>
-            <div>Batch: <code>${tx.batch_number || "—"}</code></div>
-            <div style="font-size: 11px; color: #64748b; margin-top: 1px;">Ref: ${tx.reference_no || "—"}</div>
+            ${
+              isMasuk
+                ? `<div style="font-weight: 600; color: #0f172a;">${tx.reference_no || "—"}</div>`
+                : `<div>Batch: <code>${tx.batch_number || "—"}</code></div>
+                   <div style="font-size: 11px; color: #64748b; margin-top: 1px;">Ref: ${tx.reference_no || "—"}</div>`
+            }
           </td>
           <td style="text-align: center;">
-            <span style="font-weight: 700; font-size: 11px; color: ${colorHeader};">${isMasuk ? "INBOUND" : "OUTBOUND"}</span>
+            <span style="font-weight: 700; font-size: 11px; color: ${colorHeader};">${isMasuk ? "IN" : "OUT"}</span>
           </td>
           <td style="text-align: right;">
             <span class="qty-highlight">${isMasuk ? "+" : "-"}${it.quantity} ${it.unit}</span>
@@ -1464,13 +1470,6 @@ function DashboardPage() {
             color: ${colorHeader};
             font-family: monospace;
           }
-          .notes-card {
-            border-left: 4px solid #cbd5e1;
-            background: #f8fafc;
-            padding: 12px 16px;
-            margin-bottom: 30px;
-            border-radius: 0 6px 6px 0;
-          }
           .signatures {
             margin-top: 50px;
             display: grid;
@@ -1479,7 +1478,6 @@ function DashboardPage() {
             text-align: center;
           }
           .sig-line {
-            border-top: 1px dashed #94a3b8;
             margin-top: 65px;
             padding-top: 6px;
             font-weight: 700;
@@ -1509,11 +1507,7 @@ function DashboardPage() {
 
         <div class="meta-grid">
           <div class="meta-item">
-            <div class="meta-label">Nomor Transaksi (No. Bon)</div>
-            <div class="meta-value" style="font-family: monospace;">${tx.transaction_number}</div>
-          </div>
-          <div class="meta-item">
-            <div class="meta-label">Tanggal & Waktu</div>
+            <div class="meta-label">Tanggal Pencatatan</div>
             <div class="meta-value">${dateFormatted}</div>
           </div>
           <div class="meta-item">
@@ -1521,8 +1515,12 @@ function DashboardPage() {
             <div class="meta-value">${tx.supplier_or_dest || "—"}</div>
           </div>
           <div class="meta-item">
-            <div class="meta-label">Petugas Input</div>
-            <div class="meta-value">${tx.created_by_name || "Petugas Gudang"}</div>
+            <div class="meta-label">PETUGAS SPAREPART SHIFT 1/2/3:</div>
+            <div class="meta-value">${tx.notes || "Petugas Sparepart"}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">${isMasuk ? "Tanggal Penerimaan" : "Tanggal Pengeluaran"}</div>
+            <div class="meta-value">${receiptDate}</div>
           </div>
         </div>
 
@@ -1534,10 +1532,10 @@ function DashboardPage() {
           <thead>
             <tr>
               <th style="width: 5%; text-align: center;">No</th>
-              <th style="width: 40%;">Nama Barang / Produk</th>
-              <th style="width: 25%;">${isMasuk ? "Tanggal Terima / Ref" : "No. Batch / Ref"}</th>
+              <th style="width: 40%;">Nama Barang</th>
+              <th style="width: 25%;">${isMasuk ? "No.PO" : "No. Batch / Ref"}</th>
               <th style="width: 12%; text-align: center;">Tipe</th>
-              <th style="width: 18%; text-align: right;">Jumlah</th>
+              <th style="width: 18%; text-align: right;">Qty</th>
             </tr>
           </thead>
           <tbody>
@@ -1545,28 +1543,18 @@ function DashboardPage() {
           </tbody>
         </table>
 
-        ${tx.notes
-        ? `
-          <div class="notes-card">
-            <div class="meta-label" style="margin-bottom: 4px;">Petugas Sparepart Shift 1/2/3:</div>
-            <div style="font-size: 12px; color: #334155;">${tx.notes}</div>
-          </div>
-        `
-        : ""
-      }
-
         <div class="signatures">
           <div>
-            <div style="font-size: 11px; color: #64748b;">Dibuat oleh Unit Head,</div>
+            <div style="font-size: 11px; color: #64748b;">Dibuat oleh User,</div>
             <div class="sig-line">( ............................................ )</div>
           </div>
           <div>
-            <div style="font-size: 11px; color: #64748b;">Diperiksa oleh Section Head,</div>
-            <div class="sig-line">( Section Head )</div>
+            <div style="font-size: 11px; color: #64748b;">Diperiksa oleh UH/SH,</div>
+            <div class="sig-line">( ............................................ )</div>
           </div>
           <div>
             <div style="font-size: 11px; color: #64748b;">Disetujui oleh Departement Head,</div>
-            <div class="sig-line">( Departement Head )</div>
+            <div class="sig-line">( ............................................ )</div>
           </div>
         </div>
 
@@ -1877,6 +1865,10 @@ function DashboardPage() {
         totalOutQtyMap: outQty,
         generatedByName: profile?.full_name || profile?.email || "Pengguna Dashboard Sparepart",
         categoryFilter: "Semua Kategori",
+        plant: "2000",
+        storageLocation: "Gudang Sparepart & Tools",
+        materialType: "Sparepart",
+        period: new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" }),
       });
 
       toast.success("Laporan stok & master sparepart berhasil diekspor (.xls)");
@@ -1896,6 +1888,10 @@ function DashboardPage() {
       exportSparepartMutasiExcel({
         groupedTransactions: groupedTxData,
         generatedByName: profile?.full_name || profile?.email || "Pengguna Dashboard Sparepart",
+        plant: "2000",
+        storageLocation: "Gudang Sparepart & Tools",
+        materialType: "Sparepart",
+        period: new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" }),
       });
 
       toast.success("Laporan riwayat mutasi gudang berhasil diekspor (.xls)");
@@ -2143,24 +2139,33 @@ function DashboardPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-xs text-left border-collapse border border-border">
                 <thead>
-                  <tr className="border-b border-blue-700 bg-blue-600 dark:bg-blue-700 text-white uppercase text-[11px] tracking-wider font-bold divide-x divide-blue-500/40 text-center">
-                    <th className="px-4 py-3 w-36 font-bold text-center">Tanggal</th>
-                    <th className="px-3 py-3 w-32 whitespace-nowrap font-bold text-center">
-                      <div className="font-bold">Tipe Mutasi</div>
-                      <div className="text-[10px] text-blue-100 font-semibold normal-case">(In/Out)</div>
+                  <tr className="border-b border-blue-700 bg-blue-600 dark:bg-blue-700 text-white text-[11px] tracking-wider font-semibold divide-x divide-blue-500/40 text-center">
+                    <th className="px-3 py-3 whitespace-nowrap text-white text-center">Tanggal</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white w-28 text-center">
+                      (Tipe Mutasi)
                     </th>
-                    <th className="px-3 py-3 w-32 font-bold text-center">KODE</th>
-                    <th className="px-4 py-3 min-w-[220px] font-bold text-center">MATERIAL</th>
-                    <th className="px-4 py-3 w-40 font-bold text-center">Vendor / Tujuan</th>
-                    <th className="px-4 py-3 w-36 font-bold text-center">No. Ref</th>
-                    <th className="px-4 py-3 w-36 font-bold text-center">User</th>
-                    <th className="px-4 py-3 text-center w-36 font-bold">Aksi & Dokumen</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[120px] text-center">KODE</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[220px] text-center">
+                      MATERIAL
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[110px] text-center">
+                      QTY
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
+                      Vendor
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
+                      Alasan Permintaan Barang
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[130px] text-center">No. Ref</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">User</th>
+                    <th className="px-3 py-3 text-center w-36 font-semibold">Aksi & Dokumen</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {warehouseTx.isLoading && (
                     <tr>
-                      <td colSpan={8} className="px-5 py-8 text-center text-muted-foreground">
+                      <td colSpan={10} className="px-5 py-8 text-center text-muted-foreground">
                         Memuat data mutasi gudang...
                       </td>
                     </tr>
@@ -2176,7 +2181,7 @@ function DashboardPage() {
                         className="hover:bg-surface-muted/40 transition-colors align-top divide-x divide-border"
                       >
                         {/* 1. Tanggal */}
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3 whitespace-nowrap">
                           <div className="flex items-center gap-1.5 font-medium text-foreground text-xs whitespace-nowrap">
                             <span>{formatDate(tx.created_at)}</span>
                             {isToday && (
@@ -2185,11 +2190,11 @@ function DashboardPage() {
                           </div>
                         </td>
 
-                        {/* 2. Tipe Mutasi (In/Out) */}
-                        <td className="px-3 py-3 text-center">
+                        {/* 2. (Tipe Mutasi) */}
+                        <td className="px-3 py-3 text-center whitespace-nowrap">
                           <span
                             className={cn(
-                              "inline-flex items-center justify-center gap-1 w-16 h-6 rounded text-[11px] font-semibold uppercase tracking-wide",
+                              "inline-flex items-center justify-center gap-1 w-16 h-6 rounded text-[11px] font-bold uppercase tracking-wide",
                               isMasuk
                                 ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25"
                                 : "bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/25",
@@ -2200,24 +2205,18 @@ function DashboardPage() {
                             ) : (
                               <ArrowUpRight className="size-3 shrink-0 text-rose-600 dark:text-rose-400" />
                             )}
-                            {isMasuk ? "In" : "Out"}
+                            {isMasuk ? "IN" : "OUT"}
                           </span>
                         </td>
 
-                        {/* 3. Kode Material */}
-                        <td className="px-3 py-3">
-                          <div className="space-y-1">
+                        {/* 3. Kode Material (Tanpa kotak) */}
+                        <td className="px-3 py-3 font-mono text-xs">
+                          <div className="space-y-1.5">
                             {tx.items.map((it, idx) => {
                               const code = productCodeMap.get(it.product_id) || (it.product_name ? productCodeMap.get(it.product_name.trim().toLowerCase()) : undefined);
                               return (
-                                <div key={it.id || idx} className="h-7 flex items-center justify-center">
-                                  {code ? (
-                                    <span className="font-mono text-[11px] font-semibold bg-surface-muted px-1.5 py-0.5 rounded border border-border/60 text-foreground">
-                                      {code}
-                                    </span>
-                                  ) : (
-                                    <span className="font-mono text-muted-foreground text-xs">—</span>
-                                  )}
+                                <div key={it.id || idx} className="py-0.5 font-medium text-foreground">
+                                  {code || "—"}
                                 </div>
                               );
                             })}
@@ -2225,50 +2224,70 @@ function DashboardPage() {
                         </td>
 
                         {/* 4. Nama Barang */}
-                        <td className="px-4 py-3">
-                          <div className="space-y-1">
+                        <td className="px-3 py-3">
+                          <div className="space-y-1.5">
                             {tx.items.map((it, idx) => (
                               <div
                                 key={it.id || idx}
-                                className="h-7 flex items-center justify-between gap-2 text-xs font-medium text-foreground leading-snug"
+                                className="py-0.5"
                               >
-                                <div className="flex items-center gap-1 truncate max-w-[220px]">
-                                  {tx.items.length > 1 && (
-                                    <span className="text-muted-foreground mr-1 text-[11px] shrink-0">{idx + 1}.</span>
-                                  )}
-                                  <span className="truncate" title={it.product_name}>
-                                    {it.product_name}
-                                  </span>
-                                </div>
-                                <span
-                                  className={cn(
-                                    "font-mono font-bold text-[11px] px-1.5 py-0.5 rounded shrink-0",
-                                    isMasuk
-                                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-                                      : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
-                                  )}
-                                >
-                                  {isMasuk ? "+" : "-"}{it.quantity} {it.unit || "pcs"}
+                                {tx.items.length > 1 && (
+                                  <span className="text-muted-foreground mr-1 text-[11px] shrink-0">{idx + 1}.</span>
+                                )}
+                                <span className="font-medium text-foreground leading-snug truncate" title={it.product_name}>
+                                  {it.product_name}
                                 </span>
                               </div>
                             ))}
                           </div>
                         </td>
 
-                        {/* 5. Vendor / Tujuan */}
-                        <td className="px-4 py-3 text-xs">
-                          <span className="text-[10px] uppercase font-semibold text-muted-foreground block">
-                            {isMasuk ? "Vendor Pengirim" : "Tujuan Line"}
-                          </span>
-                          <span className="font-medium text-foreground mt-0.5 block">
-                            {tx.supplier_or_dest || "—"}
-                          </span>
+                        {/* 5. QTY (Tanpa kotak) */}
+                        <td className="px-3 py-3 text-center whitespace-nowrap">
+                          <div className="space-y-1.5">
+                            {tx.items.map((it, idx) => (
+                              <div key={it.id || idx} className="py-0.5">
+                                <span
+                                  className={cn(
+                                    "font-mono font-bold text-xs inline-block",
+                                    isMasuk
+                                      ? "text-emerald-600 dark:text-emerald-400"
+                                      : "text-rose-600 dark:text-rose-400"
+                                  )}
+                                >
+                                  {isMasuk ? "+" : "-"}{it.quantity.toLocaleString("id-ID")} {it.unit || "pcs"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         </td>
 
-                        {/* 6. No. Ref */}
-                        <td className="px-4 py-3 text-xs">
+                        {/* 6. Vendor */}
+                        <td className="px-3 py-3 text-xs">
+                          {isMasuk ? (
+                            <span className="font-medium text-foreground block">
+                              {tx.supplier_or_dest || "—"}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/60 block">—</span>
+                          )}
+                        </td>
+
+                        {/* 7. Tujuan */}
+                        <td className="px-3 py-3 text-xs">
+                          {!isMasuk ? (
+                            <span className="font-medium text-foreground block">
+                              {tx.supplier_or_dest || "—"}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/60 block">—</span>
+                          )}
+                        </td>
+
+                        {/* 8. No. Ref */}
+                        <td className="px-3 py-3 text-xs">
                           {tx.reference_no ? (
-                            <span className="font-mono text-xs text-foreground bg-surface-muted px-1.5 py-0.5 rounded border border-border/40 inline-block">
+                            <span className="font-mono text-xs text-foreground font-semibold">
                               {tx.reference_no}
                             </span>
                           ) : tx.batch_number ? (
@@ -2280,19 +2299,11 @@ function DashboardPage() {
                           )}
                         </td>
 
-                        {/* 7. User */}
-                        <td className="px-4 py-3 text-xs">
+                        {/* 9. User (Nama Petugas Shift) */}
+                        <td className="px-3 py-3 text-xs">
                           <span className="font-medium text-foreground block">
-                            {tx.created_by_name || "User"}
+                            {tx.notes || tx.created_by_name || "Petugas Sparepart"}
                           </span>
-                          {tx.notes && (
-                            <span
-                              className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1 italic"
-                              title={tx.notes}
-                            >
-                              &ldquo;{tx.notes}&rdquo;
-                            </span>
-                          )}
                         </td>
 
                         {/* 8. Aksi & Dokumen */}
