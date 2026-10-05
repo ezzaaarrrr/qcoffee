@@ -54,11 +54,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import {
   DropdownMenu,
@@ -89,10 +85,7 @@ import { formatDate, ROLE_LABELS, type AppRole } from "@/lib/domain";
 import { useCurrentUser } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import {
-  exportSparepartInventoryExcel,
-  exportSparepartMutasiExcel,
-} from "@/lib/exportUtils";
+import { exportSparepartInventoryExcel, exportSparepartMutasiExcel } from "@/lib/exportUtils";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
@@ -146,7 +139,9 @@ function DashboardPage() {
   >(null);
   const [metricSearchQuery, setMetricSearchQuery] = useState("");
   const [metricCategoryFilter, setMetricCategoryFilter] = useState<"all" | "obs" | "buffer">("all");
-  const [metricStatusFilter, setMetricStatusFilter] = useState<"all" | "safe" | "limit" | "empty">("all");
+  const [metricStatusFilter, setMetricStatusFilter] = useState<"all" | "safe" | "limit" | "empty">(
+    "all",
+  );
 
   // Queries
   const formulasi = useQuery({ queryKey: ["formulasi"], queryFn: fetchFormulasi });
@@ -224,15 +219,15 @@ function DashboardPage() {
   const zeroProductsList = activeProducts.filter((p) => (p.current_stock ?? 0) <= 0);
   // 2. Stok Limit / Kritis (> 0 tapi <= min_stock)
   const limitOnlyProductsList = activeProducts.filter(
-    (p) => (p.current_stock ?? 0) > 0 && (p.current_stock ?? 0) <= (p.min_stock ?? 10)
+    (p) => (p.current_stock ?? 0) > 0 && (p.current_stock ?? 0) <= (p.min_stock ?? 10),
   );
   // 3. Stok Aman / Normal (> min_stock)
   const safeProductsList = activeProducts.filter(
-    (p) => (p.current_stock ?? 0) > (p.min_stock ?? 10)
+    (p) => (p.current_stock ?? 0) > (p.min_stock ?? 10),
   );
   // Legacy: Semua barang yang perlu restock (stok <= min_stock)
   const limitProductsList = activeProducts.filter(
-    (p) => (p.current_stock ?? 0) <= (p.min_stock ?? 10)
+    (p) => (p.current_stock ?? 0) <= (p.min_stock ?? 10),
   );
 
   const zeroProductsCount = zeroProductsList.length;
@@ -241,20 +236,25 @@ function DashboardPage() {
   const limitProductsCount = limitProductsList.length;
 
   // Persentase masing-masing status
-  const safePct = totalActiveProducts > 0 ? Math.round((nonLimitProductsCount / totalActiveProducts) * 100) : 0;
-  const limitOnlyPct = totalActiveProducts > 0 ? Math.round((limitOnlyCount / totalActiveProducts) * 100) : 0;
+  const safePct =
+    totalActiveProducts > 0 ? Math.round((nonLimitProductsCount / totalActiveProducts) * 100) : 0;
+  const limitOnlyPct =
+    totalActiveProducts > 0 ? Math.round((limitOnlyCount / totalActiveProducts) * 100) : 0;
   const zeroPct = totalActiveProducts > 0 ? Math.max(0, 100 - safePct - limitOnlyPct) : 0;
 
-  const limitPct = totalActiveProducts > 0 ? Math.round((limitProductsCount / totalActiveProducts) * 100) : 0;
+  const limitPct =
+    totalActiveProducts > 0 ? Math.round((limitProductsCount / totalActiveProducts) * 100) : 0;
   const nonLimitPct = totalActiveProducts > 0 ? 100 - limitPct : 0;
 
   // Persentase barang yang tersedia memiliki stok (> 0 pcs)
   const availableItemsCount = totalActiveProducts - zeroProductsCount;
-  const availablePct = totalActiveProducts > 0 ? Math.round((availableItemsCount / totalActiveProducts) * 100) : 0;
+  const availablePct =
+    totalActiveProducts > 0 ? Math.round((availableItemsCount / totalActiveProducts) * 100) : 0;
 
   // KPI Sparepart (Stok Aman):
   // Standar: Jika persentase <= 91.99% status "MISS", jika >= 92.00% status "HIT"
-  const kpiExactPct = totalActiveProducts > 0 ? (nonLimitProductsCount / totalActiveProducts) * 100 : 0;
+  const kpiExactPct =
+    totalActiveProducts > 0 ? (nonLimitProductsCount / totalActiveProducts) * 100 : 0;
   const isKpiHit = kpiExactPct >= 92.0;
   const kpiStatus: "HIT" | "MISS" = isKpiHit ? "HIT" : "MISS";
 
@@ -263,10 +263,10 @@ function DashboardPage() {
     // Klasifikasi Buffer Stock (sama seperti OBS)
     const bufferZero = activeBufferItems.filter((b) => (b.current_stock ?? 0) <= 0);
     const bufferLimit = activeBufferItems.filter(
-      (b) => (b.current_stock ?? 0) > 0 && (b.current_stock ?? 0) <= (b.min_stock ?? 10)
+      (b) => (b.current_stock ?? 0) > 0 && (b.current_stock ?? 0) <= (b.min_stock ?? 10),
     );
     const bufferSafe = activeBufferItems.filter(
-      (b) => (b.current_stock ?? 0) > (b.min_stock ?? 10)
+      (b) => (b.current_stock ?? 0) > (b.min_stock ?? 10),
     );
 
     // Total gabungan
@@ -288,16 +288,38 @@ function DashboardPage() {
     const pctAman = totalGabungan > 0 ? Math.round((gabunganAman / totalGabungan) * 100) : 0;
     const pctLimit = totalGabungan > 0 ? Math.round((gabunganLimit / totalGabungan) * 100) : 0;
     const pctHabis = totalGabungan > 0 ? Math.max(0, 100 - pctAman - pctLimit) : 0;
-    const pctKetersediaan = totalGabungan > 0 ? Math.round(((totalGabungan - gabunganHabis) / totalGabungan) * 100) : 0;
+    const pctKetersediaan =
+      totalGabungan > 0 ? Math.round(((totalGabungan - gabunganHabis) / totalGabungan) * 100) : 0;
 
     return {
-      totalOBS, totalBuffer, totalGabungan,
-      gabunganAman, gabunganLimit, gabunganHabis,
-      totalStokOBS, totalStokBuffer, totalStokGabungan,
-      pctAman, pctLimit, pctHabis, pctKetersediaan,
-      bufferZero, bufferLimit, bufferSafe,
+      totalOBS,
+      totalBuffer,
+      totalGabungan,
+      gabunganAman,
+      gabunganLimit,
+      gabunganHabis,
+      totalStokOBS,
+      totalStokBuffer,
+      totalStokGabungan,
+      pctAman,
+      pctLimit,
+      pctHabis,
+      pctKetersediaan,
+      bufferZero,
+      bufferLimit,
+      bufferSafe,
     };
-  }, [activeProducts, activeBufferItems, totalActiveProducts, nonLimitProductsCount, limitOnlyCount, zeroProductsCount, safePct, limitOnlyPct, zeroPct]);
+  }, [
+    activeProducts,
+    activeBufferItems,
+    totalActiveProducts,
+    nonLimitProductsCount,
+    limitOnlyCount,
+    zeroProductsCount,
+    safePct,
+    limitOnlyPct,
+    zeroPct,
+  ]);
 
   // Data gabungan OBS + Buffer untuk Modal Interaktif 4 Kartu Metrik
   type MetricItem = {
@@ -387,14 +409,18 @@ function DashboardPage() {
     if (metricSearchQuery.trim()) {
       const q = metricSearchQuery.toLowerCase();
       base = base.filter(
-        (it) =>
-          it.name.toLowerCase().includes(q) ||
-          (it.code && it.code.toLowerCase().includes(q))
+        (it) => it.name.toLowerCase().includes(q) || (it.code && it.code.toLowerCase().includes(q)),
       );
     }
 
     return base;
-  }, [unifiedMetricItems, selectedMetricModal, metricCategoryFilter, metricStatusFilter, metricSearchQuery]);
+  }, [
+    unifiedMetricItems,
+    selectedMetricModal,
+    metricCategoryFilter,
+    metricStatusFilter,
+    metricSearchQuery,
+  ]);
 
   // Helper render Donut Chart SVG untuk Perbandingan Status Stok
   const renderDonutSvg = ({
@@ -405,6 +431,7 @@ function DashboardPage() {
     centerBadge,
     badgeClass,
     subText,
+    safeColor = "#10b981",
   }: {
     safePctVal: number;
     limitPctVal: number;
@@ -413,13 +440,14 @@ function DashboardPage() {
     centerBadge: string;
     badgeClass: string;
     subText?: string;
+    safeColor?: string;
   }) => {
     const size = 104;
     const strokeWidth = 13;
     const radius = 37;
     const circumference = 2 * Math.PI * radius;
 
-    const total = (safePctVal + limitPctVal + zeroPctVal) || 100;
+    const total = safePctVal + limitPctVal + zeroPctVal || 100;
     const sPct = (safePctVal / total) * 100;
     const lPct = (limitPctVal / total) * 100;
     const zPct = (zeroPctVal / total) * 100;
@@ -431,6 +459,15 @@ function DashboardPage() {
     const safeOffset = 0;
     const limitOffset = -safeDash;
     const zeroOffset = -(safeDash + limitDash);
+    const limitColor =
+      safeColor === "#eab308"
+        ? "#f97316"
+        : safeColor === "#f97316"
+          ? "#eab308"
+          : safeColor === "#ef4444"
+            ? "#f59e0b"
+            : "#f59e0b";
+    const criticalColor = safeColor === "#ef4444" ? "#991b1b" : "#ef4444";
 
     return (
       <div className="relative flex items-center justify-center shrink-0">
@@ -450,7 +487,7 @@ function DashboardPage() {
               cy="50"
               r={radius}
               fill="transparent"
-              stroke="#10b981"
+              stroke={safeColor}
               strokeWidth={strokeWidth}
               strokeDasharray={`${safeDash} ${circumference}`}
               strokeDashoffset={safeOffset}
@@ -464,7 +501,7 @@ function DashboardPage() {
               cy="50"
               r={radius}
               fill="transparent"
-              stroke="#f59e0b"
+              stroke={limitColor}
               strokeWidth={strokeWidth}
               strokeDasharray={`${limitDash} ${circumference}`}
               strokeDashoffset={limitOffset}
@@ -478,7 +515,7 @@ function DashboardPage() {
               cy="50"
               r={radius}
               fill="transparent"
-              stroke="#ef4444"
+              stroke={criticalColor}
               strokeWidth={strokeWidth}
               strokeDasharray={`${zeroDash} ${circumference}`}
               strokeDashoffset={zeroOffset}
@@ -491,7 +528,12 @@ function DashboardPage() {
           <span className="font-mono text-sm sm:text-base font-bold leading-tight text-foreground">
             {centerValue}
           </span>
-          <span className={cn("text-[8.5px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider mt-0.5 border shadow-xs", badgeClass)}>
+          <span
+            className={cn(
+              "text-[8.5px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider mt-0.5 border shadow-xs",
+              badgeClass,
+            )}
+          >
             {centerBadge}
           </span>
           {subText && (
@@ -508,6 +550,76 @@ function DashboardPage() {
   const renderStockAnalysisCard = () => {
     const ca = combinedAnalysis;
     const allSafePctExact = ca.totalGabungan > 0 ? (ca.gabunganAman / ca.totalGabungan) * 100 : 0;
+    const isAllItemHit = allSafePctExact >= 95.0;
+
+    // Ketentuan Grade & Warna OBS Sparepart:
+    // A = ≥ 92% Hijau
+    // B = ≥ 90% Biru
+    // C = ≥ 88% Kuning
+    // D = ≥ 85% Oren
+    // E = < 85% Merah
+    const getObsGrade = (pct: number) => {
+      if (pct >= 92.0) {
+        return {
+          grade: "A",
+          badgeText: "GRADE A",
+          color: "#03ff28ffff", // Hijau
+          badgeClass:
+            "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+          dotClass: "bg-emerald-500",
+          limitDotClass: "bg-amber-500",
+        };
+      }
+      if (pct >= 90.0) {
+        return {
+          grade: "B",
+          badgeText: "GRADE B",
+          color: "#37deffff", // Biru
+          badgeClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
+          dotClass: "bg-blue-500",
+          limitDotClass: "bg-amber-500",
+        };
+      }
+      if (pct >= 88.0) {
+        return {
+          grade: "C",
+          badgeText: "GRADE C",
+          color: "#d0ff16ffff", // Kuning
+          badgeClass: "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/30",
+          dotClass: "bg-yellow-500",
+          limitDotClass: "bg-orange-500",
+        };
+      }
+      if (pct >= 85.0) {
+        return {
+          grade: "D",
+          badgeText: "GRADE D",
+          color: "#ff9100ff", // Oren
+          badgeClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30",
+          dotClass: "bg-orange-500",
+          limitDotClass: "bg-yellow-500",
+        };
+      }
+      return {
+        grade: "E",
+        badgeText: "GRADE E",
+        color: "#ef4444", // Merah
+        badgeClass: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30",
+        dotClass: "bg-red-500",
+        limitDotClass: "bg-amber-500",
+      };
+    };
+
+    const obsGrade = getObsGrade(kpiExactPct);
+
+    // Ketentuan All Item Barang: jika < 95% berubah menjadi warna Kuning
+    const allItemColor = isAllItemHit ? "rgba(12, 253, 68, 1)" : "rgba(255, 201, 41, 1)"; // Hijau (≥95%) atau Kuning (<95%)
+    const allItemBadgeClass = isAllItemHit
+      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+      : "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/30";
+    const allItemBadgeText = isAllItemHit ? "AMAN" : "PERHATIAN";
+    const allItemDotClass = isAllItemHit ? "bg-emerald-500" : "bg-yellow-500";
+    const allItemLimitDotClass = isAllItemHit ? "bg-amber-500" : "bg-orange-500";
 
     return (
       <div
@@ -520,7 +632,9 @@ function DashboardPage() {
           <div className="border border-border/80 rounded-xl p-4 flex flex-col justify-between space-y-3 bg-slate-50/70 shadow-2xs">
             <div className="flex items-center gap-1.5 border-b border-border/80 pb-2">
               <Package className="size-3.5 text-blue-600 shrink-0" />
-              <span className="text-xs font-bold uppercase tracking-wider text-foreground">OBS Sparepart</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-foreground">
+                OBS Sparepart
+              </span>
             </div>
 
             <div className="flex items-center justify-center py-2">
@@ -529,31 +643,36 @@ function DashboardPage() {
                 limitPctVal: limitOnlyPct,
                 zeroPctVal: zeroPct,
                 centerValue: `${kpiExactPct.toFixed(1)}%`,
-                centerBadge: kpiStatus,
-                badgeClass: isKpiHit
-                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                  : "bg-red-500/15 text-red-600 dark:text-red-500 border-red-500/40",
+                centerBadge: obsGrade.badgeText,
+                badgeClass: obsGrade.badgeClass,
+                safeColor: obsGrade.color,
               })}
             </div>
 
             <div className="space-y-2 py-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className="size-2 rounded-full bg-emerald-500" /> Aman
+                  <span className={cn("size-2 rounded-full", obsGrade.dotClass)} /> Aman
                 </span>
-                <span className="font-mono font-bold text-foreground">{nonLimitProductsCount} ({safePct}%)</span>
+                <span className="font-mono font-bold text-foreground">
+                  {nonLimitProductsCount} ({safePct}%)
+                </span>
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className="size-2 rounded-full bg-amber-500" /> Limit
+                  <span className={cn("size-2 rounded-full", obsGrade.limitDotClass)} /> Limit
                 </span>
-                <span className="font-mono font-bold text-foreground">{limitOnlyCount} ({limitOnlyPct}%)</span>
+                <span className="font-mono font-bold text-foreground">
+                  {limitOnlyCount} ({limitOnlyPct}%)
+                </span>
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <span className="size-2 rounded-full bg-rose-500" /> Critical / Habis
                 </span>
-                <span className="font-mono font-bold text-foreground">{zeroProductsCount} ({zeroPct}%)</span>
+                <span className="font-mono font-bold text-foreground">
+                  {zeroProductsCount} ({zeroPct}%)
+                </span>
               </div>
             </div>
           </div>
@@ -562,7 +681,9 @@ function DashboardPage() {
           <div className="border border-border/80 rounded-xl p-4 flex flex-col justify-between space-y-3 bg-slate-50/70 shadow-2xs">
             <div className="flex items-center gap-1.5 border-b border-border/80 pb-2">
               <Layers className="size-3.5 text-cyan-600 shrink-0" />
-              <span className="text-xs font-bold uppercase tracking-wider text-foreground">All Item Barang</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-foreground">
+                All Item Barang
+              </span>
             </div>
 
             <div className="flex items-center justify-center py-2">
@@ -571,15 +692,16 @@ function DashboardPage() {
                 limitPctVal: ca.pctLimit,
                 zeroPctVal: ca.pctHabis,
                 centerValue: `${allSafePctExact.toFixed(1)}%`,
-                centerBadge: "AMAN",
-                badgeClass: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+                centerBadge: allItemBadgeText,
+                badgeClass: allItemBadgeClass,
+                safeColor: allItemColor,
               })}
             </div>
 
             <div className="space-y-2 py-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className="size-2 rounded-full bg-emerald-500" /> Aman
+                  <span className={cn("size-2 rounded-full", allItemDotClass)} /> Aman
                 </span>
                 <span className="font-mono font-bold text-foreground">
                   {ca.gabunganAman} ({ca.pctAman}%)
@@ -587,7 +709,7 @@ function DashboardPage() {
               </div>
               <div className="flex items-center justify-between text-xs">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className="size-2 rounded-full bg-amber-500" /> Limit
+                  <span className={cn("size-2 rounded-full", allItemLimitDotClass)} /> Limit
                 </span>
                 <span className="font-mono font-bold text-foreground">
                   {ca.gabunganLimit} ({ca.pctLimit}%)
@@ -661,9 +783,13 @@ function DashboardPage() {
               </div>
               <ArrowUpRight className="size-3.5 text-blue-200 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
             </div>
-            <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">{ca.totalGabungan}</div>
+            <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">
+              {ca.totalGabungan}
+            </div>
             <div className="flex items-center justify-between text-[11px] text-blue-100/90 font-medium">
-              <span>OBS: {ca.totalOBS} · Buffer: {ca.totalBuffer}</span>
+              <span>
+                OBS: {ca.totalOBS} · Buffer: {ca.totalBuffer}
+              </span>
               <span className="text-[10px] text-blue-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 Lihat Barang
               </span>
@@ -688,9 +814,14 @@ function DashboardPage() {
               </div>
               <ArrowUpRight className="size-3.5 text-cyan-200 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
             </div>
-            <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">{ca.totalStokGabungan.toLocaleString("id-ID")}</div>
+            <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">
+              {ca.totalStokGabungan.toLocaleString("id-ID")}
+            </div>
             <div className="flex items-center justify-between text-[11px] text-cyan-100/90 font-medium">
-              <span>OBS: {ca.totalStokOBS.toLocaleString("id-ID")} · Buffer: {ca.totalStokBuffer.toLocaleString("id-ID")}</span>
+              <span>
+                OBS: {ca.totalStokOBS.toLocaleString("id-ID")} · Buffer:{" "}
+                {ca.totalStokBuffer.toLocaleString("id-ID")}
+              </span>
               <span className="text-[10px] text-cyan-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 Lihat Barang
               </span>
@@ -715,9 +846,13 @@ function DashboardPage() {
               </div>
               <ArrowUpRight className="size-3.5 text-emerald-200 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
             </div>
-            <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">{ca.pctAman}%</div>
+            <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">
+              {ca.pctAman}%
+            </div>
             <div className="flex items-center justify-between text-[11px] text-emerald-100/90 font-medium">
-              <span>{ca.gabunganAman} dari {ca.totalGabungan} item aman</span>
+              <span>
+                {ca.gabunganAman} dari {ca.totalGabungan} item aman
+              </span>
               <span className="text-[10px] text-emerald-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 Lihat Barang
               </span>
@@ -742,9 +877,14 @@ function DashboardPage() {
               </div>
               <ArrowUpRight className="size-3.5 text-amber-200 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
             </div>
-            <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">{ca.pctLimit + ca.pctHabis}%</div>
+            <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">
+              {ca.pctLimit + ca.pctHabis}%
+            </div>
             <div className="flex items-center justify-between text-[11px] text-amber-100/90 font-medium">
-              <span>{ca.gabunganLimit + ca.gabunganHabis} item ({ca.gabunganLimit} limit + {ca.gabunganHabis} habis)</span>
+              <span>
+                {ca.gabunganLimit + ca.gabunganHabis} item ({ca.gabunganLimit} limit +{" "}
+                {ca.gabunganHabis} habis)
+              </span>
               <span className="text-[10px] text-amber-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 Lihat Barang
               </span>
@@ -848,7 +988,7 @@ function DashboardPage() {
                     "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
                     metricCategoryFilter === "all"
                       ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   Semua ({unifiedMetricItems.length})
@@ -860,7 +1000,7 @@ function DashboardPage() {
                     "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
                     metricCategoryFilter === "obs"
                       ? "bg-blue-600 text-white shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   OBS ({ca.totalOBS})
@@ -872,7 +1012,7 @@ function DashboardPage() {
                     "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
                     metricCategoryFilter === "buffer"
                       ? "bg-orange-600 text-white shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   Buffer ({ca.totalBuffer})
@@ -880,7 +1020,8 @@ function DashboardPage() {
               </div>
 
               {/* Filter Status (khusus Total Item & Total Stok) */}
-              {(selectedMetricModal === "total_gabungan" || selectedMetricModal === "total_stok") && (
+              {(selectedMetricModal === "total_gabungan" ||
+                selectedMetricModal === "total_stok") && (
                 <div className="flex items-center gap-1 bg-surface p-1 rounded-md border border-border self-start sm:self-auto shrink-0">
                   <button
                     type="button"
@@ -889,7 +1030,7 @@ function DashboardPage() {
                       "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
                       metricStatusFilter === "all"
                         ? "bg-secondary text-secondary-foreground font-semibold"
-                        : "text-muted-foreground hover:text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     Semua
@@ -901,7 +1042,7 @@ function DashboardPage() {
                       "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
                       metricStatusFilter === "safe"
                         ? "bg-emerald-600 text-white font-semibold"
-                        : "text-muted-foreground hover:text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     Aman
@@ -913,7 +1054,7 @@ function DashboardPage() {
                       "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
                       metricStatusFilter === "limit"
                         ? "bg-amber-600 text-white font-semibold"
-                        : "text-muted-foreground hover:text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     Limit
@@ -925,7 +1066,7 @@ function DashboardPage() {
                       "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
                       metricStatusFilter === "empty"
                         ? "bg-red-600 text-white font-semibold"
-                        : "text-muted-foreground hover:text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     Habis
@@ -940,19 +1081,35 @@ function DashboardPage() {
             {filteredModalItems.length === 0 ? (
               <div className="p-10 text-center text-muted-foreground space-y-2">
                 <Package className="size-8 mx-auto text-muted-foreground/50" />
-                <p className="text-sm font-medium">Tidak ada barang yang cocok dengan kriteria pencarian/filter.</p>
+                <p className="text-sm font-medium">
+                  Tidak ada barang yang cocok dengan kriteria pencarian/filter.
+                </p>
               </div>
             ) : (
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-surface-muted border-b border-border z-10">
                   <tr>
-                    <th className="py-2.5 px-3 text-center w-10 text-muted-foreground font-bold">#</th>
-                    <th className="py-2.5 px-3 text-left w-32 font-bold text-muted-foreground">KODE</th>
-                    <th className="py-2.5 px-3 text-left font-bold text-muted-foreground">NAMA BARANG</th>
-                    <th className="py-2.5 px-3 text-center w-28 font-bold text-muted-foreground">KATEGORI</th>
-                    <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">STOK FISIK</th>
-                    <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">MIN. STOK</th>
-                    <th className="py-2.5 px-3 text-center w-28 font-bold text-muted-foreground">STATUS</th>
+                    <th className="py-2.5 px-3 text-center w-10 text-muted-foreground font-bold">
+                      #
+                    </th>
+                    <th className="py-2.5 px-3 text-left w-32 font-bold text-muted-foreground">
+                      KODE
+                    </th>
+                    <th className="py-2.5 px-3 text-left font-bold text-muted-foreground">
+                      NAMA BARANG
+                    </th>
+                    <th className="py-2.5 px-3 text-center w-28 font-bold text-muted-foreground">
+                      KATEGORI
+                    </th>
+                    <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">
+                      STOK FISIK
+                    </th>
+                    <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">
+                      MIN. STOK
+                    </th>
+                    <th className="py-2.5 px-3 text-center w-28 font-bold text-muted-foreground">
+                      STATUS
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -963,7 +1120,9 @@ function DashboardPage() {
 
                     return (
                       <tr key={item.id} className="hover:bg-surface-muted/40 transition-colors">
-                        <td className="py-2.5 px-3 text-center text-muted-foreground font-mono">{idx + 1}</td>
+                        <td className="py-2.5 px-3 text-center text-muted-foreground font-mono">
+                          {idx + 1}
+                        </td>
                         <td className="py-2.5 px-3">
                           {item.code ? (
                             <span className="font-mono text-[11px] font-semibold bg-surface-muted px-1.5 py-0.5 rounded border border-border/70 text-foreground">
@@ -982,14 +1141,17 @@ function DashboardPage() {
                               "text-[10px] font-bold px-2 py-0.5 rounded-full border",
                               item.category === "OBS Sparepart"
                                 ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25"
-                                : "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/25"
+                                : "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/25",
                             )}
                           >
                             {item.category === "OBS Sparepart" ? "OBS" : "Buffer"}
                           </span>
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono font-bold text-foreground">
-                          {item.current_stock.toLocaleString("id-ID")} <span className="text-[10px] font-normal text-muted-foreground">{item.unit}</span>
+                          {item.current_stock.toLocaleString("id-ID")}{" "}
+                          <span className="text-[10px] font-normal text-muted-foreground">
+                            {item.unit}
+                          </span>
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">
                           {item.min_stock.toLocaleString("id-ID")} {item.unit}
@@ -1025,7 +1187,8 @@ function DashboardPage() {
           {/* Footer Modal */}
           <DialogFooter className="p-3.5 px-5 border-t border-border bg-surface-muted/30 flex flex-col sm:flex-row items-center justify-between gap-2">
             <div className="text-xs text-muted-foreground">
-              Menampilkan <span className="font-bold text-foreground">{filteredModalItems.length}</span> dari{" "}
+              Menampilkan{" "}
+              <span className="font-bold text-foreground">{filteredModalItems.length}</span> dari{" "}
               <span className="font-bold text-foreground">{baseCount}</span> barang
             </div>
             <div className="flex items-center gap-2">
@@ -1055,59 +1218,68 @@ function DashboardPage() {
   };
 
   // Hitung total kuantitas & frekuensi mutasi keluar (OUT) per barang dari riwayat mutasi (semua & hari ini)
-  const { productOutMap, productOutTodayMap, productOutFreqMap, productOutFreqTodayMap } = useMemo(() => {
-    const mapAll = new Map<string, number>();
-    const mapToday = new Map<string, number>();
-    const freqAll = new Map<string, number>();
-    const freqToday = new Map<string, number>();
+  const { productOutMap, productOutTodayMap, productOutFreqMap, productOutFreqTodayMap } =
+    useMemo(() => {
+      const mapAll = new Map<string, number>();
+      const mapToday = new Map<string, number>();
+      const freqAll = new Map<string, number>();
+      const freqToday = new Map<string, number>();
 
-    const now = new Date();
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
-    txData.forEach((t) => {
-      if (t.tx_type === "OUT") {
-        const qty = Number(t.quantity) || 0;
-        const txDateStr = t.created_at ? t.created_at.slice(0, 10) : "";
-        const isToday = txDateStr === todayStr;
+      txData.forEach((t) => {
+        if (t.tx_type === "OUT") {
+          const qty = Number(t.quantity) || 0;
+          const txDateStr = t.created_at ? t.created_at.slice(0, 10) : "";
+          const isToday = txDateStr === todayStr;
 
-        if (t.product_id) {
-          mapAll.set(t.product_id, (mapAll.get(t.product_id) || 0) + qty);
-          freqAll.set(t.product_id, (freqAll.get(t.product_id) || 0) + 1);
-          if (isToday) {
-            mapToday.set(t.product_id, (mapToday.get(t.product_id) || 0) + qty);
-            freqToday.set(t.product_id, (freqToday.get(t.product_id) || 0) + 1);
+          if (t.product_id) {
+            mapAll.set(t.product_id, (mapAll.get(t.product_id) || 0) + qty);
+            freqAll.set(t.product_id, (freqAll.get(t.product_id) || 0) + 1);
+            if (isToday) {
+              mapToday.set(t.product_id, (mapToday.get(t.product_id) || 0) + qty);
+              freqToday.set(t.product_id, (freqToday.get(t.product_id) || 0) + 1);
+            }
+          }
+          if (t.product_name) {
+            const nameKey = t.product_name.trim().toLowerCase();
+            mapAll.set(nameKey, (mapAll.get(nameKey) || 0) + qty);
+            freqAll.set(nameKey, (freqAll.get(nameKey) || 0) + 1);
+            if (isToday) {
+              mapToday.set(nameKey, (mapToday.get(nameKey) || 0) + qty);
+              freqToday.set(nameKey, (freqToday.get(nameKey) || 0) + 1);
+            }
           }
         }
-        if (t.product_name) {
-          const nameKey = t.product_name.trim().toLowerCase();
-          mapAll.set(nameKey, (mapAll.get(nameKey) || 0) + qty);
-          freqAll.set(nameKey, (freqAll.get(nameKey) || 0) + 1);
-          if (isToday) {
-            mapToday.set(nameKey, (mapToday.get(nameKey) || 0) + qty);
-            freqToday.set(nameKey, (freqToday.get(nameKey) || 0) + 1);
-          }
-        }
-      }
-    });
-    return {
-      productOutMap: mapAll,
-      productOutTodayMap: mapToday,
-      productOutFreqMap: freqAll,
-      productOutFreqTodayMap: freqToday,
-    };
-  }, [txData]);
+      });
+      return {
+        productOutMap: mapAll,
+        productOutTodayMap: mapToday,
+        productOutFreqMap: freqAll,
+        productOutFreqTodayMap: freqToday,
+      };
+    }, [txData]);
 
   // Diagram Inventory: Top Barang yang Paling Sering Keluar (Berdasarkan Frekuensi Transaksi Mutasi Keluar/OUT)
   const inventoryChartData = activeProducts
     .slice()
     .sort((a, b) => {
-      const freqA = productOutFreqMap.get(a.id) ?? (a.name ? productOutFreqMap.get(a.name.trim().toLowerCase()) ?? 0 : 0);
-      const freqB = productOutFreqMap.get(b.id) ?? (b.name ? productOutFreqMap.get(b.name.trim().toLowerCase()) ?? 0 : 0);
+      const freqA =
+        productOutFreqMap.get(a.id) ??
+        (a.name ? (productOutFreqMap.get(a.name.trim().toLowerCase()) ?? 0) : 0);
+      const freqB =
+        productOutFreqMap.get(b.id) ??
+        (b.name ? (productOutFreqMap.get(b.name.trim().toLowerCase()) ?? 0) : 0);
       if (freqB !== freqA) {
         return freqB - freqA;
       }
-      const outA = productOutMap.get(a.id) ?? (a.name ? productOutMap.get(a.name.trim().toLowerCase()) ?? 0 : 0);
-      const outB = productOutMap.get(b.id) ?? (b.name ? productOutMap.get(b.name.trim().toLowerCase()) ?? 0 : 0);
+      const outA =
+        productOutMap.get(a.id) ??
+        (a.name ? (productOutMap.get(a.name.trim().toLowerCase()) ?? 0) : 0);
+      const outB =
+        productOutMap.get(b.id) ??
+        (b.name ? (productOutMap.get(b.name.trim().toLowerCase()) ?? 0) : 0);
       if (outB !== outA) {
         return outB - outA;
       }
@@ -1120,10 +1292,18 @@ function DashboardPage() {
       const min = p.min_stock ?? 10;
       const isZero = current <= 0;
       const isLow = current <= min;
-      const frequency = productOutFreqMap.get(p.id) ?? (p.name ? productOutFreqMap.get(p.name.trim().toLowerCase()) ?? 0 : 0);
-      const freqToday = productOutFreqTodayMap.get(p.id) ?? (p.name ? productOutFreqTodayMap.get(p.name.trim().toLowerCase()) ?? 0 : 0);
-      const totalQtyOut = productOutMap.get(p.id) ?? (p.name ? productOutMap.get(p.name.trim().toLowerCase()) ?? 0 : 0);
-      const outToday = productOutTodayMap.get(p.id) ?? (p.name ? productOutTodayMap.get(p.name.trim().toLowerCase()) ?? 0 : 0);
+      const frequency =
+        productOutFreqMap.get(p.id) ??
+        (p.name ? (productOutFreqMap.get(p.name.trim().toLowerCase()) ?? 0) : 0);
+      const freqToday =
+        productOutFreqTodayMap.get(p.id) ??
+        (p.name ? (productOutFreqTodayMap.get(p.name.trim().toLowerCase()) ?? 0) : 0);
+      const totalQtyOut =
+        productOutMap.get(p.id) ??
+        (p.name ? (productOutMap.get(p.name.trim().toLowerCase()) ?? 0) : 0);
+      const outToday =
+        productOutTodayMap.get(p.id) ??
+        (p.name ? (productOutTodayMap.get(p.name.trim().toLowerCase()) ?? 0) : 0);
       return {
         name: shortName,
         fullName: p.name,
@@ -1154,7 +1334,8 @@ function DashboardPage() {
                 </h3>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Menampilkan sparepart yang paling sering muncul dalam catatan barang keluar berdasarkan frekuensi transaksi.
+                Menampilkan sparepart yang paling sering muncul dalam catatan barang keluar
+                berdasarkan frekuensi transaksi.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -1180,7 +1361,12 @@ function DashboardPage() {
               data={inventoryChartData}
               margin={{ top: 10, right: 15, left: -15, bottom: 35 }}
             >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.6} />
+              <CartesianGrid
+                strokeDasharray="3 3"
+                vertical={false}
+                stroke="#e2e8f0"
+                opacity={0.6}
+              />
               <XAxis
                 dataKey="name"
                 tick={{ fontSize: 10, fill: "#64748b" }}
@@ -1201,7 +1387,9 @@ function DashboardPage() {
                     return (
                       <div className="rounded border border-border bg-surface p-2.5 shadow-md text-xs space-y-1 z-50">
                         <p className="font-bold text-foreground text-xs">{data.fullName}</p>
-                        <p className="text-[10px] text-muted-foreground font-mono">SKU: {data.code}</p>
+                        <p className="text-[10px] text-muted-foreground font-mono">
+                          SKU: {data.code}
+                        </p>
 
                         <div className="flex items-center gap-2 pt-1 border-t border-border mt-1">
                           <span className="text-muted-foreground">Frekuensi Keluar:</span>
@@ -1311,22 +1499,28 @@ function DashboardPage() {
   }, []);
 
   // Fungsi Cetak & Unduh PDF Bukti Mutasi Barang Resmi (1 Bon / Batch)
-  function downloadTransactionPDF(tx: DashboardGroupedTx | {
-    transaction_number: string;
-    tx_type: "IN" | "OUT" | "ADJUSTMENT";
-    product_name?: string;
-    quantity?: number;
-    unit?: string;
-    items?: Array<{ product_name: string; quantity: number; unit: string }>;
-    batch_number?: string | null;
-    reference_no?: string | null;
-    supplier_or_dest?: string | null;
-    notes?: string | null;
-    created_by_name?: string | null;
-    created_at: string;
-  }) {
+  function downloadTransactionPDF(
+    tx:
+      | DashboardGroupedTx
+      | {
+          transaction_number: string;
+          tx_type: "IN" | "OUT" | "ADJUSTMENT";
+          product_name?: string;
+          quantity?: number;
+          unit?: string;
+          items?: Array<{ product_name: string; quantity: number; unit: string }>;
+          batch_number?: string | null;
+          reference_no?: string | null;
+          supplier_or_dest?: string | null;
+          notes?: string | null;
+          created_by_name?: string | null;
+          created_at: string;
+        },
+  ) {
     const isMasuk = tx.tx_type === "IN";
-    const titleType = isMasuk ? "BUKTI PENERIMAAN BARANG (INBOUND)" : "BUKTI PENGELUARAN BARANG (OUTBOUND)";
+    const titleType = isMasuk
+      ? "BUKTI PENERIMAAN BARANG (INBOUND)"
+      : "BUKTI PENGELUARAN BARANG (OUTBOUND)";
     const colorHeader = isMasuk ? "#059669" : "#e11d48";
     const dateFormatted = formatDate(tx.created_at);
 
@@ -1338,13 +1532,16 @@ function DashboardPage() {
       return;
     }
 
-    const itemsToRender = ("items" in tx && tx.items && tx.items.length > 0)
-      ? tx.items
-      : [{
-        product_name: (tx as any).product_name || "Produk",
-        quantity: (tx as any).quantity || 0,
-        unit: (tx as any).unit || "kg",
-      }];
+    const itemsToRender =
+      "items" in tx && tx.items && tx.items.length > 0
+        ? tx.items
+        : [
+            {
+              product_name: (tx as any).product_name || "Produk",
+              quantity: (tx as any).quantity || 0,
+              unit: (tx as any).unit || "kg",
+            },
+          ];
 
     const itemRowsHtml = itemsToRender
       .map(
@@ -1907,13 +2104,18 @@ function DashboardPage() {
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">DASHBOARD OVERVIEW</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+              DASHBOARD OVERVIEW
+            </h1>
           </div>
           <p className="mt-1 text-sm text-muted-foreground font-medium">
-            {userRole === "admin" && "Ringkasan statistik penuh seluruh departemen, manajemen master data, dan kontrol sistem."}
+            {userRole === "admin" &&
+              "Ringkasan statistik penuh seluruh departemen, manajemen master data, dan kontrol sistem."}
             {userRole === "qc_field" && "Ringkasan Aktivitas"}
-            {userRole === "admin_process" && "Overview tugas pemeriksaan checklist harian operasional lini produksi."}
-            {userRole === "prod_process_uh" && "Overview inventaris dan mutasi stok barang/sparepart."}
+            {userRole === "admin_process" &&
+              "Overview tugas pemeriksaan checklist harian operasional lini produksi."}
+            {userRole === "prod_process_uh" &&
+              "Overview inventaris dan mutasi stok barang/sparepart."}
           </p>
         </div>
 
@@ -1938,7 +2140,10 @@ function DashboardPage() {
                 </span>
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0 shadow-lg bg-surface border border-border" align="end">
+            <PopoverContent
+              className="w-auto p-0 shadow-lg bg-surface border border-border"
+              align="end"
+            >
               <Calendar
                 mode="single"
                 selected={selectedDate}
@@ -1984,7 +2189,9 @@ function DashboardPage() {
                   <tr className="border-b border-border bg-surface-muted/50">
                     <th className="label-caps px-4 py-2.5 text-left w-36">No. Transaksi</th>
                     <th className="label-caps px-4 py-2.5 text-left w-28">Tipe Mutasi</th>
-                    <th className="label-caps px-4 py-2.5 text-left min-w-[380px] md:min-w-[480px]">Nama Sparepart & Jumlah</th>
+                    <th className="label-caps px-4 py-2.5 text-left min-w-[380px] md:min-w-[480px]">
+                      Nama Sparepart & Jumlah
+                    </th>
                     <th className="label-caps px-4 py-2.5 text-left w-36">Batch / Ref No</th>
                     <th className="label-caps px-4 py-2.5 text-left w-40">Pihak / Tujuan</th>
                     <th className="label-caps px-4 py-2.5 text-left w-36">Waktu & Petugas</th>
@@ -2032,7 +2239,7 @@ function DashboardPage() {
                                   "font-mono font-bold text-xs shrink-0 px-1.5 py-0",
                                   tx.tx_type === "IN"
                                     ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25"
-                                    : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/25"
+                                    : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/25",
                                 )}
                               >
                                 {tx.tx_type === "IN" ? "+" : "-"}
@@ -2056,7 +2263,9 @@ function DashboardPage() {
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">
                         <div>{formatDate(tx.created_at)}</div>
-                        <div className="font-medium text-foreground">{tx.created_by_name || "Petugas"}</div>
+                        <div className="font-medium text-foreground">
+                          {tx.created_by_name || "Petugas"}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
@@ -2144,7 +2353,9 @@ function DashboardPage() {
                     <th className="px-3 py-3 whitespace-nowrap text-white w-28 text-center">
                       (Tipe Mutasi)
                     </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[120px] text-center">KODE</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[120px] text-center">
+                      KODE
+                    </th>
                     <th className="px-3 py-3 whitespace-nowrap text-white min-w-[220px] text-center">
                       MATERIAL
                     </th>
@@ -2157,8 +2368,12 @@ function DashboardPage() {
                     <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
                       Alasan Permintaan Barang
                     </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[130px] text-center">No. Ref</th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">User</th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[130px] text-center">
+                      No. Ref
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
+                      User
+                    </th>
                     <th className="px-3 py-3 text-center w-36 font-semibold">Aksi & Dokumen</th>
                   </tr>
                 </thead>
@@ -2185,7 +2400,10 @@ function DashboardPage() {
                           <div className="flex items-center gap-1.5 font-medium text-foreground text-xs whitespace-nowrap">
                             <span>{formatDate(tx.created_at)}</span>
                             {isToday && (
-                              <span className="size-1.5 rounded-full bg-blue-500 inline-block shrink-0" title="Hari ini" />
+                              <span
+                                className="size-1.5 rounded-full bg-blue-500 inline-block shrink-0"
+                                title="Hari ini"
+                              />
                             )}
                           </div>
                         </td>
@@ -2213,9 +2431,16 @@ function DashboardPage() {
                         <td className="px-3 py-3 font-mono text-xs">
                           <div className="space-y-1.5">
                             {tx.items.map((it, idx) => {
-                              const code = productCodeMap.get(it.product_id) || (it.product_name ? productCodeMap.get(it.product_name.trim().toLowerCase()) : undefined);
+                              const code =
+                                productCodeMap.get(it.product_id) ||
+                                (it.product_name
+                                  ? productCodeMap.get(it.product_name.trim().toLowerCase())
+                                  : undefined);
                               return (
-                                <div key={it.id || idx} className="py-0.5 font-medium text-foreground">
+                                <div
+                                  key={it.id || idx}
+                                  className="py-0.5 font-medium text-foreground"
+                                >
                                   {code || "—"}
                                 </div>
                               );
@@ -2227,14 +2452,16 @@ function DashboardPage() {
                         <td className="px-3 py-3">
                           <div className="space-y-1.5">
                             {tx.items.map((it, idx) => (
-                              <div
-                                key={it.id || idx}
-                                className="py-0.5"
-                              >
+                              <div key={it.id || idx} className="py-0.5">
                                 {tx.items.length > 1 && (
-                                  <span className="text-muted-foreground mr-1 text-[11px] shrink-0">{idx + 1}.</span>
+                                  <span className="text-muted-foreground mr-1 text-[11px] shrink-0">
+                                    {idx + 1}.
+                                  </span>
                                 )}
-                                <span className="font-medium text-foreground leading-snug truncate" title={it.product_name}>
+                                <span
+                                  className="font-medium text-foreground leading-snug truncate"
+                                  title={it.product_name}
+                                >
                                   {it.product_name}
                                 </span>
                               </div>
@@ -2252,10 +2479,11 @@ function DashboardPage() {
                                     "font-mono font-bold text-xs inline-block",
                                     isMasuk
                                       ? "text-emerald-600 dark:text-emerald-400"
-                                      : "text-rose-600 dark:text-rose-400"
+                                      : "text-rose-600 dark:text-rose-400",
                                   )}
                                 >
-                                  {isMasuk ? "+" : "-"}{it.quantity.toLocaleString("id-ID")} {it.unit || "pcs"}
+                                  {isMasuk ? "+" : "-"}
+                                  {it.quantity.toLocaleString("id-ID")} {it.unit || "pcs"}
                                 </span>
                               </div>
                             ))}
@@ -2363,8 +2591,18 @@ function DashboardPage() {
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <StatCard label="Form Diajukan" value={all.length} hint="Total input operator" />
-            <StatCard label="Menunggu Review" value={pending} accent="warning" hint="Sedang di-audit" />
-            <StatCard label="Form Disetujui" value={approved} accent="success" hint="Checklist valid" />
+            <StatCard
+              label="Menunggu Review"
+              value={pending}
+              accent="warning"
+              hint="Sedang di-audit"
+            />
+            <StatCard
+              label="Form Disetujui"
+              value={approved}
+              accent="success"
+              hint="Checklist valid"
+            />
           </div>
 
           <Panel title="Checklist Terakhir Departemen Produksi" bodyClassName="p-0">
@@ -2384,7 +2622,9 @@ function DashboardPage() {
                     <td className="px-5 py-3 font-mono text-xs uppercase">{a.kind}</td>
                     <td className="px-5 py-3 font-medium">{a.label}</td>
                     <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{a.date}</td>
-                    <td className="px-5 py-3"><StatusBadge status={a.status as never} /></td>
+                    <td className="px-5 py-3">
+                      <StatusBadge status={a.status as never} />
+                    </td>
                     <td className="px-5 py-3 text-right">
                       <Button
                         size="sm"
@@ -2439,7 +2679,9 @@ function DashboardPage() {
                     <th className="px-4 py-3 w-36 font-bold text-center">Tanggal</th>
                     <th className="px-3 py-3 w-32 whitespace-nowrap font-bold text-center">
                       <div className="font-bold">Tipe Mutasi</div>
-                      <div className="text-[10px] text-blue-100 font-semibold normal-case">(In/Out)</div>
+                      <div className="text-[10px] text-blue-100 font-semibold normal-case">
+                        (In/Out)
+                      </div>
                     </th>
                     <th className="px-3 py-3 w-32 font-bold text-center">KODE</th>
                     <th className="px-4 py-3 min-w-[220px] font-bold text-center">MATERIAL</th>
@@ -2472,7 +2714,10 @@ function DashboardPage() {
                           <div className="flex items-center gap-1.5 font-medium text-foreground text-xs whitespace-nowrap">
                             <span>{formatDate(tx.created_at)}</span>
                             {isToday && (
-                              <span className="size-1.5 rounded-full bg-blue-500 inline-block shrink-0" title="Hari ini" />
+                              <span
+                                className="size-1.5 rounded-full bg-blue-500 inline-block shrink-0"
+                                title="Hari ini"
+                              />
                             )}
                           </div>
                         </td>
@@ -2500,15 +2745,24 @@ function DashboardPage() {
                         <td className="px-3 py-3">
                           <div className="space-y-1">
                             {tx.items.map((it, idx) => {
-                              const code = productCodeMap.get(it.product_id) || (it.product_name ? productCodeMap.get(it.product_name.trim().toLowerCase()) : undefined);
+                              const code =
+                                productCodeMap.get(it.product_id) ||
+                                (it.product_name
+                                  ? productCodeMap.get(it.product_name.trim().toLowerCase())
+                                  : undefined);
                               return (
-                                <div key={it.id || idx} className="h-7 flex items-center justify-center">
+                                <div
+                                  key={it.id || idx}
+                                  className="h-7 flex items-center justify-center"
+                                >
                                   {code ? (
                                     <span className="font-mono text-[11px] font-semibold bg-surface-muted px-1.5 py-0.5 rounded border border-border/60 text-foreground">
                                       {code}
                                     </span>
                                   ) : (
-                                    <span className="font-mono text-muted-foreground text-xs">—</span>
+                                    <span className="font-mono text-muted-foreground text-xs">
+                                      —
+                                    </span>
                                   )}
                                 </div>
                               );
@@ -2526,7 +2780,9 @@ function DashboardPage() {
                               >
                                 <div className="flex items-center gap-1 truncate max-w-[220px]">
                                   {tx.items.length > 1 && (
-                                    <span className="text-muted-foreground mr-1 text-[11px] shrink-0">{idx + 1}.</span>
+                                    <span className="text-muted-foreground mr-1 text-[11px] shrink-0">
+                                      {idx + 1}.
+                                    </span>
                                   )}
                                   <span className="truncate" title={it.product_name}>
                                     {it.product_name}
@@ -2537,10 +2793,11 @@ function DashboardPage() {
                                     "font-mono font-bold text-[11px] px-1.5 py-0.5 rounded shrink-0",
                                     isMasuk
                                       ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-                                      : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
+                                      : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20",
                                   )}
                                 >
-                                  {isMasuk ? "+" : "-"}{it.quantity} {it.unit || "pcs"}
+                                  {isMasuk ? "+" : "-"}
+                                  {it.quantity} {it.unit || "pcs"}
                                 </span>
                               </div>
                             ))}
@@ -2675,28 +2932,38 @@ function DashboardPage() {
                       {selectedTx.tx_type === "IN" ? "Tanggal Terima:" : "Tanggal Keluar:"}
                     </span>{" "}
                     <span className="font-mono font-medium text-foreground">
-                      {selectedTx.batch_number ? formatDate(selectedTx.batch_number) : formatDate(selectedTx.created_at)}
+                      {selectedTx.batch_number
+                        ? formatDate(selectedTx.batch_number)
+                        : formatDate(selectedTx.created_at)}
                     </span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">No. Referensi:</span>{" "}
-                    <span className="font-mono font-medium text-foreground">{selectedTx.reference_no || "—"}</span>
+                    <span className="font-mono font-medium text-foreground">
+                      {selectedTx.reference_no || "—"}
+                    </span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">
                       {selectedTx.tx_type === "IN" ? "Nama Vendor:" : "Tujuan / Pemohon:"}
                     </span>{" "}
-                    <span className="font-medium text-foreground">{selectedTx.supplier_or_dest || "—"}</span>
+                    <span className="font-medium text-foreground">
+                      {selectedTx.supplier_or_dest || "—"}
+                    </span>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Petugas:</span>{" "}
-                    <span className="font-medium text-foreground">{selectedTx.created_by_name || "Petugas"}</span>
+                    <span className="font-medium text-foreground">
+                      {selectedTx.created_by_name || "Petugas"}
+                    </span>
                   </div>
                 </div>
 
                 <div className="pt-2 border-t border-border/60 text-xs">
                   <span className="text-muted-foreground">Waktu Pencatatan:</span>{" "}
-                  <span className="font-medium text-foreground">{formatDate(selectedTx.created_at)}</span>
+                  <span className="font-medium text-foreground">
+                    {formatDate(selectedTx.created_at)}
+                  </span>
                 </div>
 
                 <div className="pt-2 border-t border-border/60 space-y-2">
@@ -2708,12 +2975,12 @@ function DashboardPage() {
                     {(selectedTx.items && selectedTx.items.length > 0
                       ? selectedTx.items
                       : [
-                        {
-                          product_name: selectedTx.product_name || "Produk",
-                          quantity: selectedTx.quantity || 0,
-                          unit: selectedTx.unit || "kg",
-                        },
-                      ]
+                          {
+                            product_name: selectedTx.product_name || "Produk",
+                            quantity: selectedTx.quantity || 0,
+                            unit: selectedTx.unit || "kg",
+                          },
+                        ]
                     ).map((it: any, idx: number) => (
                       <div
                         key={idx}
@@ -2725,7 +2992,9 @@ function DashboardPage() {
                         <span
                           className={cn(
                             "font-mono font-bold shrink-0",
-                            selectedTx.tx_type === "IN" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
+                            selectedTx.tx_type === "IN"
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-rose-600 dark:text-rose-400",
                           )}
                         >
                           {selectedTx.tx_type === "IN" ? "+" : "-"}
@@ -2738,14 +3007,15 @@ function DashboardPage() {
 
                 {selectedTx.notes && (
                   <div className="pt-2 border-t border-border/60 text-xs">
-                    <span className="text-muted-foreground block mb-0.5">Petugas Sparepart Shift 1/2/3:</span>
+                    <span className="text-muted-foreground block mb-0.5">
+                      Petugas Sparepart Shift 1/2/3:
+                    </span>
                     <p className="bg-surface p-2 rounded border border-border text-foreground">
                       {selectedTx.notes}
                     </p>
                   </div>
                 )}
               </div>
-
             </div>
           )}
 
