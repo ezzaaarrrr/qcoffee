@@ -135,7 +135,13 @@ function DashboardPage() {
 
   // State untuk Interaktivitas Modal Detail 4 Kotak Ringkasan Metrik
   const [selectedMetricModal, setSelectedMetricModal] = useState<
-    "total_gabungan" | "total_stok" | "stok_aman" | "perlu_perhatian" | null
+    | "total_gabungan"
+    | "total_stok"
+    | "stok_aman"
+    | "perlu_perhatian"
+    | "donut_obs"
+    | "donut_all"
+    | null
   >(null);
   const [metricSearchQuery, setMetricSearchQuery] = useState("");
   const [metricCategoryFilter, setMetricCategoryFilter] = useState<"all" | "obs" | "buffer">("all");
@@ -391,6 +397,12 @@ function DashboardPage() {
       base = base.filter((it) => it.status === "safe");
     } else if (selectedMetricModal === "perlu_perhatian") {
       base = base.filter((it) => it.status === "limit" || it.status === "empty");
+    } else if (selectedMetricModal === "donut_obs") {
+      // Tampilkan barang OBS Sparepart berstatus Aman (sesuai persentase stok aman)
+      base = base.filter((it) => it.category === "OBS Sparepart" && it.status === "safe");
+    } else if (selectedMetricModal === "donut_all") {
+      // Tampilkan seluruh barang (OBS + Buffer) berstatus Aman (sesuai persentase stok aman)
+      base = base.filter((it) => it.status === "safe");
     }
 
     // Filter Kategori (Semua / OBS / Buffer)
@@ -422,6 +434,67 @@ function DashboardPage() {
     metricSearchQuery,
   ]);
 
+  // Ketentuan Grade & Warna OBS Sparepart & All Item Barang:
+  // A = ≥ 92% Hijau
+  // B = ≥ 90% Biru
+  // C = ≥ 88% Kuning
+  // D = ≥ 85% Oren
+  // E = < 85% Merah
+  const GRADE_THRESHOLDS = [
+    { grade: "A", range: "≥ 92%", colorName: "Hijau", dotClass: "bg-[#03ff28]" },
+    { grade: "B", range: "≥ 90%", colorName: "Biru", dotClass: "bg-[#37deff]" },
+    { grade: "C", range: "≥ 88%", colorName: "Kuning", dotClass: "bg-[#ffc929]" },
+    { grade: "D", range: "≥ 85%", colorName: "Oren", dotClass: "bg-[#ff9100]" },
+    { grade: "E", range: "< 85%", colorName: "Merah", dotClass: "bg-[#ef4444]" },
+  ];
+
+  const getGradeInfo = (pct: number) => {
+    if (pct >= 92.0) {
+      return {
+        grade: "A",
+        badgeText: "GRADE A",
+        color: "#03ff28ffff", // Hijau
+        badgeClass:
+          "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+        dotClass: "bg-[#03ff28]",
+      };
+    }
+    if (pct >= 90.0) {
+      return {
+        grade: "B",
+        badgeText: "GRADE B",
+        color: "#37deffff", // Biru
+        badgeClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
+        dotClass: "bg-[#37deff]",
+      };
+    }
+    if (pct >= 88.0) {
+      return {
+        grade: "C",
+        badgeText: "GRADE C",
+        color: "#ffc929ff", // Kuning
+        badgeClass: "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/30",
+        dotClass: "bg-[#ffc929]",
+      };
+    }
+    if (pct >= 85.0) {
+      return {
+        grade: "D",
+        badgeText: "GRADE D",
+        color: "#ff9100ff", // Oren
+        badgeClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30",
+        dotClass: "bg-[#ff9100]",
+      };
+    }
+    return {
+      grade: "E",
+      badgeText: "GRADE E",
+      color: "#ef4444", // Merah
+      badgeClass: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30",
+      dotClass: "bg-red-500",
+    };
+  };
+
   // Helper render Donut Chart SVG untuk Perbandingan Status Stok
   const renderDonutSvg = ({
     safePctVal,
@@ -432,6 +505,7 @@ function DashboardPage() {
     badgeClass,
     subText,
     safeColor = "#10b981",
+    onClick,
   }: {
     safePctVal: number;
     limitPctVal: number;
@@ -441,6 +515,7 @@ function DashboardPage() {
     badgeClass: string;
     subText?: string;
     safeColor?: string;
+    onClick?: () => void;
   }) => {
     const size = 104;
     const strokeWidth = 13;
@@ -460,17 +535,25 @@ function DashboardPage() {
     const limitOffset = -safeDash;
     const zeroOffset = -(safeDash + limitDash);
     const limitColor =
-      safeColor === "#eab308"
-        ? "#f97316"
-        : safeColor === "#f97316"
-          ? "#eab308"
+      safeColor === "#eab308" || safeColor === "#ffc929ff" || safeColor === "#d0ff16ffff"
+        ? "#ff9100ff"
+        : safeColor === "#ff9100ff"
+          ? "#ffc929ff"
           : safeColor === "#ef4444"
             ? "#f59e0b"
             : "#f59e0b";
     const criticalColor = safeColor === "#ef4444" ? "#991b1b" : "#ef4444";
 
     return (
-      <div className="relative flex items-center justify-center shrink-0">
+      <div
+        onClick={onClick}
+        className={cn(
+          "relative flex items-center justify-center shrink-0 select-none",
+          onClick &&
+            "cursor-pointer group hover:scale-105 active:scale-95 transition-transform duration-200",
+        )}
+        title={onClick ? "Klik diagram untuk melihat daftar item pada persentase ini" : undefined}
+      >
         <svg width={size} height={size} viewBox="0 0 100 100" className="transform -rotate-90">
           <circle
             cx="50"
@@ -550,76 +633,8 @@ function DashboardPage() {
   const renderStockAnalysisCard = () => {
     const ca = combinedAnalysis;
     const allSafePctExact = ca.totalGabungan > 0 ? (ca.gabunganAman / ca.totalGabungan) * 100 : 0;
-    const isAllItemHit = allSafePctExact >= 95.0;
-
-    // Ketentuan Grade & Warna OBS Sparepart:
-    // A = ≥ 92% Hijau
-    // B = ≥ 90% Biru
-    // C = ≥ 88% Kuning
-    // D = ≥ 85% Oren
-    // E = < 85% Merah
-    const getObsGrade = (pct: number) => {
-      if (pct >= 92.0) {
-        return {
-          grade: "A",
-          badgeText: "GRADE A",
-          color: "#03ff28ffff", // Hijau
-          badgeClass:
-            "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
-          dotClass: "bg-emerald-500",
-          limitDotClass: "bg-amber-500",
-        };
-      }
-      if (pct >= 90.0) {
-        return {
-          grade: "B",
-          badgeText: "GRADE B",
-          color: "#37deffff", // Biru
-          badgeClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
-          dotClass: "bg-blue-500",
-          limitDotClass: "bg-amber-500",
-        };
-      }
-      if (pct >= 88.0) {
-        return {
-          grade: "C",
-          badgeText: "GRADE C",
-          color: "#d0ff16ffff", // Kuning
-          badgeClass: "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/30",
-          dotClass: "bg-yellow-500",
-          limitDotClass: "bg-orange-500",
-        };
-      }
-      if (pct >= 85.0) {
-        return {
-          grade: "D",
-          badgeText: "GRADE D",
-          color: "#ff9100ff", // Oren
-          badgeClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30",
-          dotClass: "bg-orange-500",
-          limitDotClass: "bg-yellow-500",
-        };
-      }
-      return {
-        grade: "E",
-        badgeText: "GRADE E",
-        color: "#ef4444", // Merah
-        badgeClass: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30",
-        dotClass: "bg-red-500",
-        limitDotClass: "bg-amber-500",
-      };
-    };
-
-    const obsGrade = getObsGrade(kpiExactPct);
-
-    // Ketentuan All Item Barang: jika < 95% berubah menjadi warna Kuning
-    const allItemColor = isAllItemHit ? "rgba(12, 253, 68, 1)" : "rgba(255, 201, 41, 1)"; // Hijau (≥95%) atau Kuning (<95%)
-    const allItemBadgeClass = isAllItemHit
-      ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-      : "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/30";
-    const allItemBadgeText = isAllItemHit ? "AMAN" : "PERHATIAN";
-    const allItemDotClass = isAllItemHit ? "bg-emerald-500" : "bg-yellow-500";
-    const allItemLimitDotClass = isAllItemHit ? "bg-amber-500" : "bg-orange-500";
+    const obsGrade = getGradeInfo(kpiExactPct);
+    const allItemGrade = getGradeInfo(allSafePctExact);
 
     return (
       <div
@@ -630,14 +645,19 @@ function DashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
           {/* Sisi Kiri: OBS Sparepart */}
           <div className="border border-border/80 rounded-xl p-4 flex flex-col justify-between space-y-3 bg-slate-50/70 shadow-2xs">
-            <div className="flex items-center gap-1.5 border-b border-border/80 pb-2">
-              <Package className="size-3.5 text-blue-600 shrink-0" />
-              <span className="text-xs font-bold uppercase tracking-wider text-foreground">
-                OBS Sparepart
+            <div className="flex items-center justify-between border-b border-border/80 pb-2">
+              <div className="flex items-center gap-1.5">
+                <Package className="size-3.5 text-blue-600 shrink-0" />
+                <span className="text-xs font-bold uppercase tracking-wider text-foreground">
+                  OBS Sparepart
+                </span>
+              </div>
+              <span className="text-[10px] text-muted-foreground font-medium">
+                {nonLimitProductsCount} dari {totalActiveProducts} item
               </span>
             </div>
 
-            <div className="flex items-center justify-center py-2">
+            <div className="flex flex-col items-center justify-center py-1">
               {renderDonutSvg({
                 safePctVal: safePct,
                 limitPctVal: limitOnlyPct,
@@ -646,83 +666,140 @@ function DashboardPage() {
                 centerBadge: obsGrade.badgeText,
                 badgeClass: obsGrade.badgeClass,
                 safeColor: obsGrade.color,
+                subText: "Klik Lihat Item",
+                onClick: () => {
+                  setSelectedMetricModal("donut_obs");
+                  setMetricCategoryFilter("obs");
+                  setMetricStatusFilter("safe");
+                },
               })}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMetricModal("donut_obs");
+                  setMetricCategoryFilter("obs");
+                  setMetricStatusFilter("safe");
+                }}
+                className="mt-1 text-[10px] text-muted-foreground/80 hover:text-primary transition-colors underline underline-offset-2 cursor-pointer"
+              >
+                Klik diagram untuk lihat item
+              </button>
             </div>
 
-            <div className="space-y-2 py-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className={cn("size-2 rounded-full", obsGrade.dotClass)} /> Aman
-                </span>
-                <span className="font-mono font-bold text-foreground">
-                  {nonLimitProductsCount} ({safePct}%)
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className={cn("size-2 rounded-full", obsGrade.limitDotClass)} /> Limit
-                </span>
-                <span className="font-mono font-bold text-foreground">
-                  {limitOnlyCount} ({limitOnlyPct}%)
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className="size-2 rounded-full bg-rose-500" /> Critical / Habis
-                </span>
-                <span className="font-mono font-bold text-foreground">
-                  {zeroProductsCount} ({zeroPct}%)
-                </span>
-              </div>
+            {/* Keterangan Grade A - E OBS Sparepart */}
+            <div className="space-y-1.5 py-1 text-xs">
+              {GRADE_THRESHOLDS.map((gt) => {
+                const isCurrent = gt.grade === obsGrade.grade;
+                return (
+                  <div
+                    key={gt.grade}
+                    onClick={() => {
+                      setSelectedMetricModal("donut_obs");
+                      setMetricCategoryFilter("obs");
+                      setMetricStatusFilter("safe");
+                    }}
+                    className={cn(
+                      "flex items-center justify-between px-2.5 py-1 rounded-md transition-all cursor-pointer",
+                      isCurrent
+                        ? "bg-white dark:bg-slate-800 font-bold text-foreground border border-border shadow-xs ring-1 ring-border/80"
+                        : "text-muted-foreground hover:bg-slate-200/50 dark:hover:bg-slate-800/50 hover:text-foreground",
+                    )}
+                    title="Klik untuk melihat daftar item pada persentase ini"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className={cn("size-2 rounded-full shrink-0", gt.dotClass)} />
+                      <span>
+                        {gt.grade} = {gt.range} {gt.colorName}
+                      </span>
+                    </span>
+                    {isCurrent && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-foreground border border-border">
+                        {kpiExactPct.toFixed(1)}% ({nonLimitProductsCount} item)
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           {/* Sisi Kanan: All Item Barang (OBS + Buffer) */}
           <div className="border border-border/80 rounded-xl p-4 flex flex-col justify-between space-y-3 bg-slate-50/70 shadow-2xs">
-            <div className="flex items-center gap-1.5 border-b border-border/80 pb-2">
-              <Layers className="size-3.5 text-cyan-600 shrink-0" />
-              <span className="text-xs font-bold uppercase tracking-wider text-foreground">
-                All Item Barang
+            <div className="flex items-center justify-between border-b border-border/80 pb-2">
+              <div className="flex items-center gap-1.5">
+                <Layers className="size-3.5 text-cyan-600 shrink-0" />
+                <span className="text-xs font-bold uppercase tracking-wider text-foreground">
+                  All Item Barang
+                </span>
+              </div>
+              <span className="text-[10px] text-muted-foreground font-medium">
+                {ca.gabunganAman} dari {ca.totalGabungan} item
               </span>
             </div>
 
-            <div className="flex items-center justify-center py-2">
+            <div className="flex flex-col items-center justify-center py-1">
               {renderDonutSvg({
                 safePctVal: ca.pctAman,
                 limitPctVal: ca.pctLimit,
                 zeroPctVal: ca.pctHabis,
                 centerValue: `${allSafePctExact.toFixed(1)}%`,
-                centerBadge: allItemBadgeText,
-                badgeClass: allItemBadgeClass,
-                safeColor: allItemColor,
+                centerBadge: allItemGrade.badgeText,
+                badgeClass: allItemGrade.badgeClass,
+                safeColor: allItemGrade.color,
+                subText: "Klik Lihat Item",
+                onClick: () => {
+                  setSelectedMetricModal("donut_all");
+                  setMetricCategoryFilter("all");
+                  setMetricStatusFilter("safe");
+                },
               })}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMetricModal("donut_all");
+                  setMetricCategoryFilter("all");
+                  setMetricStatusFilter("safe");
+                }}
+                className="mt-1 text-[10px] text-muted-foreground/80 hover:text-primary transition-colors underline underline-offset-2 cursor-pointer"
+              >
+                Klik diagram untuk lihat item
+              </button>
             </div>
 
-            <div className="space-y-2 py-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className={cn("size-2 rounded-full", allItemDotClass)} /> Aman
-                </span>
-                <span className="font-mono font-bold text-foreground">
-                  {ca.gabunganAman} ({ca.pctAman}%)
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className={cn("size-2 rounded-full", allItemLimitDotClass)} /> Limit
-                </span>
-                <span className="font-mono font-bold text-foreground">
-                  {ca.gabunganLimit} ({ca.pctLimit}%)
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className="size-2 rounded-full bg-rose-500" /> Critical / Habis
-                </span>
-                <span className="font-mono font-bold text-foreground">
-                  {ca.gabunganHabis} ({ca.pctHabis}%)
-                </span>
-              </div>
+            {/* Keterangan Grade A - E All Item Barang */}
+            <div className="space-y-1.5 py-1 text-xs">
+              {GRADE_THRESHOLDS.map((gt) => {
+                const isCurrent = gt.grade === allItemGrade.grade;
+                return (
+                  <div
+                    key={gt.grade}
+                    onClick={() => {
+                      setSelectedMetricModal("donut_all");
+                      setMetricCategoryFilter("all");
+                      setMetricStatusFilter("safe");
+                    }}
+                    className={cn(
+                      "flex items-center justify-between px-2.5 py-1 rounded-md transition-all cursor-pointer",
+                      isCurrent
+                        ? "bg-white dark:bg-slate-800 font-bold text-foreground border border-border shadow-xs ring-1 ring-border/80"
+                        : "text-muted-foreground hover:bg-slate-200/50 dark:hover:bg-slate-800/50 hover:text-foreground",
+                    )}
+                    title="Klik untuk melihat daftar item pada persentase ini"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className={cn("size-2 rounded-full shrink-0", gt.dotClass)} />
+                      <span>
+                        {gt.grade} = {gt.range} {gt.colorName}
+                      </span>
+                    </span>
+                    {isCurrent && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-foreground border border-border">
+                        {allSafePctExact.toFixed(1)}% ({ca.gabunganAman} item)
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -930,6 +1007,21 @@ function DashboardPage() {
       modalBadge = `${ca.gabunganLimit + ca.gabunganHabis} Item Kritis`;
       modalIcon = <AlertTriangle className="size-5 text-amber-500" />;
       baseCount = ca.gabunganLimit + ca.gabunganHabis;
+    } else if (selectedMetricModal === "donut_obs") {
+      const g = getGradeInfo(kpiExactPct);
+      modalTitle = "Daftar Barang Stok Aman — OBS Sparepart";
+      modalDesc = `Menampilkan ${nonLimitProductsCount} item barang OBS Sparepart berstatus Aman (${kpiExactPct.toFixed(1)}%) sesuai presentase diagram [${g.badgeText}].`;
+      modalBadge = `${nonLimitProductsCount} Item (${kpiExactPct.toFixed(1)}%)`;
+      modalIcon = <Package className="size-5 text-blue-500" />;
+      baseCount = nonLimitProductsCount;
+    } else if (selectedMetricModal === "donut_all") {
+      const allSafePctExact = ca.totalGabungan > 0 ? (ca.gabunganAman / ca.totalGabungan) * 100 : 0;
+      const g = getGradeInfo(allSafePctExact);
+      modalTitle = "Daftar Barang Stok Aman — All Item Barang";
+      modalDesc = `Menampilkan ${ca.gabunganAman} item barang gabungan OBS & Buffer berstatus Aman (${allSafePctExact.toFixed(1)}%) sesuai presentase diagram [${g.badgeText}].`;
+      modalBadge = `${ca.gabunganAman} Item (${allSafePctExact.toFixed(1)}%)`;
+      modalIcon = <Layers className="size-5 text-cyan-500" />;
+      baseCount = ca.gabunganAman;
     }
 
     return (

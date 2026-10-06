@@ -306,10 +306,18 @@ function ProductSearchCombobox({
   );
 }
 
+interface ParsedExcelColumn {
+  key: string;
+  label: string;
+  align?: "left" | "center" | "right";
+  rawIndex?: number;
+}
+
 interface ParsedExcelSheet {
   name: string;
   count: number;
   items: any[];
+  columns?: ParsedExcelColumn[];
 }
 
 function parseExcelWorkbookToSheets(
@@ -359,6 +367,8 @@ function parseExcelWorkbookToSheets(
         .replace(/\s+/g, " "),
     );
 
+    const isSparepart = defaultCategory === "Sparepart & Tools";
+
     const safeStockIdx = headers.findIndex(
       (h: string) =>
         h.includes("batas minimal") ||
@@ -381,23 +391,74 @@ function parseExcelWorkbookToSheets(
     );
 
     const maxStockIdx = headers.findIndex(
-      (h: string) =>
-        h.includes("maksimal") ||
-        h.includes("maks.") ||
-        h.includes("maks") ||
-        h.includes("max stock") ||
-        h.includes("max.stock") ||
-        h.includes("max") ||
-        h.includes("maximum"),
+      (h: string, idx: number) =>
+        idx !== safeStockIdx &&
+        idx !== minStockIdx &&
+        (h.includes("maksimal") ||
+          h.includes("maks.") ||
+          h.includes("maks") ||
+          h.includes("max stock") ||
+          h.includes("max.stock") ||
+          h.includes("max_stock") ||
+          h.includes("maximum") ||
+          h.includes("max.") ||
+          h.includes("stok max") ||
+          h.includes("stock max") ||
+          h.includes("stok maks") ||
+          h.includes("stock maks") ||
+          h === "max" ||
+          h === "maks"),
     );
 
-    const currentStockIdx = headers.findIndex(
+    // Kolom Mutasi Stok OBS: BEGINNING BALANCE
+    const beginningBalanceIdx = headers.findIndex(
+      (h: string) =>
+        h.includes("beginning") ||
+        h.includes("beg balance") ||
+        h.includes("beg. balance") ||
+        h.includes("beg bal") ||
+        h.includes("saldo awal") ||
+        h.includes("stok awal") ||
+        h.includes("opening") ||
+        h === "beg" ||
+        h === "awal",
+    );
+
+    // Kolom Mutasi Stok OBS: RECEIPT
+    const receiptIdx = headers.findIndex(
+      (h: string) =>
+        h.includes("receipt") ||
+        h.includes("masuk") ||
+        h.includes("penerimaan") ||
+        h.includes("qty in") ||
+        h === "in" ||
+        h === "rcpt",
+    );
+
+    // Kolom Mutasi Stok OBS: ISSUED
+    const issuedIdx = headers.findIndex(
+      (h: string) =>
+        h.includes("issued") ||
+        h.includes("issue") ||
+        h.includes("keluar") ||
+        h.includes("pengeluaran") ||
+        h.includes("qty out") ||
+        h === "out" ||
+        h.includes("pemakaian") ||
+        h === "iss",
+    );
+
+    // Kolom Mutasi Stok OBS: ENDING BALANCE / STOK SAAT INI
+    const endingBalanceIdx = headers.findIndex(
       (h: string, idx: number) =>
+        idx !== beginningBalanceIdx &&
         idx !== safeStockIdx &&
         idx !== minStockIdx &&
         idx !== maxStockIdx &&
         (h.includes("ending balance") ||
           h.includes("ending") ||
+          h.includes("end balance") ||
+          h.includes("end. balance") ||
           h.includes("saldo akhir") ||
           h.includes("stok akhir") ||
           h.includes("saat ini") ||
@@ -405,6 +466,7 @@ function parseExcelWorkbookToSheets(
           h.includes("stok fisik") ||
           h.includes("saldo") ||
           h.includes("balance") ||
+          h.includes("closing") ||
           h.includes("qty stock") ||
           h.includes("qty") ||
           h.includes("quantity") ||
@@ -412,6 +474,8 @@ function parseExcelWorkbookToSheets(
           h === "stok" ||
           h === "stock"),
     );
+
+    const currentStockIdx = endingBalanceIdx;
 
     let codeIdx = headers.findIndex(
       (h: string) =>
@@ -470,6 +534,108 @@ function parseExcelWorkbookToSheets(
       const num = parseFloat(cleanStr);
       return !isNaN(num) ? num : fallback;
     };
+
+    // Bangun daftar kolom yang ada di file Excel ini sesuai urutan header file
+    const sheetColumns: ParsedExcelColumn[] = [];
+    const hasStockInFile =
+      endingBalanceIdx >= 0 ||
+      beginningBalanceIdx >= 0 ||
+      receiptIdx >= 0 ||
+      issuedIdx >= 0;
+
+    for (let c = 0; c < selectedHeaderRow.length; c++) {
+      const hRaw = String(selectedHeaderRow[c] || "").trim();
+      const hLower = headers[c] || "";
+
+      // Jangan masukkan jika kolom kosong tanpa data dan bukan code/name/uom
+      if (!hRaw && c !== codeIdx && c !== nameIdx && c !== uomIdx) continue;
+
+      if (c === codeIdx) {
+        sheetColumns.push({
+          key: "code",
+          label: hRaw || "Kode",
+          align: "center",
+          rawIndex: c,
+        });
+      } else if (c === nameIdx) {
+        sheetColumns.push({
+          key: "name",
+          label: hRaw || "Material",
+          align: "left",
+          rawIndex: c,
+        });
+      } else if (c === uomIdx) {
+        sheetColumns.push({
+          key: "unit",
+          label: hRaw || "Satuan",
+          align: "center",
+          rawIndex: c,
+        });
+      } else if (c === beginningBalanceIdx) {
+        sheetColumns.push({
+          key: "beginning_balance",
+          label: hRaw || "BEGINNING BALANCE",
+          align: "center",
+          rawIndex: c,
+        });
+      } else if (c === receiptIdx) {
+        sheetColumns.push({
+          key: "receipt",
+          label: hRaw || "RECEIPT",
+          align: "center",
+          rawIndex: c,
+        });
+      } else if (c === issuedIdx) {
+        sheetColumns.push({
+          key: "issued",
+          label: hRaw || "ISSUED",
+          align: "center",
+          rawIndex: c,
+        });
+      } else if (c === endingBalanceIdx) {
+        sheetColumns.push({
+          key: "ending_balance",
+          label: hRaw || "ENDING BALANCE",
+          align: "center",
+          rawIndex: c,
+        });
+      } else if (c === minStockIdx) {
+        sheetColumns.push({
+          key: "min_stock",
+          label: hRaw || "MINIMUM STOCK",
+          align: "center",
+          rawIndex: c,
+        });
+      } else if (c === maxStockIdx) {
+        sheetColumns.push({
+          key: "max_stock",
+          label: hRaw || "MAKS. STOCK",
+          align: "center",
+          rawIndex: c,
+        });
+      } else if (hRaw && !hLower.includes("no") && hLower !== "#") {
+        sheetColumns.push({
+          key: `col_${c}`,
+          label: hRaw,
+          align: "center",
+          rawIndex: c,
+        });
+      }
+    }
+
+    // Pastikan code dan name selalu ada di list kolom pratinjau
+    if (!sheetColumns.some((col) => col.key === "code") && codeIdx >= 0) {
+      sheetColumns.unshift({ key: "code", label: "Kode", align: "center", rawIndex: codeIdx });
+    }
+    if (!sheetColumns.some((col) => col.key === "name") && nameIdx >= 0) {
+      const cIdx = sheetColumns.findIndex((col) => col.key === "code");
+      sheetColumns.splice(cIdx >= 0 ? cIdx + 1 : 0, 0, {
+        key: "name",
+        label: "Material",
+        align: "left",
+        rawIndex: nameIdx,
+      });
+    }
 
     const parsedItems: any[] = [];
     for (let r = headerRowIdx + 1; r < rawRows.length; r++) {
@@ -540,12 +706,43 @@ function parseExcelWorkbookToSheets(
         unit = row[2].trim().toLowerCase();
       }
 
-      parsedItems.push({
+      const rawBeginning = beginningBalanceIdx >= 0 ? parseNum(row[beginningBalanceIdx], null) : null;
+      const rawReceipt = receiptIdx >= 0 ? parseNum(row[receiptIdx], null) : null;
+      const rawIssued = issuedIdx >= 0 ? parseNum(row[issuedIdx], null) : null;
+      const rawEnding = endingBalanceIdx >= 0 ? parseNum(row[endingBalanceIdx], null) : null;
+
+      let receipt = rawReceipt;
+      let issued = rawIssued;
+      let beginningBalance = rawBeginning;
+      let endingBalance = rawEnding;
+
+      if (hasStockInFile) {
+        receipt = rawReceipt ?? 0;
+        issued = rawIssued ?? 0;
+        beginningBalance = rawBeginning ?? 0;
+        endingBalance = rawEnding ?? 0;
+
+        if (rawEnding === null && rawBeginning !== null) {
+          endingBalance = Math.max(0, beginningBalance + receipt - issued);
+        } else if (rawBeginning === null && rawEnding !== null) {
+          beginningBalance = Math.max(0, endingBalance - receipt + issued);
+        } else if (rawBeginning === null && rawEnding === null) {
+          const fallbackStock = currentStockIdx >= 0 ? (parseNum(row[currentStockIdx], 0) ?? 0) : 0;
+          endingBalance = fallbackStock;
+          beginningBalance = fallbackStock;
+        }
+      }
+
+      const itemObj: any = {
         name: rawName,
         code: rawCode || null,
-        current_stock: currentStockIdx >= 0 ? (parseNum(row[currentStockIdx], 0) ?? 0) : 0,
+        beginning_balance: beginningBalance,
+        receipt: receipt,
+        issued: issued,
+        ending_balance: endingBalance,
+        current_stock: endingBalance,
         safe_stock: safeStockIdx >= 0 ? (parseNum(row[safeStockIdx], 1) ?? 1) : 1,
-        min_stock: minStockIdx >= 0 ? (parseNum(row[minStockIdx], 10) ?? 10) : 10,
+        min_stock: minStockIdx >= 0 ? parseNum(row[minStockIdx], null) : null,
         max_stock: maxStockIdx >= 0 ? parseNum(row[maxStockIdx], null) : null,
         category: defaultCategory,
         unit: unit || "pcs",
@@ -553,7 +750,15 @@ function parseExcelWorkbookToSheets(
         shelf: shelfIdx >= 0 && row[shelfIdx] ? String(row[shelfIdx]).trim() : "Rak A-1",
         is_active: true,
         sheet_source: sheetName,
-      });
+      };
+
+      for (const col of sheetColumns) {
+        if (col.key.startsWith("col_") && col.rawIndex !== undefined) {
+          itemObj[col.key] = row[col.rawIndex] !== undefined ? String(row[col.rawIndex]).trim() : "";
+        }
+      }
+
+      parsedItems.push(itemObj);
     }
 
     if (parsedItems.length > 0) {
@@ -561,6 +766,7 @@ function parseExcelWorkbookToSheets(
         name: sheetName,
         count: parsedItems.length,
         items: parsedItems,
+        columns: sheetColumns,
       });
     }
   }
@@ -646,10 +852,14 @@ function WarehouseAndProductsPage() {
         });
       }
       if (importSortOption === "STOCK_ASC") {
-        return (a.current_stock ?? 0) - (b.current_stock ?? 0);
+        return (
+          (a.ending_balance ?? a.current_stock ?? 0) - (b.ending_balance ?? b.current_stock ?? 0)
+        );
       }
       if (importSortOption === "STOCK_DESC") {
-        return (b.current_stock ?? 0) - (a.current_stock ?? 0);
+        return (
+          (b.ending_balance ?? b.current_stock ?? 0) - (a.ending_balance ?? a.current_stock ?? 0)
+        );
       }
       if (importSortOption === "NAME_ASC") {
         return String(a.name || "").localeCompare(String(b.name || ""));
@@ -780,38 +990,38 @@ function WarehouseAndProductsPage() {
         "No",
         "Kode",
         "Material",
-        "Lokasi",
-        "Rak",
-        "Batas Minimal Stok",
-        "Minimal Stok",
-        "Maks. Stok",
-        "Stok Saat Ini",
+        "Satuan",
+        "BEGINNING BALANCE",
+        "RECEIPT",
+        "ISSUED",
+        "ENDING BALANCE",
+        "Maks. Stock",
       ],
-      [1, "7100110213", "BEARING 32004", "Gudang Utama", "Rak A-1", 1, 1, 10, 0],
-      [2, "7100110339", "BEARING 6001 2Z", "Gudang Utama", "Rak A-1", 10, 1, 40, 0],
-      [3, "7100110345", "BEARING 6003 2Z", "Gudang Utama", "Rak A-1", 20, 1, 40, 0],
-      [4, "7100110347", "BEARING 6004 2Z", "Gudang Utama", "Rak A-1", 12, 1, 60, 0],
-      [5, "7100110351", "BEARING 6005 2Z", "Gudang Utama", "Rak A-1", 18, 1, 50, 0],
+      [1, "7100110213", "BEARING 32004", "PCS", 10, 0, 0, 10, 50],
+      [2, "7100110339", "BEARING 6001 2Z", "PCS", 40, 26, 7, 59, 100],
+      [3, "7100110345", "BEARING 6003 2Z", "PCS", 40, 31, 23, 48, 80],
+      [4, "7100110347", "BEARING 6004 2Z", "PCS", 60, 18, 32, 46, 75],
+      [5, "7100110351", "BEARING 6005 2Z", "PCS", 50, 3, 1, 52, 90],
     ];
 
     const worksheet = XLSX.utils.aoa_to_sheet(templateData);
     worksheet["!cols"] = [
       { wch: 6 },
       { wch: 18 },
-      { wch: 32 },
-      { wch: 16 },
-      { wch: 12 },
-      { wch: 18 },
+      { wch: 34 },
+      { wch: 10 },
+      { wch: 20 },
       { wch: 14 },
       { wch: 14 },
+      { wch: 20 },
       { wch: 14 },
     ];
 
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Template Master");
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Template Master OBS");
 
-    XLSX.writeFile(workbook, "template_import_barang.xlsx");
-    toast.success("Template Excel berhasil diunduh");
+    XLSX.writeFile(workbook, "template_import_barang_obs.xlsx");
+    toast.success("Template Excel OBS berhasil diunduh");
   };
 
   // ── IMPORT FILE BUFFER STOK (EXCEL / CSV) ─────────────────────────────────────
@@ -1161,6 +1371,10 @@ function WarehouseAndProductsPage() {
           (normName ? existingByName.get(normName) : null) ||
           (normCode ? existingByCode.get(normCode) : null);
 
+        const hasEndingInFile = item.ending_balance !== null && item.ending_balance !== undefined;
+        const hasMaxInFile = item.max_stock !== null && item.max_stock !== undefined;
+        const hasMinInFile = item.min_stock !== null && item.min_stock !== undefined;
+
         if (found) {
           // Data master barang: sertakan nama agar memenuhi NOT NULL constraint PostgreSQL saat upsert
           toUpdate.push({
@@ -1171,10 +1385,13 @@ function WarehouseAndProductsPage() {
             unit: item.unit || found.unit || "pcs",
             location: item.location || found.location || "Gudang Utama",
             shelf: item.shelf || found.shelf || "Rak A-1",
-            current_stock: item.current_stock ?? found.current_stock ?? 0,
-            safe_stock: item.safe_stock ?? found.safe_stock ?? 1,
-            min_stock: item.min_stock ?? found.min_stock ?? 10,
-            max_stock: item.max_stock ?? found.max_stock ?? null,
+            // Jika file memuat ending balance, perbarui stok. Jika file HANYA update maks stock/master, pertahankan stok yang ada di database
+            current_stock: hasEndingInFile ? Number(item.ending_balance) : (found.current_stock ?? 0),
+            safe_stock: found.safe_stock ?? 1,
+            // Rekam kolom minimal stock jika ada di file
+            min_stock: hasMinInFile ? Number(item.min_stock) : (found.min_stock ?? 10),
+            // Rekam kolom maksimal stock jika ada di file, jika tidak pertahankan dari database
+            max_stock: hasMaxInFile ? Number(item.max_stock) : (found.max_stock ?? null),
             is_active: true,
           });
         } else {
@@ -1185,10 +1402,12 @@ function WarehouseAndProductsPage() {
             unit: item.unit || "pcs",
             location: item.location || "Gudang Utama",
             shelf: item.shelf || "Rak A-1",
-            current_stock: item.current_stock ?? 0,
-            safe_stock: item.safe_stock ?? 1,
-            min_stock: item.min_stock ?? 10,
-            max_stock: item.max_stock ?? null,
+            current_stock: hasEndingInFile ? Number(item.ending_balance) : 0,
+            safe_stock: 1,
+            // Rekam minimal stock jika ada di file
+            min_stock: hasMinInFile ? Number(item.min_stock) : 10,
+            // Rekam maksimal stock jika ada di file
+            max_stock: hasMaxInFile ? Number(item.max_stock) : null,
             is_active: true,
           });
         }
@@ -1570,7 +1789,7 @@ function WarehouseAndProductsPage() {
         location: formData.location,
         shelf: formData.shelf,
         min_stock: Number(formData.min_stock) || 10,
-        safe_stock: Number(formData.safe_stock) || 1,
+        // Rekam nilai maksimal stok saat penambahan barang jika diisi
         max_stock: formData.max_stock ? Number(formData.max_stock) : null,
         current_stock: initialStock,
         description: formData.description.trim() || null,
@@ -1580,52 +1799,6 @@ function WarehouseAndProductsPage() {
       } as any);
 
       if (error) throw error;
-
-      // ── Jika ada stok awal > 0, buat transaksi MASUK otomatis ──────────────
-      // Ini memastikan stok awal ngelink ke tabel buffer stok (warehouse_transactions)
-      if (initialStock > 0) {
-        const { data: newProduct } = await supabase
-          .from("products")
-          .select("id")
-          .eq("name", formData.name.trim())
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .single();
-
-        if (newProduct?.id) {
-          let nextSeq = 1;
-          try {
-            const { data: latestTx } = await (supabase as any)
-              .from("warehouse_transactions")
-              .select("transaction_number")
-              .order("created_at", { ascending: false })
-              .limit(1);
-            if (latestTx && latestTx.length > 0) {
-              const seqs = latestTx.map((t: any) => {}).filter((n: number) => !isNaN(n) && n > 0);
-              nextSeq = seqs.length > 0 ? Math.max(...seqs) + 1 : latestTx.length + 1;
-            }
-          } catch {
-            nextSeq = 1;
-          }
-          const txNumber = `TES - GROUND 2 - ${String(nextSeq).padStart(2, "0")}`;
-          const sourceLabel = "OBS Sparepart";
-
-          await (supabase as any).from("warehouse_transactions").insert({
-            transaction_number: txNumber,
-            tx_type: "IN",
-            product_id: newProduct.id,
-            product_name: formData.name.trim(),
-            quantity: initialStock,
-            unit: formData.unit,
-            batch_number: null,
-            reference_no: "STOK_AWAL",
-            supplier_or_dest: "Stok Awal / Saldo Awal",
-            notes: `Stok awal saat pendaftaran barang baru via ${sourceLabel}`,
-            created_by: profile?.id,
-            created_by_name: profile?.full_name || profile?.email || "Admin Gudang",
-          });
-        }
-      }
 
       await recordActivity(
         "TAMBAH_BARANG",
@@ -3452,14 +3625,17 @@ function WarehouseAndProductsPage() {
                     <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
                       Minimal Stok
                     </th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
-                      Masuk
+                    <th className="label-caps px-3 py-3 text-center min-w-[130px] whitespace-nowrap text-white font-semibold">
+                      BEGINNING BALANCE
                     </th>
                     <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
-                      Keluar
+                      RECEIPT
                     </th>
-                    <th className="label-caps px-3 py-3 text-right min-w-[110px] whitespace-nowrap text-white font-semibold">
-                      Stok Saat Ini
+                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
+                      ISSUED
+                    </th>
+                    <th className="label-caps px-3 py-3 text-right min-w-[120px] whitespace-nowrap text-white font-semibold">
+                      ENDING BALANCE
                     </th>
                     <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
                       Maksimal Stok
@@ -3481,6 +3657,22 @@ function WarehouseAndProductsPage() {
                       rawMax !== null && rawMax !== undefined && rawMax !== ""
                         ? Number(rawMax)
                         : null;
+
+                    const nameKey = p.name ? p.name.trim().toLowerCase() : "";
+                    const codeKey = p.code ? p.code.trim().toLowerCase() : "";
+
+                    const totalIn =
+                      (totalInQtyMap[p.id] ?? 0) ||
+                      (nameKey ? (totalInQtyMap[nameKey] ?? 0) : 0) ||
+                      (codeKey ? (totalInQtyMap[codeKey] ?? 0) : 0);
+
+                    const totalOut =
+                      (totalOutQtyMap[p.id] ?? 0) ||
+                      (nameKey ? (totalOutQtyMap[nameKey] ?? 0) : 0) ||
+                      (codeKey ? (totalOutQtyMap[codeKey] ?? 0) : 0);
+
+                    // BEGINNING BALANCE = Ending Balance - Receipt + Issued
+                    const beginningBalance = Math.max(0, current - totalIn + totalOut);
 
                     // Logika Kondisi:
                     // 1. Order warna merah (current <= minStock)
@@ -3556,34 +3748,39 @@ function WarehouseAndProductsPage() {
                           {minStock.toLocaleString("id-ID")}
                         </td>
 
-                        {/* 6. Masuk */}
-                        <td className="px-3 py-3 text-center font-mono font-semibold whitespace-nowrap">
-                          {(() => {
-                            const nameKey = p.name ? p.name.trim().toLowerCase() : "";
-                            const lastIn =
-                              latestInTxMap[p.id] || (nameKey ? latestInTxMap[nameKey] : undefined);
-
-                            return lastIn
-                              ? `${Number(lastIn.quantity).toLocaleString("id-ID")}`
-                              : "—";
-                          })()}
+                        {/* 6. BEGINNING BALANCE */}
+                        <td className="px-3 py-3 text-center font-mono font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          {beginningBalance.toLocaleString("id-ID")}
                         </td>
 
-                        {/* 7. Keluar */}
-                        <td className="px-3 py-3 text-center font-mono font-semibold whitespace-nowrap">
-                          {(() => {
-                            const nameKey = p.name ? p.name.trim().toLowerCase() : "";
-                            const lastOut =
-                              latestOutTxMap[p.id] ||
-                              (nameKey ? latestOutTxMap[nameKey] : undefined);
-
-                            return lastOut
-                              ? `${Number(lastOut.quantity).toLocaleString("id-ID")}`
-                              : "—";
-                          })()}
+                        {/* 7. RECEIPT */}
+                        <td className="px-3 py-3 text-center font-mono font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                          {totalIn > 0
+                            ? Number(totalIn).toLocaleString("id-ID")
+                            : (() => {
+                                const lastIn =
+                                  latestInTxMap[p.id] || (nameKey ? latestInTxMap[nameKey] : undefined);
+                                return lastIn
+                                  ? `${Number(lastIn.quantity).toLocaleString("id-ID")}`
+                                  : "—";
+                              })()}
                         </td>
 
-                        {/* 6. Stok saat ini */}
+                        {/* 8. ISSUED */}
+                        <td className="px-3 py-3 text-center font-mono font-semibold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                          {totalOut > 0
+                            ? Number(totalOut).toLocaleString("id-ID")
+                            : (() => {
+                                const lastOut =
+                                  latestOutTxMap[p.id] ||
+                                  (nameKey ? latestOutTxMap[nameKey] : undefined);
+                                return lastOut
+                                  ? `${Number(lastOut.quantity).toLocaleString("id-ID")}`
+                                  : "—";
+                              })()}
+                        </td>
+
+                        {/* 9. ENDING BALANCE */}
                         <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap">
                           <span
                             className={cn(
@@ -3599,7 +3796,7 @@ function WarehouseAndProductsPage() {
                           </span>
                         </td>
 
-                        {/* 7. Maksimal Stok */}
+                        {/* 10. Maksimal Stok */}
                         <td className="px-3 py-3 text-center font-mono text-muted-foreground whitespace-nowrap">
                           {maxStock !== null && !isNaN(maxStock)
                             ? maxStock.toLocaleString("id-ID")
@@ -5927,13 +6124,13 @@ function WarehouseAndProductsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Maksimal Stok</Label>
+                    <Label className="text-xs font-semibold text-muted-foreground">Maksimal Stok (Terkunci)</Label>
                     <Input
                       type="number"
                       value={formData.max_stock}
-                      onChange={(e) => setFormData({ ...formData, max_stock: e.target.value })}
-                      placeholder="cth. 50 (opsional)"
-                      className="h-9 text-xs font-mono"
+                      placeholder="Terkunci (atur via Edit Barang)"
+                      disabled
+                      className="h-9 text-xs font-mono bg-muted/40 cursor-not-allowed"
                     />
                   </div>
                 </div>
@@ -5979,9 +6176,10 @@ function WarehouseAndProductsPage() {
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
                           Format kolom yang didukung: <strong>Kode</strong>,{" "}
-                          <strong>Material</strong>, <strong>Batas Minimal Stok</strong>,{" "}
-                          <strong>Minimal Stok</strong>, <strong>Maks. Stok</strong>, dan{" "}
-                          <strong>Stok Saat Ini</strong>
+                          <strong>Material</strong>, <strong>Satuan</strong>,{" "}
+                          <strong>BEGINNING BALANCE</strong>, <strong>RECEIPT</strong>,{" "}
+                          <strong>ISSUED</strong>, <strong>ENDING BALANCE</strong>, dan{" "}
+                          <strong>Maks. Stock</strong>
                         </p>
                       </div>
 
@@ -6021,9 +6219,9 @@ function WarehouseAndProductsPage() {
                           <span className="truncate">{importFile.name}</span>
                         </div>
                         <p className="text-[11px] text-muted-foreground mt-0.5">
-                          Total {importPreview.length} item barang terdeteksi • Total Stok:{" "}
+                          Total {importPreview.length} item barang terdeteksi • Total Ending Balance:{" "}
                           {importPreview
-                            .reduce((acc, it) => acc + (it.current_stock || 0), 0)
+                            .reduce((acc, it) => acc + (it.ending_balance ?? it.current_stock ?? 0), 0)
                             .toLocaleString("id-ID")}{" "}
                           pcs
                         </p>
@@ -6170,10 +6368,10 @@ function WarehouseAndProductsPage() {
                               Kode (Angka Terbesar ke Terkecil)
                             </SelectItem>
                             <SelectItem value="STOCK_ASC" className="text-xs">
-                              Stok (Angka Terkecil ke Terbesar)
+                              Ending Balance (Terkecil ke Terbesar)
                             </SelectItem>
                             <SelectItem value="STOCK_DESC" className="text-xs">
-                              Stok (Angka Terbesar ke Terkecil)
+                              Ending Balance (Terbesar ke Terkecil)
                             </SelectItem>
                             <SelectItem value="NAME_ASC" className="text-xs">
                               Nama Barang (A - Z)
@@ -6186,18 +6384,18 @@ function WarehouseAndProductsPage() {
                       </div>
                     </div>
                     <div className="max-h-72 overflow-x-auto overflow-y-auto rounded-lg border border-border text-xs bg-background">
-                      <table className="w-full text-left border-collapse min-w-[600px]">
-                        <thead className="bg-surface-muted text-[11px] font-semibold text-muted-foreground sticky top-0 z-10 border-b border-border">
+                      <table className="w-full text-left border-collapse min-w-[840px]">
+                        <thead className="bg-[#0f274a] text-white text-[11px] font-semibold sticky top-0 z-10 border-b border-border">
                           <tr>
                             <th
-                              className="p-2.5 w-12 text-center cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
+                              className="p-2.5 w-12 text-center cursor-pointer hover:bg-[#1a3a66] transition-colors select-none text-white font-semibold"
                               onClick={() => setImportSortOption("DEFAULT")}
                               title="Reset ke urutan asli file"
                             >
                               No
                             </th>
                             <th
-                              className="p-2.5 w-36 text-center cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
+                              className="p-2.5 w-36 text-center cursor-pointer hover:bg-[#1a3a66] transition-colors select-none text-white font-semibold"
                               onClick={() =>
                                 setImportSortOption(
                                   importSortOption === "CODE_ASC" ? "CODE_DESC" : "CODE_ASC",
@@ -6208,12 +6406,12 @@ function WarehouseAndProductsPage() {
                               <div className="flex items-center justify-center gap-1">
                                 <span>Kode</span>
                                 <ArrowUpDown
-                                  className={`size-3 ${importSortOption.startsWith("CODE") ? "text-primary font-bold" : "text-muted-foreground/60"}`}
+                                  className={`size-3 ${importSortOption.startsWith("CODE") ? "text-amber-300 font-bold" : "text-white/60"}`}
                                 />
                               </div>
                             </th>
                             <th
-                              className="p-2.5 min-w-[200px] cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
+                              className="p-2.5 min-w-[200px] cursor-pointer hover:bg-[#1a3a66] transition-colors select-none text-white font-semibold"
                               onClick={() =>
                                 setImportSortOption(
                                   importSortOption === "NAME_ASC" ? "NAME_DESC" : "NAME_ASC",
@@ -6224,29 +6422,31 @@ function WarehouseAndProductsPage() {
                               <div className="flex items-center gap-1">
                                 <span>Material</span>
                                 <ArrowUpDown
-                                  className={`size-3 ${importSortOption.startsWith("NAME") ? "text-primary font-bold" : "text-muted-foreground/60"}`}
+                                  className={`size-3 ${importSortOption.startsWith("NAME") ? "text-amber-300 font-bold" : "text-white/60"}`}
                                 />
                               </div>
                             </th>
-                            <th className="p-2.5 text-center w-20 font-semibold">Satuan</th>
+                            <th className="p-2.5 text-center w-20 font-semibold text-white">Satuan</th>
+                            <th className="p-2.5 text-center w-36 font-semibold text-white">BEGINNING BALANCE</th>
+                            <th className="p-2.5 text-center w-28 font-semibold text-white">RECEIPT</th>
+                            <th className="p-2.5 text-center w-28 font-semibold text-white">ISSUED</th>
                             <th
-                              className="p-2.5 text-center w-28 cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
+                              className="p-2.5 text-center w-36 cursor-pointer hover:bg-[#1a3a66] transition-colors select-none text-white font-semibold"
                               onClick={() =>
                                 setImportSortOption(
                                   importSortOption === "STOCK_ASC" ? "STOCK_DESC" : "STOCK_ASC",
                                 )
                               }
-                              title="Urutkan stok angka terkecil / terbesar"
+                              title="Urutkan ending balance angka terkecil / terbesar"
                             >
                               <div className="flex items-center justify-center gap-1">
-                                <span>Stok Saat Ini</span>
+                                <span>ENDING BALANCE</span>
                                 <ArrowUpDown
-                                  className={`size-3 ${importSortOption.startsWith("STOCK") ? "text-primary font-bold" : "text-muted-foreground/60"}`}
+                                  className={`size-3 ${importSortOption.startsWith("STOCK") ? "text-amber-300 font-bold" : "text-white/60"}`}
                                 />
                               </div>
                             </th>
-                            <th className="p-2.5 text-center w-24">Min. Stok</th>
-                            <th className="p-2.5 text-center w-24">Maks. Stok</th>
+                            <th className="p-2.5 text-center w-28 font-semibold text-white">Maks. Stock</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border/60">
@@ -6264,18 +6464,22 @@ function WarehouseAndProductsPage() {
                                   {it.unit || "pcs"}
                                 </span>
                               </td>
-                              <td className="p-2.5 text-center font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                                {it.current_stock ?? 0}
+                              <td className="p-2.5 text-center font-mono font-semibold text-slate-700 dark:text-slate-300">
+                                {Number(it.beginning_balance ?? 0).toLocaleString("id-ID")}
                               </td>
-                              <td className="p-2.5 text-center font-mono text-muted-foreground">
-                                {it.min_stock !== null && it.min_stock !== undefined
-                                  ? it.min_stock
-                                  : "-"}
+                              <td className="p-2.5 text-center font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                                {Number(it.receipt ?? 0).toLocaleString("id-ID")}
                               </td>
-                              <td className="p-2.5 text-center font-mono text-muted-foreground">
+                              <td className="p-2.5 text-center font-mono font-semibold text-rose-600 dark:text-rose-400">
+                                {Number(it.issued ?? 0).toLocaleString("id-ID")}
+                              </td>
+                              <td className="p-2.5 text-center font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                                {Number(it.ending_balance ?? it.current_stock ?? 0).toLocaleString("id-ID")}
+                              </td>
+                              <td className="p-2.5 text-center font-mono font-medium text-slate-700 dark:text-slate-300">
                                 {it.max_stock !== null && it.max_stock !== undefined
-                                  ? it.max_stock
-                                  : "-"}
+                                  ? Number(it.max_stock).toLocaleString("id-ID")
+                                  : "—"}
                               </td>
                             </tr>
                           ))}
@@ -6288,9 +6492,9 @@ function WarehouseAndProductsPage() {
                         <strong>{sortedImportPreview.length}</strong> barang yang siap ditambahkan
                       </span>
                       <span className="font-mono font-bold text-foreground">
-                        Total Stok:{" "}
+                        Total Ending Balance:{" "}
                         {sortedImportPreview
-                          .reduce((acc, it) => acc + (it.current_stock || 0), 0)
+                          .reduce((acc, it) => acc + (it.ending_balance ?? it.current_stock ?? 0), 0)
                           .toLocaleString("id-ID")}{" "}
                         pcs
                       </span>
@@ -6838,7 +7042,7 @@ function WarehouseAndProductsPage() {
               </DialogTitle>
             </div>
             <DialogDescription className="text-xs">
-              Informasi lengkap master sparepart, penempatan rak, dan parameter buffer stok
+              Informasi lengkap master sparepart dan parameter buffer stok
             </DialogDescription>
           </DialogHeader>
 
@@ -6928,31 +7132,7 @@ function WarehouseAndProductsPage() {
                       </div>
                     </div>
 
-                    {/* 4. Kategori > Nomor Rak */}
-                    <div className="grid grid-cols-3 gap-3 pt-2 border-t border-border/60">
-                      <div>
-                        <span className="text-muted-foreground block text-[11px]">Kategori:</span>
-                        <span className="font-medium text-foreground">
-                          {selectedProduct.category || "Sparepart & Tools"}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground block text-[11px]">
-                          Shelf / Nomor Rak:
-                        </span>
-                        <span className="font-mono font-medium text-foreground">
-                          {selectedProduct.shelf || "—"}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground block text-[11px]">
-                          Lokasi Gudang:
-                        </span>
-                        <span className="font-medium text-foreground">
-                          {selectedProduct.location || "Gudang Utama"}
-                        </span>
-                      </div>
-                    </div>
+
                   </div>
 
                   {/* Parameter Buffer Stok */}
