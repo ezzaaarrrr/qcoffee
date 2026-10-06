@@ -387,6 +387,34 @@ function DashboardPage() {
   const filteredModalItems = useMemo(() => {
     if (!selectedMetricModal) return [];
 
+    // Khusus donut_obs: Tampilkan TEPAT item OBS Sparepart yang Aman (hasil persentase)
+    if (selectedMetricModal === "donut_obs") {
+      let base = unifiedMetricItems.filter(
+        (it) => it.category === "OBS Sparepart" && it.status === "safe",
+      );
+      if (metricSearchQuery.trim()) {
+        const q = metricSearchQuery.toLowerCase();
+        base = base.filter(
+          (it) =>
+            it.name.toLowerCase().includes(q) || (it.code && it.code.toLowerCase().includes(q)),
+        );
+      }
+      return base;
+    }
+
+    // Khusus donut_all: Tampilkan TEPAT seluruh item (OBS + Buffer) yang Aman (hasil persentase)
+    if (selectedMetricModal === "donut_all") {
+      let base = unifiedMetricItems.filter((it) => it.status === "safe");
+      if (metricSearchQuery.trim()) {
+        const q = metricSearchQuery.toLowerCase();
+        base = base.filter(
+          (it) =>
+            it.name.toLowerCase().includes(q) || (it.code && it.code.toLowerCase().includes(q)),
+        );
+      }
+      return base;
+    }
+
     let base = unifiedMetricItems;
 
     // Filter berdasarkan kartu metrik utama yang diklik
@@ -397,12 +425,6 @@ function DashboardPage() {
       base = base.filter((it) => it.status === "safe");
     } else if (selectedMetricModal === "perlu_perhatian") {
       base = base.filter((it) => it.status === "limit" || it.status === "empty");
-    } else if (selectedMetricModal === "donut_obs") {
-      // Tampilkan barang OBS Sparepart berstatus Aman (sesuai persentase stok aman)
-      base = base.filter((it) => it.category === "OBS Sparepart" && it.status === "safe");
-    } else if (selectedMetricModal === "donut_all") {
-      // Tampilkan seluruh barang (OBS + Buffer) berstatus Aman (sesuai persentase stok aman)
-      base = base.filter((it) => it.status === "safe");
     }
 
     // Filter Kategori (Semua / OBS / Buffer)
@@ -517,9 +539,9 @@ function DashboardPage() {
     safeColor?: string;
     onClick?: () => void;
   }) => {
-    const size = 104;
-    const strokeWidth = 13;
-    const radius = 37;
+    const size = 152;
+    const strokeWidth = 12;
+    const radius = 38;
     const circumference = 2 * Math.PI * radius;
 
     const total = safePctVal + limitPctVal + zeroPctVal || 100;
@@ -548,13 +570,18 @@ function DashboardPage() {
       <div
         onClick={onClick}
         className={cn(
-          "relative flex items-center justify-center shrink-0 select-none",
+          "relative flex items-center justify-center shrink-0 select-none p-1.5",
           onClick &&
-            "cursor-pointer group hover:scale-105 active:scale-95 transition-transform duration-200",
+            "cursor-pointer group hover:scale-105 active:scale-95 transition-all duration-300",
         )}
         title={onClick ? "Klik diagram untuk melihat daftar item pada persentase ini" : undefined}
       >
-        <svg width={size} height={size} viewBox="0 0 100 100" className="transform -rotate-90">
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 100 100"
+          className="transform -rotate-90 filter drop-shadow-[0_2px_8px_rgba(0,0,0,0.06)] dark:drop-shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
+        >
           <circle
             cx="50"
             cy="50"
@@ -562,7 +589,7 @@ function DashboardPage() {
             fill="transparent"
             stroke="currentColor"
             strokeWidth={strokeWidth}
-            className="text-slate-200 dark:text-slate-700"
+            className="text-slate-200/80 dark:text-slate-700/60"
           />
           {sPct > 0 && (
             <circle
@@ -607,20 +634,20 @@ function DashboardPage() {
             />
           )}
         </svg>
-        <div className="absolute flex flex-col items-center justify-center text-center">
-          <span className="font-mono text-sm sm:text-base font-bold leading-tight text-foreground">
+        <div className="absolute flex flex-col items-center justify-center text-center pointer-events-none">
+          <span className="font-mono text-xl sm:text-2xl font-black tracking-tight leading-none text-foreground drop-shadow-xs">
             {centerValue}
           </span>
           <span
             className={cn(
-              "text-[8.5px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider mt-0.5 border shadow-xs",
+              "text-[9.5px] sm:text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider mt-1.5 border shadow-xs",
               badgeClass,
             )}
           >
             {centerBadge}
           </span>
           {subText && (
-            <span className="text-[7.5px] font-semibold text-muted-foreground uppercase tracking-wider mt-0.5">
+            <span className="text-[8px] font-semibold text-muted-foreground uppercase tracking-wider mt-1">
               {subText}
             </span>
           )}
@@ -639,12 +666,12 @@ function DashboardPage() {
     return (
       <div
         id="diagram-analisis-status-sparepart"
-        className="rise-in border border-border bg-white p-5 flex flex-col justify-between h-full shadow-xs scroll-mt-20 rounded-xl"
+        className="rise-in border border-border bg-surface p-5 flex flex-col justify-between h-full shadow-xs scroll-mt-20 rounded-xl"
       >
         {/* 2 Kolom Komparasi: OBS Sparepart vs All Item Barang */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
           {/* Sisi Kiri: OBS Sparepart */}
-          <div className="border border-border/80 rounded-xl p-4 flex flex-col justify-between space-y-3 bg-slate-50/70 shadow-2xs">
+          <div className="border border-border/80 rounded-xl p-4 flex flex-col justify-between space-y-3 bg-surface-muted/20 dark:bg-slate-900/40 shadow-2xs">
             <div className="flex items-center justify-between border-b border-border/80 pb-2">
               <div className="flex items-center gap-1.5">
                 <Package className="size-3.5 text-blue-600 shrink-0" />
@@ -657,7 +684,7 @@ function DashboardPage() {
               </span>
             </div>
 
-            <div className="flex flex-col items-center justify-center py-1">
+            <div className="flex flex-col items-center justify-center py-2">
               {renderDonutSvg({
                 safePctVal: safePct,
                 limitPctVal: limitOnlyPct,
@@ -666,24 +693,11 @@ function DashboardPage() {
                 centerBadge: obsGrade.badgeText,
                 badgeClass: obsGrade.badgeClass,
                 safeColor: obsGrade.color,
-                subText: "Klik Lihat Item",
                 onClick: () => {
                   setSelectedMetricModal("donut_obs");
-                  setMetricCategoryFilter("obs");
-                  setMetricStatusFilter("safe");
+                  setMetricSearchQuery("");
                 },
               })}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedMetricModal("donut_obs");
-                  setMetricCategoryFilter("obs");
-                  setMetricStatusFilter("safe");
-                }}
-                className="mt-1 text-[10px] text-muted-foreground/80 hover:text-primary transition-colors underline underline-offset-2 cursor-pointer"
-              >
-                Klik diagram untuk lihat item
-              </button>
             </div>
 
             {/* Keterangan Grade A - E OBS Sparepart */}
@@ -695,13 +709,12 @@ function DashboardPage() {
                     key={gt.grade}
                     onClick={() => {
                       setSelectedMetricModal("donut_obs");
-                      setMetricCategoryFilter("obs");
-                      setMetricStatusFilter("safe");
+                      setMetricSearchQuery("");
                     }}
                     className={cn(
                       "flex items-center justify-between px-2.5 py-1 rounded-md transition-all cursor-pointer",
                       isCurrent
-                        ? "bg-white dark:bg-slate-800 font-bold text-foreground border border-border shadow-xs ring-1 ring-border/80"
+                        ? "bg-surface dark:bg-slate-800 font-bold text-foreground border border-border shadow-xs ring-1 ring-border/80"
                         : "text-muted-foreground hover:bg-slate-200/50 dark:hover:bg-slate-800/50 hover:text-foreground",
                     )}
                     title="Klik untuk melihat daftar item pada persentase ini"
@@ -713,7 +726,7 @@ function DashboardPage() {
                       </span>
                     </span>
                     {isCurrent && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-foreground border border-border">
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-surface-muted text-foreground border border-border">
                         {kpiExactPct.toFixed(1)}% ({nonLimitProductsCount} item)
                       </span>
                     )}
@@ -724,7 +737,7 @@ function DashboardPage() {
           </div>
 
           {/* Sisi Kanan: All Item Barang (OBS + Buffer) */}
-          <div className="border border-border/80 rounded-xl p-4 flex flex-col justify-between space-y-3 bg-slate-50/70 shadow-2xs">
+          <div className="border border-border/80 rounded-xl p-4 flex flex-col justify-between space-y-3 bg-surface-muted/20 dark:bg-slate-900/40 shadow-2xs">
             <div className="flex items-center justify-between border-b border-border/80 pb-2">
               <div className="flex items-center gap-1.5">
                 <Layers className="size-3.5 text-cyan-600 shrink-0" />
@@ -737,7 +750,7 @@ function DashboardPage() {
               </span>
             </div>
 
-            <div className="flex flex-col items-center justify-center py-1">
+            <div className="flex flex-col items-center justify-center py-2">
               {renderDonutSvg({
                 safePctVal: ca.pctAman,
                 limitPctVal: ca.pctLimit,
@@ -746,24 +759,11 @@ function DashboardPage() {
                 centerBadge: allItemGrade.badgeText,
                 badgeClass: allItemGrade.badgeClass,
                 safeColor: allItemGrade.color,
-                subText: "Klik Lihat Item",
                 onClick: () => {
                   setSelectedMetricModal("donut_all");
-                  setMetricCategoryFilter("all");
-                  setMetricStatusFilter("safe");
+                  setMetricSearchQuery("");
                 },
               })}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedMetricModal("donut_all");
-                  setMetricCategoryFilter("all");
-                  setMetricStatusFilter("safe");
-                }}
-                className="mt-1 text-[10px] text-muted-foreground/80 hover:text-primary transition-colors underline underline-offset-2 cursor-pointer"
-              >
-                Klik diagram untuk lihat item
-              </button>
             </div>
 
             {/* Keterangan Grade A - E All Item Barang */}
@@ -775,13 +775,12 @@ function DashboardPage() {
                     key={gt.grade}
                     onClick={() => {
                       setSelectedMetricModal("donut_all");
-                      setMetricCategoryFilter("all");
-                      setMetricStatusFilter("safe");
+                      setMetricSearchQuery("");
                     }}
                     className={cn(
                       "flex items-center justify-between px-2.5 py-1 rounded-md transition-all cursor-pointer",
                       isCurrent
-                        ? "bg-white dark:bg-slate-800 font-bold text-foreground border border-border shadow-xs ring-1 ring-border/80"
+                        ? "bg-surface dark:bg-slate-800 font-bold text-foreground border border-border shadow-xs ring-1 ring-border/80"
                         : "text-muted-foreground hover:bg-slate-200/50 dark:hover:bg-slate-800/50 hover:text-foreground",
                     )}
                     title="Klik untuk melihat daftar item pada persentase ini"
@@ -793,7 +792,7 @@ function DashboardPage() {
                       </span>
                     </span>
                     {isCurrent && (
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700 text-foreground border border-border">
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-surface-muted text-foreground border border-border">
                         {allSafePctExact.toFixed(1)}% ({ca.gabunganAman} item)
                       </span>
                     )}
@@ -1009,16 +1008,16 @@ function DashboardPage() {
       baseCount = ca.gabunganLimit + ca.gabunganHabis;
     } else if (selectedMetricModal === "donut_obs") {
       const g = getGradeInfo(kpiExactPct);
-      modalTitle = "Daftar Barang Stok Aman — OBS Sparepart";
-      modalDesc = `Menampilkan ${nonLimitProductsCount} item barang OBS Sparepart berstatus Aman (${kpiExactPct.toFixed(1)}%) sesuai presentase diagram [${g.badgeText}].`;
+      modalTitle = "Daftar Item Hasil Persentase — OBS Sparepart";
+      modalDesc = `Menampilkan ${nonLimitProductsCount} item barang OBS Sparepart berstatus Aman (${kpiExactPct.toFixed(1)}%) sesuai persentase diagram [${g.badgeText}].`;
       modalBadge = `${nonLimitProductsCount} Item (${kpiExactPct.toFixed(1)}%)`;
       modalIcon = <Package className="size-5 text-blue-500" />;
       baseCount = nonLimitProductsCount;
     } else if (selectedMetricModal === "donut_all") {
       const allSafePctExact = ca.totalGabungan > 0 ? (ca.gabunganAman / ca.totalGabungan) * 100 : 0;
       const g = getGradeInfo(allSafePctExact);
-      modalTitle = "Daftar Barang Stok Aman — All Item Barang";
-      modalDesc = `Menampilkan ${ca.gabunganAman} item barang gabungan OBS & Buffer berstatus Aman (${allSafePctExact.toFixed(1)}%) sesuai presentase diagram [${g.badgeText}].`;
+      modalTitle = "Daftar Item Hasil Persentase — All Item Barang";
+      modalDesc = `Menampilkan ${ca.gabunganAman} item barang gabungan OBS & Buffer berstatus Aman (${allSafePctExact.toFixed(1)}%) sesuai persentase diagram [${g.badgeText}].`;
       modalBadge = `${ca.gabunganAman} Item (${allSafePctExact.toFixed(1)}%)`;
       modalIcon = <Layers className="size-5 text-cyan-500" />;
       baseCount = ca.gabunganAman;
@@ -1071,45 +1070,48 @@ function DashboardPage() {
                 />
               </div>
 
-              {/* Filter Kategori: Semua / OBS / Buffer */}
-              <div className="flex items-center gap-1 bg-surface p-1 rounded-md border border-border self-start sm:self-auto shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setMetricCategoryFilter("all")}
-                  className={cn(
-                    "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
-                    metricCategoryFilter === "all"
-                      ? "bg-primary text-primary-foreground shadow-xs"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  Semua ({unifiedMetricItems.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMetricCategoryFilter("obs")}
-                  className={cn(
-                    "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
-                    metricCategoryFilter === "obs"
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  OBS ({ca.totalOBS})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMetricCategoryFilter("buffer")}
-                  className={cn(
-                    "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
-                    metricCategoryFilter === "buffer"
-                      ? "bg-orange-600 text-white shadow-xs"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  Buffer ({ca.totalBuffer})
-                </button>
-              </div>
+              {/* Filter Kategori: Semua / OBS / Buffer (hanya ditampilkan pada metrik total) */}
+              {(selectedMetricModal === "total_gabungan" ||
+                selectedMetricModal === "total_stok") && (
+                <div className="flex items-center gap-1 bg-surface p-1 rounded-md border border-border self-start sm:self-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setMetricCategoryFilter("all")}
+                    className={cn(
+                      "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
+                      metricCategoryFilter === "all"
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    Semua ({unifiedMetricItems.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMetricCategoryFilter("obs")}
+                    className={cn(
+                      "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
+                      metricCategoryFilter === "obs"
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    OBS ({ca.totalOBS})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMetricCategoryFilter("buffer")}
+                    className={cn(
+                      "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
+                      metricCategoryFilter === "buffer"
+                        ? "bg-orange-600 text-white shadow-xs"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    Buffer ({ca.totalBuffer})
+                  </button>
+                </div>
+              )}
 
               {/* Filter Status (khusus Total Item & Total Stok) */}
               {(selectedMetricModal === "total_gabungan" ||
@@ -1611,8 +1613,8 @@ function DashboardPage() {
   ) {
     const isMasuk = tx.tx_type === "IN";
     const titleType = isMasuk
-      ? "BUKTI PENERIMAAN BARANG (INBOUND)"
-      : "BUKTI PENGELUARAN BARANG (OUTBOUND)";
+      ? "BUKTI PENERIMAAN BARANG"
+      : "BUKTI PENGELUARAN BARANG";
     const colorHeader = isMasuk ? "#059669" : "#e11d48";
     const dateFormatted = formatDate(tx.created_at);
 
@@ -1637,19 +1639,29 @@ function DashboardPage() {
 
     const itemRowsHtml = itemsToRender
       .map(
-        (it, idx) => `
+        (it, idx) => {
+          const itemCode =
+            (it as any).product_code ||
+            productCodeMap.get((it as any).product_id) ||
+            productCodeMap.get(it.product_name?.trim().toLowerCase()) ||
+            allBufferItems.find(
+              (b) =>
+                b.id === (it as any).product_id ||
+                b.name?.trim().toLowerCase() === it.product_name?.trim().toLowerCase(),
+            )?.code ||
+            "—";
+
+          return `
         <tr>
           <td style="text-align: center; color: #64748b; font-size: 11px;">${idx + 1}</td>
+          <td style="text-align: center; font-family: monospace; font-size: 12px; font-weight: 600; color: #334155;">
+            ${itemCode}
+          </td>
           <td>
             <strong style="font-size: 13px; color: #0f172a;">${it.product_name}</strong>
           </td>
           <td>
-            ${
-              isMasuk
-                ? `<div style="font-weight: 600; color: #0f172a;">${tx.reference_no || "—"}</div>`
-                : `<div>Batch: <code>${tx.batch_number || "—"}</code></div>
-                   <div style="font-size: 11px; color: #64748b; margin-top: 1px;">Ref: ${tx.reference_no || "—"}</div>`
-            }
+            <div style="font-weight: 600; color: #0f172a; font-family: monospace;">${tx.reference_no || "—"}</div>
           </td>
           <td style="text-align: center;">
             <span style="font-weight: 700; font-size: 11px; color: ${colorHeader};">${isMasuk ? "IN" : "OUT"}</span>
@@ -1658,7 +1670,8 @@ function DashboardPage() {
             <span class="qty-highlight">${isMasuk ? "+" : "-"}${it.quantity} ${it.unit}</span>
           </td>
         </tr>
-      `,
+      `;
+        },
       )
       .join("");
 
@@ -1800,7 +1813,7 @@ function DashboardPage() {
             <div class="meta-value">${dateFormatted}</div>
           </div>
           <div class="meta-item">
-            <div class="meta-label">${isMasuk ? "Nama Vendor" : "Tujuan / Pemesan"}</div>
+            <div class="meta-label">${isMasuk ? "Nama Vendor" : "Alasan Permintaan Barang"}</div>
             <div class="meta-value">${tx.supplier_or_dest || "—"}</div>
           </div>
           <div class="meta-item">
@@ -1821,10 +1834,11 @@ function DashboardPage() {
           <thead>
             <tr>
               <th style="width: 5%; text-align: center;">No</th>
-              <th style="width: 40%;">Nama Barang</th>
-              <th style="width: 25%;">${isMasuk ? "No.PO" : "No. Batch / Ref"}</th>
-              <th style="width: 12%; text-align: center;">Tipe</th>
-              <th style="width: 18%; text-align: right;">Qty</th>
+              <th style="width: 18%; text-align: center;">Kode Material</th>
+              <th style="width: 37%;">Nama Barang</th>
+              <th style="width: 20%;">No. PO</th>
+              <th style="width: 8%; text-align: center;">Tipe</th>
+              <th style="width: 12%; text-align: right;">Qty</th>
             </tr>
           </thead>
           <tbody>

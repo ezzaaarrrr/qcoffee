@@ -198,6 +198,10 @@ function UserManagementPage() {
       }
     },
     onSuccess: () => {
+      // Simpan cache email untuk role ini agar login langsung mengenali akun baru
+      if (newEmail.trim()) {
+        localStorage.setItem(`role_auth_email_${newRole}`, newEmail.trim().toLowerCase());
+      }
       toast.success("Akun pengguna baru berhasil didaftarkan");
       setIsAddOpen(false);
       setNewFullName("");

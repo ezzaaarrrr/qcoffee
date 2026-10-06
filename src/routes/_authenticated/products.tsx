@@ -151,6 +151,7 @@ type BufferStockItem = {
   id: string;
   name: string;
   code: string | null;
+  category?: string | null;
   unit?: string | null;
   location?: string | null;
   shelf?: string | null;
@@ -538,10 +539,7 @@ function parseExcelWorkbookToSheets(
     // Bangun daftar kolom yang ada di file Excel ini sesuai urutan header file
     const sheetColumns: ParsedExcelColumn[] = [];
     const hasStockInFile =
-      endingBalanceIdx >= 0 ||
-      beginningBalanceIdx >= 0 ||
-      receiptIdx >= 0 ||
-      issuedIdx >= 0;
+      endingBalanceIdx >= 0 || beginningBalanceIdx >= 0 || receiptIdx >= 0 || issuedIdx >= 0;
 
     for (let c = 0; c < selectedHeaderRow.length; c++) {
       const hRaw = String(selectedHeaderRow[c] || "").trim();
@@ -706,7 +704,8 @@ function parseExcelWorkbookToSheets(
         unit = row[2].trim().toLowerCase();
       }
 
-      const rawBeginning = beginningBalanceIdx >= 0 ? parseNum(row[beginningBalanceIdx], null) : null;
+      const rawBeginning =
+        beginningBalanceIdx >= 0 ? parseNum(row[beginningBalanceIdx], null) : null;
       const rawReceipt = receiptIdx >= 0 ? parseNum(row[receiptIdx], null) : null;
       const rawIssued = issuedIdx >= 0 ? parseNum(row[issuedIdx], null) : null;
       const rawEnding = endingBalanceIdx >= 0 ? parseNum(row[endingBalanceIdx], null) : null;
@@ -754,7 +753,8 @@ function parseExcelWorkbookToSheets(
 
       for (const col of sheetColumns) {
         if (col.key.startsWith("col_") && col.rawIndex !== undefined) {
-          itemObj[col.key] = row[col.rawIndex] !== undefined ? String(row[col.rawIndex]).trim() : "";
+          itemObj[col.key] =
+            row[col.rawIndex] !== undefined ? String(row[col.rawIndex]).trim() : "";
         }
       }
 
@@ -819,6 +819,7 @@ function WarehouseAndProductsPage() {
     description: "",
   });
   const [editingBufferItem, setEditingBufferItem] = useState<BufferStockItem | null>(null);
+  const [selectedBufferItem, setSelectedBufferItem] = useState<BufferStockItem | null>(null);
   const [deletingBufferItem, setDeletingBufferItem] = useState<BufferStockItem | null>(null);
   const [bufferSearchQuery, setBufferSearchQuery] = useState("");
   const [bufferStatusFilter, setBufferStatusFilter] = useState<string>("ALL");
@@ -1386,7 +1387,9 @@ function WarehouseAndProductsPage() {
             location: item.location || found.location || "Gudang Utama",
             shelf: item.shelf || found.shelf || "Rak A-1",
             // Jika file memuat ending balance, perbarui stok. Jika file HANYA update maks stock/master, pertahankan stok yang ada di database
-            current_stock: hasEndingInFile ? Number(item.ending_balance) : (found.current_stock ?? 0),
+            current_stock: hasEndingInFile
+              ? Number(item.ending_balance)
+              : (found.current_stock ?? 0),
             safe_stock: found.safe_stock ?? 1,
             // Rekam kolom minimal stock jika ada di file
             min_stock: hasMinInFile ? Number(item.min_stock) : (found.min_stock ?? 10),
@@ -2243,7 +2246,7 @@ function WarehouseAndProductsPage() {
   };
 
   // ── CETAK / UNDUH PDF KARTU MASTER & STOK BARANG ─────────────────────────────
-  const downloadProductPDF = (p: ProductItem) => {
+  const downloadProductPDF = (p: ProductItem | BufferStockItem) => {
     const printWindow = window.open("", "_blank");
     if (!printWindow) {
       alert("Pop-up diblokir browser. Mohon izinkan pop-up untuk mencetak dokumen PDF.");
@@ -2667,9 +2670,7 @@ function WarehouseAndProductsPage() {
   // ── CETAK & UNDUH PDF BUKTI MUTASI BARANG (1 BON / PENCATATAN TRANSAKSI) ────
   const downloadTransactionPDF = (tx: GroupedTransaction) => {
     const isMasuk = tx.tx_type === "IN";
-    const titleType = isMasuk
-      ? "BUKTI PENERIMAAN BARANG (INBOUND)"
-      : "BUKTI PENGELUARAN BARANG (OUTBOUND)";
+    const titleType = isMasuk ? "BUKTI PENERIMAAN BARANG" : "BUKTI PENGELUARAN BARANG";
     const colorHeader = isMasuk ? "#059669" : "#e11d48";
     const dateFormatted = formatDate(tx.created_at);
 
@@ -2682,20 +2683,31 @@ function WarehouseAndProductsPage() {
     }
 
     const itemRowsHtml = tx.items
-      .map(
-        (it, idx) => `
+      .map((it, idx) => {
+        const foundProd =
+          products.find(
+            (p) =>
+              p.id === it.product_id ||
+              p.name.trim().toLowerCase() === it.product_name.trim().toLowerCase(),
+          ) ||
+          bufferItems.find(
+            (b) =>
+              b.id === it.product_id ||
+              b.name.trim().toLowerCase() === it.product_name.trim().toLowerCase(),
+          );
+        const itemCode = (it as any).product_code || foundProd?.code || "—";
+
+        return `
         <tr>
           <td style="text-align: center; color: #64748b; font-size: 11px;">${idx + 1}</td>
+          <td style="text-align: center; font-family: monospace; font-size: 12px; font-weight: 600; color: #334155;">
+            ${itemCode}
+          </td>
           <td>
             <strong style="font-size: 13px; color: #0f172a;">${it.product_name}</strong>
           </td>
           <td>
-            ${
-              isMasuk
-                ? `<div style="font-weight: 600; color: #0f172a;">${tx.reference_no || "—"}</div>`
-                : `<div>Batch: <code>${tx.batch_number || "—"}</code></div>
-                   <div style="font-size: 11px; color: #64748b; margin-top: 1px;">Ref: ${tx.reference_no || "—"}</div>`
-            }
+            <div style="font-weight: 600; color: #0f172a; font-family: monospace;">${tx.reference_no || "—"}</div>
           </td>
           <td style="text-align: center;">
             <span style="font-weight: 700; font-size: 11px; color: ${colorHeader};">${isMasuk ? "IN" : "OUT"}</span>
@@ -2704,8 +2716,8 @@ function WarehouseAndProductsPage() {
             <span class="qty-highlight">${isMasuk ? "+" : "-"}${it.quantity} ${it.unit}</span>
           </td>
         </tr>
-      `,
-      )
+      `;
+      })
       .join("");
 
     const htmlContent = `
@@ -2846,7 +2858,7 @@ function WarehouseAndProductsPage() {
             <div class="meta-value">${dateFormatted}</div>
           </div>
           <div class="meta-item">
-            <div class="meta-label">${isMasuk ? "Nama Vendor" : "Tujuan / Pemesan"}</div>
+            <div class="meta-label">${isMasuk ? "Nama Vendor" : "Alasan Permintaan Barang"}</div>
             <div class="meta-value">${tx.supplier_or_dest || "—"}</div>
           </div>
           <div class="meta-item">
@@ -2867,10 +2879,11 @@ function WarehouseAndProductsPage() {
           <thead>
             <tr>
               <th style="width: 5%; text-align: center;">No</th>
-              <th style="width: 40%;">Nama Barang</th>
-              <th style="width: 25%;">${isMasuk ? "No.PO" : "No. Batch / Ref"}</th>
-              <th style="width: 12%; text-align: center;">Tipe</th>
-              <th style="width: 18%; text-align: right;">Qty</th>
+              <th style="width: 18%; text-align: center;">Kode Material</th>
+              <th style="width: 37%;">Nama Barang</th>
+              <th style="width: 20%;">No. PO</th>
+              <th style="width: 8%; text-align: center;">Tipe</th>
+              <th style="width: 12%; text-align: right;">Qty</th>
             </tr>
           </thead>
           <tbody>
@@ -3759,7 +3772,8 @@ function WarehouseAndProductsPage() {
                             ? Number(totalIn).toLocaleString("id-ID")
                             : (() => {
                                 const lastIn =
-                                  latestInTxMap[p.id] || (nameKey ? latestInTxMap[nameKey] : undefined);
+                                  latestInTxMap[p.id] ||
+                                  (nameKey ? latestInTxMap[nameKey] : undefined);
                                 return lastIn
                                   ? `${Number(lastIn.quantity).toLocaleString("id-ID")}`
                                   : "—";
@@ -5171,27 +5185,28 @@ function WarehouseAndProductsPage() {
                                 {kondisiText}
                               </span>
                             </td>
-                            <td className="px-3 py-3 text-center bg-slate-50/30 dark:bg-slate-900/10">
-                              <div className="flex items-center justify-center gap-1">
-                                {canManageWarehouse && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 px-2 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                    onClick={() => setEditingBufferItem(item)}
-                                    title="Edit"
-                                  >
-                                    <Pencil className="size-3 text-amber-600" />
-                                    <span>Edit</span>
-                                  </Button>
-                                )}
+                            <td className="px-3 py-3 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
+                              <div className="flex items-center justify-center gap-1.5">
+                                {/* Tombol Detail */}
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2.5 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+                                  onClick={() => setSelectedBufferItem(item)}
+                                  title="Lihat Detail & Edit Barang"
+                                >
+                                  <Eye className="size-3 text-primary" />
+                                  <span>Detail</span>
+                                </Button>
+
+                                {/* Tombol Hapus (Khusus Admin/Authorized) */}
                                 {canDeleteMaster && (
                                   <Button
                                     size="sm"
                                     variant="ghost"
                                     className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
                                     onClick={() => setDeletingBufferItem(item)}
-                                    title="Hapus"
+                                    title="Hapus Barang"
                                   >
                                     <Trash2 className="size-3.5" />
                                   </Button>
@@ -6124,7 +6139,9 @@ function WarehouseAndProductsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-muted-foreground">Maksimal Stok (Terkunci)</Label>
+                    <Label className="text-xs font-semibold text-muted-foreground">
+                      Maksimal Stok (Terkunci)
+                    </Label>
                     <Input
                       type="number"
                       value={formData.max_stock}
@@ -6194,16 +6211,6 @@ function WarehouseAndProductsPage() {
                           <UploadCloud className="size-3.5" />
                           Pilih File Dokumen
                         </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={downloadImportTemplate}
-                          className="gap-1.5 text-xs h-8 text-primary hover:text-primary hover:bg-primary/10 border-primary/25"
-                        >
-                          <Download className="size-3.5" />
-                          Unduh Template Excel (.xlsx)
-                        </Button>
                       </div>
                     </div>
                   </div>
@@ -6219,9 +6226,13 @@ function WarehouseAndProductsPage() {
                           <span className="truncate">{importFile.name}</span>
                         </div>
                         <p className="text-[11px] text-muted-foreground mt-0.5">
-                          Total {importPreview.length} item barang terdeteksi • Total Ending Balance:{" "}
+                          Total {importPreview.length} item barang terdeteksi • Total Ending
+                          Balance:{" "}
                           {importPreview
-                            .reduce((acc, it) => acc + (it.ending_balance ?? it.current_stock ?? 0), 0)
+                            .reduce(
+                              (acc, it) => acc + (it.ending_balance ?? it.current_stock ?? 0),
+                              0,
+                            )
                             .toLocaleString("id-ID")}{" "}
                           pcs
                         </p>
@@ -6426,10 +6437,18 @@ function WarehouseAndProductsPage() {
                                 />
                               </div>
                             </th>
-                            <th className="p-2.5 text-center w-20 font-semibold text-white">Satuan</th>
-                            <th className="p-2.5 text-center w-36 font-semibold text-white">BEGINNING BALANCE</th>
-                            <th className="p-2.5 text-center w-28 font-semibold text-white">RECEIPT</th>
-                            <th className="p-2.5 text-center w-28 font-semibold text-white">ISSUED</th>
+                            <th className="p-2.5 text-center w-20 font-semibold text-white">
+                              Satuan
+                            </th>
+                            <th className="p-2.5 text-center w-36 font-semibold text-white">
+                              BEGINNING BALANCE
+                            </th>
+                            <th className="p-2.5 text-center w-28 font-semibold text-white">
+                              RECEIPT
+                            </th>
+                            <th className="p-2.5 text-center w-28 font-semibold text-white">
+                              ISSUED
+                            </th>
                             <th
                               className="p-2.5 text-center w-36 cursor-pointer hover:bg-[#1a3a66] transition-colors select-none text-white font-semibold"
                               onClick={() =>
@@ -6446,7 +6465,9 @@ function WarehouseAndProductsPage() {
                                 />
                               </div>
                             </th>
-                            <th className="p-2.5 text-center w-28 font-semibold text-white">Maks. Stock</th>
+                            <th className="p-2.5 text-center w-28 font-semibold text-white">
+                              Maks. Stock
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border/60">
@@ -6474,7 +6495,9 @@ function WarehouseAndProductsPage() {
                                 {Number(it.issued ?? 0).toLocaleString("id-ID")}
                               </td>
                               <td className="p-2.5 text-center font-mono font-bold text-emerald-700 dark:text-emerald-300">
-                                {Number(it.ending_balance ?? it.current_stock ?? 0).toLocaleString("id-ID")}
+                                {Number(it.ending_balance ?? it.current_stock ?? 0).toLocaleString(
+                                  "id-ID",
+                                )}
                               </td>
                               <td className="p-2.5 text-center font-mono font-medium text-slate-700 dark:text-slate-300">
                                 {it.max_stock !== null && it.max_stock !== undefined
@@ -6494,7 +6517,10 @@ function WarehouseAndProductsPage() {
                       <span className="font-mono font-bold text-foreground">
                         Total Ending Balance:{" "}
                         {sortedImportPreview
-                          .reduce((acc, it) => acc + (it.ending_balance ?? it.current_stock ?? 0), 0)
+                          .reduce(
+                            (acc, it) => acc + (it.ending_balance ?? it.current_stock ?? 0),
+                            0,
+                          )
                           .toLocaleString("id-ID")}{" "}
                         pcs
                       </span>
@@ -7050,7 +7076,6 @@ function WarehouseAndProductsPage() {
             (() => {
               const current = selectedProduct.current_stock ?? 0;
               const minStock = selectedProduct.min_stock ?? 10;
-              const safeStock = (selectedProduct as any).safe_stock ?? 1;
               const rawMax = (selectedProduct as any).max_stock;
               const maxStock =
                 rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
@@ -7131,20 +7156,12 @@ function WarehouseAndProductsPage() {
                         </div>
                       </div>
                     </div>
-
-
                   </div>
 
                   {/* Parameter Buffer Stok */}
                   <div className="space-y-1.5">
-                    <div className="font-semibold text-foreground">Parameter Buffer Stok:</div>
-                    <div className="grid grid-cols-4 gap-2 text-center">
-                      <div className="p-2 rounded border border-border bg-surface">
-                        <div className="text-[10px] text-muted-foreground">Batas Min.</div>
-                        <div className="font-mono font-bold text-sm text-foreground mt-0.5">
-                          {safeStock} {selectedProduct.unit || "pcs"}
-                        </div>
-                      </div>
+                    <div className="font-semibold text-foreground">Parameter OBS Sparepart:</div>
+                    <div className="grid grid-cols-3 gap-2 text-center">
                       <div className="p-2 rounded border border-rose-500/30 bg-rose-500/5">
                         <div className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">
                           Min. Stok (Order)
@@ -7213,6 +7230,203 @@ function WarehouseAndProductsPage() {
               <Button
                 size="sm"
                 onClick={() => downloadProductPDF(selectedProduct)}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs gap-1.5"
+              >
+                <Download className="size-3.5" />
+                <span>Unduh Kartu Kontrol PDF</span>
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── MODAL DIALOG: DETAIL BARANG BUFFER STOK (4 KOTAK PARAMETER) ───────── */}
+      <Dialog
+        open={!!selectedBufferItem}
+        onOpenChange={(open) => !open && setSelectedBufferItem(null)}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <div className="flex items-center justify-between gap-2 pr-4">
+              <DialogTitle className="text-base font-bold flex items-center gap-2">
+                <span>Detail Spesifikasi Barang</span>
+                {selectedBufferItem && (
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {selectedBufferItem.code || "BUFFER"}
+                  </Badge>
+                )}
+              </DialogTitle>
+            </div>
+            <DialogDescription className="text-xs">
+              Informasi lengkap master sparepart dan parameter buffer stok
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedBufferItem &&
+            (() => {
+              const current = selectedBufferItem.current_stock ?? 0;
+              const minStock = selectedBufferItem.min_stock ?? 10;
+              const safeStock = selectedBufferItem.safe_stock ?? 1;
+              const rawMax = (selectedBufferItem as any).max_stock;
+              const maxStock =
+                rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
+
+              let kondisiText = "SAFETY STOK";
+              let kondisiBadgeClass =
+                "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30";
+              let stokSaatIniBoxClass =
+                "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+
+              if (maxStock !== null && !isNaN(maxStock) && current > maxStock) {
+                kondisiText = "OUT OF STOK";
+                kondisiBadgeClass =
+                  "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30";
+                stokSaatIniBoxClass =
+                  "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400";
+              } else if (current <= minStock) {
+                kondisiText = "ORDER";
+                kondisiBadgeClass =
+                  "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30";
+                stokSaatIniBoxClass =
+                  "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400";
+              }
+
+              const formattedDate = selectedBufferItem.created_at
+                ? new Date(selectedBufferItem.created_at).toLocaleDateString("id-ID", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })
+                : "23 September 2026";
+
+              return (
+                <div className="space-y-4 py-2 text-xs">
+                  {/* Info Utama Layout Baru */}
+                  <div className="rounded-lg border border-border bg-surface-muted/40 p-3.5 space-y-3">
+                    {/* 1. Tanggal Input Header */}
+                    <div className="flex items-center justify-between border-b border-border/60 pb-2 text-[11px]">
+                      <div className="flex items-center gap-1.5 text-muted-foreground">
+                        <CalendarIcon className="size-3.5 text-primary shrink-0" />
+                        <span>Tanggal Input:</span>
+                        <span className="font-semibold text-foreground">{formattedDate}</span>
+                      </div>
+                    </div>
+
+                    {/* 2. Nama Material > Kode Material */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">
+                          Nama Material / Sparepart:
+                        </span>
+                        <span className="text-sm font-bold text-foreground leading-tight block">
+                          {selectedBufferItem.name}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">
+                          Kode Material:
+                        </span>
+                        <span className="font-mono font-bold text-sm text-foreground">
+                          {selectedBufferItem.code || "—"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 3. Status Kondisi */}
+                    <div className="flex items-center gap-3 pt-2 border-t border-border/60">
+                      <div>
+                        <span className="text-muted-foreground block text-[11px]">
+                          Status Kondisi:
+                        </span>
+                        <div className="mt-1">
+                          <Badge
+                            className={cn("text-[10px] font-bold uppercase", kondisiBadgeClass)}
+                          >
+                            {kondisiText}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Parameter Buffer Stok (4 KOTAK) */}
+                  <div className="space-y-1.5">
+                    <div className="font-semibold text-foreground">Parameter Buffer Stok:</div>
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      <div className="p-2 rounded border border-border bg-surface">
+                        <div className="text-[10px] text-muted-foreground">Batas Min.</div>
+                        <div className="font-mono font-bold text-sm text-foreground mt-0.5">
+                          {safeStock} {selectedBufferItem.unit || "pcs"}
+                        </div>
+                      </div>
+                      <div className="p-2 rounded border border-rose-500/30 bg-rose-500/5">
+                        <div className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">
+                          Min. Stok (Order)
+                        </div>
+                        <div className="font-mono font-bold text-sm text-rose-600 dark:text-rose-400 mt-0.5">
+                          {minStock} {selectedBufferItem.unit || "pcs"}
+                        </div>
+                      </div>
+                      <div className="p-2 rounded border border-border bg-surface">
+                        <div className="text-[10px] text-muted-foreground">Maks. Stok</div>
+                        <div className="font-mono font-bold text-sm text-foreground mt-0.5">
+                          {maxStock !== null && !isNaN(maxStock)
+                            ? `${maxStock} ${selectedBufferItem.unit || "pcs"}`
+                            : "—"}
+                        </div>
+                      </div>
+                      <div
+                        className={cn(
+                          "p-2 rounded border text-center transition-colors",
+                          stokSaatIniBoxClass,
+                        )}
+                      >
+                        <div className="text-[10px] font-medium">Stok Saat Ini</div>
+                        <div className="font-mono font-bold text-sm mt-0.5">
+                          {current} {selectedBufferItem.unit || "pcs"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Deskripsi Tambahan jika ada */}
+                  {selectedBufferItem.description && (
+                    <div className="space-y-1">
+                      <div className="font-semibold text-foreground">
+                        Deskripsi / Catatan Teknis:
+                      </div>
+                      <p className="p-2.5 rounded border border-border bg-surface text-muted-foreground leading-relaxed">
+                        {selectedBufferItem.description}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+          <DialogFooter className="flex flex-col-reverse sm:flex-row justify-between sm:justify-end items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setSelectedBufferItem(null)}>
+              Tutup
+            </Button>
+            {selectedBufferItem && canManageWarehouse && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setEditingBufferItem(selectedBufferItem);
+                  setSelectedBufferItem(null);
+                }}
+                className="gap-1.5 border-amber-500/40 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/60 font-medium text-xs"
+                title="Edit data master barang & batas stok"
+              >
+                <Pencil className="size-3.5 text-amber-600 dark:text-amber-400" />
+                <span>Edit Barang</span>
+              </Button>
+            )}
+            {selectedBufferItem && (
+              <Button
+                size="sm"
+                onClick={() => downloadProductPDF(selectedBufferItem)}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground text-xs gap-1.5"
               >
                 <Download className="size-3.5" />

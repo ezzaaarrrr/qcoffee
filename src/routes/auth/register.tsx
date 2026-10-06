@@ -71,8 +71,12 @@ function RegisterPage() {
     // Sign out terlebih dahulu agar user wajib login secara eksplisit.
     await supabase.auth.signOut();
 
+    // Simpan email terdaftar untuk role ini agar bisa langsung diautentikasi dengan role & password
+    localStorage.setItem(`role_auth_email_${role}`, email.trim().toLowerCase());
+    localStorage.setItem("last_active_account_email", email.trim().toLowerCase());
+
     toast.success("Akun berhasil dibuat!", {
-      description: "Silakan masuk dengan email dan kata sandi Anda.",
+      description: "Silakan masuk dengan memilih departemen/role dan memasukkan kata sandi Anda.",
     });
     navigate({ to: "/auth/login", replace: true });
   }

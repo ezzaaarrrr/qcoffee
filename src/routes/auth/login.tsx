@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { AlertCircle, ShieldAlert, Lock, Mail, UserCheck, Eye, EyeOff } from "lucide-react";
+import { AlertCircle, ShieldAlert, Lock, UserCheck, Eye, EyeOff, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,8 +31,13 @@ export const Route = createFileRoute("/auth/login")({
 function LoginPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [role, setRole] = useState<AppRole>("admin_process");
-  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<AppRole>(() => {
+    return (localStorage.getItem("last_active_role") as AppRole) || "prod_process_uh";
+  });
+  const [email, setEmail] = useState(() => {
+    const savedRole = (localStorage.getItem("last_active_role") as AppRole) || "prod_process_uh";
+    return localStorage.getItem(`role_auth_email_${savedRole}`) || localStorage.getItem("last_active_account_email") || "";
+  });
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<{ title: string; desc: string; type: "credentials" | "role" } | null>(null);
@@ -43,15 +48,24 @@ function LoginPage() {
     });
   }, [navigate]);
 
+  const handleRoleChange = (newRole: AppRole) => {
+    setRole(newRole);
+    setErrorMessage(null);
+    const cached = localStorage.getItem(`role_auth_email_${newRole}`);
+    if (cached) {
+      setEmail(cached);
+    }
+  };
+
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setErrorMessage(null);
 
     // Validasi input awal
-    if (!email.trim() || !password) {
+    if (!password) {
       setErrorMessage({
-        title: "Input Tidak Lengkap",
-        desc: "Silakan isi email dan kata sandi Anda.",
+        title: "Kata Sandi Belum Diisi",
+        desc: "Silakan masukkan kata sandi akun Anda.",
         type: "credentials",
       });
       return;
@@ -59,79 +73,153 @@ function LoginPage() {
 
     setLoading(true);
 
-    // 1. Authenticate Email & Password via Supabase Auth
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
+    try {
+      // 1. Kumpulkan calon email akun untuk autentikasi
+      const candidateEmails: string[] = [];
 
-    if (error) {
-      setLoading(false);
-      let title = "Gagal Masuk";
-      let desc = "Email atau kata sandi yang Anda masukkan salah. Silakan periksa kembali.";
+      // A. Jika user memasukkan email secara manual
+      if (email.trim()) {
+        candidateEmails.push(email.trim().toLowerCase());
+      } else {
+        // B. Coba ambil email dari database RPC Supabase (SECURITY DEFINER)
+        try {
+          const { data: rpcEmails, error: rpcError } = await (supabase as any).rpc("get_auth_emails_by_role", {
+            p_role: role,
+          });
 
-      if (error.message.toLowerCase().includes("email not confirmed")) {
-        title = "Email Belum Dikonfirmasi";
-        desc = "Akun email Anda belum diverifikasi. Silakan hubungi administrator sistem.";
-      } else if (error.message.toLowerCase().includes("invalid login credentials")) {
-        title = "Email atau Kata Sandi Salah";
-        desc = "Kombinasi email dan kata sandi tidak cocok dengan data akun kami.";
-      } else if (error.message.toLowerCase().includes("too many requests")) {
-        title = "Terlalu Banyak Percobaan";
-        desc = "Terlalu banyak percobaan login yang gagal. Silakan tunggu beberapa saat.";
-      }
-
-      setErrorMessage({ title, desc, type: "credentials" });
-      toast.error(title, { description: desc });
-      return;
-    }
-
-    // 2. Validasi Hak Akses / Role Akun
-    if (data.user) {
-      try {
-        const { data: userRoles, error: rolesError } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", data.user.id);
-
-        if (!rolesError && userRoles && userRoles.length > 0) {
-          const registeredRoles = userRoles.map((r) => r.role as AppRole);
-          const hasSelectedRole = registeredRoles.includes(role);
-          const isSuperAdmin = registeredRoles.includes("admin");
-
-          // Jika role yang dipilih salah dan user bukan Super Admin
-          if (!hasSelectedRole && !isSuperAdmin) {
-            await supabase.auth.signOut();
-            setLoading(false);
-
-            const actualRoleNames = registeredRoles
-              .map((r) => ROLE_LABELS[r] || r)
-              .join(", ");
-
-            const errorDetail = {
-              title: "Hak Akses (Role) Tidak Sesuai",
-              desc: `Akun Anda terdaftar sebagai "${actualRoleNames}", bukan sebagai "${ROLE_LABELS[role]}". Silakan pilih role yang sesuai pada dropdown di atas.`,
-              type: "role" as const,
-            };
-
-            setErrorMessage(errorDetail);
-            toast.error(errorDetail.title, {
-              description: errorDetail.desc,
-              duration: 5000,
+          if (!rpcError && Array.isArray(rpcEmails) && rpcEmails.length > 0) {
+            rpcEmails.forEach((item: any) => {
+              const em = typeof item === "string" ? item : item?.email;
+              if (em && typeof em === "string" && em.trim()) {
+                candidateEmails.push(em.trim().toLowerCase());
+              }
             });
-            return;
           }
+        } catch (err) {
+          console.warn("RPC get_auth_emails_by_role lookup failed or not deployed:", err);
         }
-      } catch (err) {
-        console.error("Error verifying user roles:", err);
-      }
-    }
 
-    setLoading(false);
-    toast.success("Berhasil masuk", {
-      description: `Selamat datang! Masuk sebagai ${ROLE_LABELS[role]}`,
-    });
-    navigate({ to: "/dashboard", replace: true });
+        // C. Ambil dari cache lokal browser (akun yang tersimpan untuk role ini / user aktif sebelumnya)
+        const cachedRoleEmail = localStorage.getItem(`role_auth_email_${role}`);
+        if (cachedRoleEmail && cachedRoleEmail.trim()) {
+          candidateEmails.push(cachedRoleEmail.trim().toLowerCase());
+        }
+        const lastKnownEmail = localStorage.getItem("last_active_account_email");
+        if (lastKnownEmail && lastKnownEmail.trim()) {
+          candidateEmails.push(lastKnownEmail.trim().toLowerCase());
+        }
+
+        // D. Fallback kredensial akun bawaan di sistem
+        candidateEmails.push(`${role}@gmail.com`);
+        candidateEmails.push(`${role}@qcoffee.com`);
+        candidateEmails.push(`${role}@coffee.m2`);
+        candidateEmails.push("admin@gmail.com");
+      }
+
+      const uniqueEmails = Array.from(new Set(candidateEmails.filter(Boolean)));
+
+      if (uniqueEmails.length === 0) {
+        setLoading(false);
+        const title = "Email Akun Belum Diisi";
+        const desc = `Silakan masukkan email akun yang terdaftar untuk ${ROLE_LABELS[role]}.`;
+        setErrorMessage({ title, desc, type: "credentials" });
+        toast.error(title, { description: desc });
+        return;
+      }
+
+      // 2. Coba autentikasi menggunakan Supabase Auth dengan kata sandi yang diinput
+      let authenticatedUser: any = null;
+      let authenticatedEmail: string | null = null;
+      let lastError: any = null;
+
+      for (const candidateEmail of uniqueEmails) {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: candidateEmail,
+          password,
+        });
+
+        if (!authError && authData?.user) {
+          authenticatedUser = authData.user;
+          authenticatedEmail = candidateEmail;
+          break;
+        }
+
+        if (authError) {
+          lastError = authError;
+        }
+      }
+
+      if (!authenticatedUser) {
+        setLoading(false);
+        let title = "Gagal Masuk";
+        let desc = email.trim()
+          ? `Kata sandi atau email "${email}" salah untuk ${ROLE_LABELS[role]}. Silakan periksa kembali kata sandi dan email Anda.`
+          : `Kata sandi yang Anda masukkan salah untuk ${ROLE_LABELS[role]}, atau email akun Anda belum dimasukkan. Silakan isi kolom Email dengan alamat email yang Anda daftarkan.`;
+
+        if (lastError?.message?.toLowerCase().includes("too many requests")) {
+          title = "Terlalu Banyak Percobaan";
+          desc = "Terlalu banyak percobaan masuk yang gagal. Silakan tunggu beberapa saat.";
+        }
+
+        setErrorMessage({ title, desc, type: "credentials" });
+        toast.error(title, { description: desc });
+        return;
+      }
+
+      // 3. Validasi Hak Akses / Role Akun
+      const { data: userRoles, error: rolesError } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", authenticatedUser.id);
+
+      if (!rolesError && userRoles && userRoles.length > 0) {
+        const registeredRoles = userRoles.map((r) => r.role as AppRole);
+        const hasSelectedRole = registeredRoles.includes(role);
+        const isSuperAdmin = registeredRoles.includes("admin");
+
+        // Jika role yang dipilih salah dan user bukan Super Admin
+        if (!hasSelectedRole && !isSuperAdmin) {
+          await supabase.auth.signOut();
+          setLoading(false);
+
+          const actualRoleNames = registeredRoles
+            .map((r) => ROLE_LABELS[r] || r)
+            .join(", ");
+
+          const errorDetail = {
+            title: "Hak Akses (Role) Tidak Sesuai",
+            desc: `Akun ini terdaftar sebagai "${actualRoleNames}", bukan sebagai "${ROLE_LABELS[role]}". Silakan pilih role yang sesuai pada dropdown di atas.`,
+            type: "role" as const,
+          };
+
+          setErrorMessage(errorDetail);
+          toast.error(errorDetail.title, {
+            description: errorDetail.desc,
+            duration: 5000,
+          });
+          return;
+        }
+      }
+
+      // Simpan riwayat login role yang berhasil
+      if (authenticatedEmail) {
+        localStorage.setItem(`role_auth_email_${role}`, authenticatedEmail);
+        localStorage.setItem("last_active_account_email", authenticatedEmail);
+        localStorage.setItem("last_active_role", role);
+      }
+
+      setLoading(false);
+      toast.success("Berhasil masuk", {
+        description: `Selamat datang! Masuk sebagai ${ROLE_LABELS[role]}`,
+      });
+      navigate({ to: "/dashboard", replace: true });
+    } catch (err: any) {
+      setLoading(false);
+      console.error("Login process error:", err);
+      toast.error("Terjadi Kesalahan", {
+        description: err.message || "Gagal memproses login. Silakan coba lagi.",
+      });
+    }
   }
 
   return (
@@ -195,10 +283,7 @@ function LoginPage() {
               </Label>
               <Select
                 value={role}
-                onValueChange={(v) => {
-                  setRole(v as AppRole);
-                  setErrorMessage(null);
-                }}
+                onValueChange={(v) => handleRoleChange(v as AppRole)}
               >
                 <SelectTrigger id="role-select" className="w-full h-10 text-xs bg-[#05132d] border-blue-900/60 text-white focus:ring-cyan-500">
                   <SelectValue placeholder="Pilih Peran / Hak Akses" />
@@ -220,16 +305,20 @@ function LoginPage() {
               </Select>
             </div>
 
-            {/* Input 2: Email */}
+            {/* Input 2: Email Akun */}
             <div className="space-y-1.5">
-              <Label htmlFor="email" className="flex items-center gap-1.5 text-xs text-blue-100">
-                <Mail className="size-3.5 text-blue-300/70" />
-                <span>Email</span>
-              </Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="email" className="flex items-center gap-1.5 text-xs text-blue-100">
+                  <Mail className="size-3.5 text-cyan-400" />
+                  <span>Email Akun Terdaftar</span>
+                </Label>
+                <span className="text-[10px] text-blue-300/60 font-medium">
+                  {email ? "Terisi otomatis" : "Ketik email akun"}
+                </span>
+              </div>
               <Input
                 id="email"
                 type="email"
-                required
                 autoComplete="email"
                 value={email}
                 onChange={(e) => {
