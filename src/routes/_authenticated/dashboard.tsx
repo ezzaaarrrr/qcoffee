@@ -1660,9 +1660,13 @@ function DashboardPage() {
           <td>
             <strong style="font-size: 13px; color: #0f172a;">${it.product_name}</strong>
           </td>
-          <td>
+          ${
+            isMasuk
+              ? `<td>
             <div style="font-weight: 600; color: #0f172a; font-family: monospace;">${tx.reference_no || "—"}</div>
-          </td>
+          </td>`
+              : ""
+          }
           <td style="text-align: center;">
             <span style="font-weight: 700; font-size: 11px; color: ${colorHeader};">${isMasuk ? "IN" : "OUT"}</span>
           </td>
@@ -1834,9 +1838,9 @@ function DashboardPage() {
           <thead>
             <tr>
               <th style="width: 5%; text-align: center;">No</th>
-              <th style="width: 18%; text-align: center;">Kode Material</th>
-              <th style="width: 37%;">Nama Barang</th>
-              <th style="width: 20%;">No. PO</th>
+              <th style="width: ${isMasuk ? "18%" : "20%"}; text-align: center;">Kode Material</th>
+              <th style="width: ${isMasuk ? "37%" : "55%"};">Nama Barang</th>
+              ${isMasuk ? `<th style="width: 20%;">No. PO</th>` : ""}
               <th style="width: 8%; text-align: center;">Tipe</th>
               <th style="width: 12%; text-align: right;">Qty</th>
             </tr>
@@ -2168,9 +2172,9 @@ function DashboardPage() {
         totalOutQtyMap: outQty,
         generatedByName: profile?.full_name || profile?.email || "Pengguna Dashboard Sparepart",
         categoryFilter: "Semua Kategori",
-        plant: "2000",
-        storageLocation: "Gudang Sparepart & Tools",
-        materialType: "Sparepart",
+        plant: "1201",
+        storageLocation: "GDSPP",
+        materialType: "ERSA",
         period: new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" }),
       });
 

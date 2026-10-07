@@ -2074,6 +2074,53 @@ function WarehouseAndProductsPage() {
     };
   }, [transactions]);
 
+  // ── MAP MUTASI HARIAN (DAILY RECEIPT & ISSUED) UNTUK TABEL OBS SPAREPART ──────
+  // Kolom Receipt dan Issued harian: jika transaksi sudah beda hari, bernilai 0 sehingga tampil (-)
+  const { dailyInQtyMap, dailyOutQtyMap } = useMemo(() => {
+    const inQty: Record<string, number> = {};
+    const outQty: Record<string, number> = {};
+
+    // Tanggal target: jika filter kalender diisi gunakan itu, jika kosong gunakan tanggal hari ini (daily)
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const targetDate = productDateFilter || todayStr;
+
+    transactions.forEach((tx) => {
+      let txDate = "";
+      if (tx.created_at) {
+        const d = new Date(tx.created_at);
+        if (!isNaN(d.getTime())) {
+          txDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        }
+      }
+
+      // Cocokkan apakah transaksi terjadi pada target tanggal (hari ini / tanggal terpilih)
+      const isTargetDay =
+        txDate === targetDate ||
+        (tx.batch_number && tx.batch_number.trim() === targetDate);
+
+      // Jika transaksi berasal dari hari lain (sudah beda hari), tidak dimasukkan ke Receipt & Issued harian
+      if (!isTargetDay) return;
+
+      const qty = Number(tx.quantity) || 0;
+      const idKey = tx.product_id;
+      const nameKey = tx.product_name ? tx.product_name.trim().toLowerCase() : "";
+
+      if (tx.tx_type === "IN") {
+        if (idKey) inQty[idKey] = (inQty[idKey] || 0) + qty;
+        if (nameKey) inQty[nameKey] = (inQty[nameKey] || 0) + qty;
+      } else if (tx.tx_type === "OUT") {
+        if (idKey) outQty[idKey] = (outQty[idKey] || 0) + qty;
+        if (nameKey) outQty[nameKey] = (outQty[nameKey] || 0) + qty;
+      }
+    });
+
+    return {
+      dailyInQtyMap: inQty,
+      dailyOutQtyMap: outQty,
+    };
+  }, [transactions, productDateFilter]);
+
   // ── GROUPING LOKASI & RAK BERDASARKAN MASTER BARANG & CATATAN MASUK ──────────────
   const shelfLocationGroups = useMemo(() => {
     const map: Record<
@@ -2141,8 +2188,8 @@ function WarehouseAndProductsPage() {
       products: dataToExport,
       latestInTxMap,
       latestOutTxMap,
-      totalInQtyMap,
-      totalOutQtyMap,
+      totalInQtyMap: dailyInQtyMap,
+      totalOutQtyMap: dailyOutQtyMap,
       generatedByName: profile?.full_name || profile?.email || "Petugas Warehouse Sparepart",
       categoryFilter: "Sparepart & Tools",
       plant: "1201",
@@ -2155,7 +2202,7 @@ function WarehouseAndProductsPage() {
     recordActivity("EXPORT_DATA", "Mengekspor laporan inventaris & stok sparepart ke Excel");
   };
 
-  // ── EXPORT DATA KE CSV MENTAH ──────────────────────────────────────────────────
+  // ── EXPORT DATA LAPORAN INVENTARIS SPAREPART RESMI (.CSV) ──────────────────────
   const exportToCSV = () => {
     const dataToExport = filteredProducts.length > 0 ? filteredProducts : products;
     if (dataToExport.length === 0) {
@@ -2163,86 +2210,141 @@ function WarehouseAndProductsPage() {
       return;
     }
 
-    const periodStr = txDateFilter
-      ? new Date(txDateFilter).toLocaleDateString("id-ID", {
+    const today = new Date();
+    const printDate =
+      today.toLocaleDateString("id-ID", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }) + " WIB";
+
+    const periodStr = productDateFilter || txDateFilter
+      ? new Date(productDateFilter || txDateFilter).toLocaleDateString("id-ID", {
           day: "numeric",
           month: "long",
           year: "numeric",
         })
-      : new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+      : today.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
 
-    const metaInfoLines = [
-      `"1. PLANT      : 1201"`,
-      `"2. S.LOCATION : GDSP"`,
-      `"3. MAT.TYPE   : ERSA"`,
-      `"4. PERIOD     : ${periodStr}"`,
-      "",
-    ];
-
-    const headers = [
-      "No",
-      "Kode",
-      "MATERIAL",
-      "BEGINNING BALANCE",
-      "MIN.STOK",
-      "RECEIPT",
-      "ISSUED",
-      "ENDING BALANCE",
-      "MAKS.STOK",
-      "STATUS STOCK",
-    ];
+    let totalBeginningAll = 0;
+    let totalReceiptAll = 0;
+    let totalIssuedAll = 0;
+    let totalEndingStock = 0;
+    let orderCount = 0;
+    let safetyCount = 0;
+    let outOfStockCount = 0;
 
     const rows = dataToExport.map((p, idx) => {
       const minStock = p.min_stock ?? 10;
       const endingStock = p.current_stock ?? 0;
-      const isLimit = endingStock <= minStock;
+      const rawMax = (p as any).max_stock;
+      const maxStock =
+        rawMax !== null && rawMax !== undefined && rawMax !== ""
+          ? Number(rawMax)
+          : null;
+
       const nameKey = p.name ? p.name.trim().toLowerCase() : "";
       const codeKey = p.code ? p.code.trim().toLowerCase() : "";
 
-      const totalOut =
-        (totalOutQtyMap[p.id] ?? 0) ||
-        (nameKey ? (totalOutQtyMap[nameKey] ?? 0) : 0) ||
-        (codeKey ? (totalOutQtyMap[codeKey] ?? 0) : 0);
-      const totalIn =
-        (totalInQtyMap[p.id] ?? 0) ||
-        (nameKey ? (totalInQtyMap[nameKey] ?? 0) : 0) ||
-        (codeKey ? (totalInQtyMap[codeKey] ?? 0) : 0);
+      const dailyIn =
+        (dailyInQtyMap[p.id] ?? 0) ||
+        (nameKey ? (dailyInQtyMap[nameKey] ?? 0) : 0) ||
+        (codeKey ? (dailyInQtyMap[codeKey] ?? 0) : 0);
 
-      const beginningBalance = Math.max(0, endingStock - totalIn + totalOut);
+      const dailyOut =
+        (dailyOutQtyMap[p.id] ?? 0) ||
+        (nameKey ? (dailyOutQtyMap[nameKey] ?? 0) : 0) ||
+        (codeKey ? (dailyOutQtyMap[codeKey] ?? 0) : 0);
+
+      const beginningBalance = Math.max(0, endingStock - dailyIn + dailyOut);
+
+      totalBeginningAll += beginningBalance;
+      totalReceiptAll += dailyIn;
+      totalIssuedAll += dailyOut;
+      totalEndingStock += endingStock;
+
+      let statusStr = "SAFETY STOK";
+      if (maxStock !== null && !isNaN(maxStock) && endingStock > maxStock) {
+        statusStr = "OUT OF STOK";
+        outOfStockCount++;
+      } else if (endingStock <= minStock) {
+        statusStr = "ORDER";
+        orderCount++;
+      } else {
+        safetyCount++;
+      }
 
       return [
         String(idx + 1),
         `"${(p.code || "-").replace(/"/g, '""')}"`,
         `"${(p.name || "").replace(/"/g, '""')}"`,
-        String(beginningBalance),
+        `"${(p.unit || "PCS").toUpperCase()}"`,
         String(minStock),
-        String(totalIn),
-        String(totalOut),
+        String(beginningBalance),
+        dailyIn > 0 ? String(dailyIn) : "-",
+        dailyOut > 0 ? String(dailyOut) : "-",
         String(endingStock),
-        String(p.max_stock ?? "—"),
-        isLimit ? "LIMIT / KRITIS" : "AMAN",
-      ];
+        maxStock !== null && !isNaN(maxStock) ? String(maxStock) : "-",
+        `"${statusStr}"`,
+      ].join(",");
     });
 
-    const csvContent = [...metaInfoLines, headers.join(","), ...rows.map((e) => e.join(","))].join(
-      "\r\n",
-    );
+    const metaInfoLines = [
+      `"1. PLANT           : 1201"`,
+      `"2. STORAGE LOCATION: GDSP"`,
+      `"3. MATERIAL TYPE   : ERSA"`,
+      `"4. PERIODE MUTASI  : ${periodStr}"`,
+      "",
+    ];
+
+    const headers = [
+      "No",
+      "Kode Material",
+      "Nama Barang",
+      "Satuan",
+      "Minimal Stok",
+      "BEGINNING BALANCE",
+      "RECEIPT",
+      "ISSUED",
+      "ENDING BALANCE",
+      "Maksimal Stok",
+      "Kondisi Stok",
+    ].map((h) => `"${h}"`).join(",");
+
+    const signatureLines = [
+      "",
+      "",
+      `"Dibuat oleh User,","","","Diperiksa oleh UH/SH,","","","Disetujui oleh Departement Head,","","","",""`,
+      "",
+      "",
+      "",
+      `"( ............................................ )","","","( ............................................ )","","","( ............................................ )","","","",""`,
+    ];
+
+    const csvContent = [
+      ...metaInfoLines,
+      headers,
+      ...rows,
+      ...signatureLines,
+    ].join("\r\n");
+
     const bom = "\uFEFF";
     const blob = new Blob([bom + csvContent], { type: "text/csv;charset=utf-8;" });
+    const fileDateStr = today.toISOString().split("T")[0];
+    const filename = `laporan_stok_sparepart_${fileDateStr}.csv`;
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute(
-      "download",
-      `laporan_stok_sparepart_${new Date().toISOString().split("T")[0]}.csv`,
-    );
+    link.setAttribute("download", filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 
-    toast.success("Laporan data gudang berhasil diekspor (.csv)");
-    recordActivity("EXPORT_DATA", "Mengekspor laporan inventaris & stok gudang ke CSV");
+    toast.success("Laporan inventaris sparepart berhasil diekspor (.csv)");
+    recordActivity("EXPORT_DATA", "Mengekspor laporan inventaris & stok gudang ke CSV Resmi");
   };
 
   // ── CETAK / UNDUH PDF KARTU MASTER & STOK BARANG ─────────────────────────────
@@ -2706,9 +2808,13 @@ function WarehouseAndProductsPage() {
           <td>
             <strong style="font-size: 13px; color: #0f172a;">${it.product_name}</strong>
           </td>
-          <td>
+          ${
+            isMasuk
+              ? `<td>
             <div style="font-weight: 600; color: #0f172a; font-family: monospace;">${tx.reference_no || "—"}</div>
-          </td>
+          </td>`
+              : ""
+          }
           <td style="text-align: center;">
             <span style="font-weight: 700; font-size: 11px; color: ${colorHeader};">${isMasuk ? "IN" : "OUT"}</span>
           </td>
@@ -2879,9 +2985,9 @@ function WarehouseAndProductsPage() {
           <thead>
             <tr>
               <th style="width: 5%; text-align: center;">No</th>
-              <th style="width: 18%; text-align: center;">Kode Material</th>
-              <th style="width: 37%;">Nama Barang</th>
-              <th style="width: 20%;">No. PO</th>
+              <th style="width: ${isMasuk ? "18%" : "20%"}; text-align: center;">Kode Material</th>
+              <th style="width: ${isMasuk ? "37%" : "55%"};">Nama Barang</th>
+              ${isMasuk ? `<th style="width: 20%;">No. PO</th>` : ""}
               <th style="width: 8%; text-align: center;">Tipe</th>
               <th style="width: 12%; text-align: right;">Qty</th>
             </tr>
@@ -3154,44 +3260,15 @@ function WarehouseAndProductsPage() {
                 </>
               )}
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    size="sm"
-                    className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3"
-                  >
-                    <FileSpreadsheet className="size-3.5 text-emerald-400" />
-                    Export Laporan
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel className="text-xs text-muted-foreground">
-                    Format Unduhan Laporan
-                  </DropdownMenuLabel>
-                  <DropdownMenuItem onClick={exportToExcel} className="gap-2.5 cursor-pointer py-2">
-                    <FileSpreadsheet className="size-4 text-emerald-600 dark:text-emerald-400" />
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-xs text-foreground">
-                        Excel Resmi (.xls)
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        Format rapi, kop, KPI & tanda tangan
-                      </span>
-                    </div>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={exportToCSV} className="gap-2.5 cursor-pointer py-2">
-                    <FileText className="size-4 text-sky-600 dark:text-sky-400" />
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-xs text-foreground">
-                        CSV Mentah (.csv)
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        Tabel data terpisah koma
-                      </span>
-                    </div>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button
+                size="sm"
+                onClick={exportToCSV}
+                className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3"
+                title="Unduh Laporan Stok Sparepart (.csv resmi berformat rapi & tanda tangan)"
+              >
+                <FileSpreadsheet className="size-3.5 text-emerald-400" />
+                Export Laporan
+              </Button>
             </div>
           ) : (
             /* Layout 2 Kolom saat tombol Tambah Barang aktif */
@@ -3260,47 +3337,15 @@ function WarehouseAndProductsPage() {
                   </Button>
                 )}
 
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      size="sm"
-                      className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[155px]"
-                    >
-                      <FileSpreadsheet className="size-3.5 text-emerald-400" />
-                      Export Laporan
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel className="text-xs text-muted-foreground">
-                      Format Unduhan Laporan
-                    </DropdownMenuLabel>
-                    <DropdownMenuItem
-                      onClick={exportToExcel}
-                      className="gap-2.5 cursor-pointer py-2"
-                    >
-                      <FileSpreadsheet className="size-4 text-emerald-600 dark:text-emerald-400" />
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-xs text-foreground">
-                          Excel Resmi (.xls)
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          Format rapi, kop, KPI & tanda tangan
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={exportToCSV} className="gap-2.5 cursor-pointer py-2">
-                      <FileText className="size-4 text-sky-600 dark:text-sky-400" />
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-xs text-foreground">
-                          CSV Mentah (.csv)
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          Tabel data terpisah koma
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Button
+                  size="sm"
+                  onClick={exportToCSV}
+                  className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[155px]"
+                  title="Unduh Laporan Stok Sparepart (.csv resmi berformat rapi & tanda tangan)"
+                >
+                  <FileSpreadsheet className="size-3.5 text-emerald-400" />
+                  Export Laporan
+                </Button>
               </div>
             </>
           )}
@@ -3674,18 +3719,22 @@ function WarehouseAndProductsPage() {
                     const nameKey = p.name ? p.name.trim().toLowerCase() : "";
                     const codeKey = p.code ? p.code.trim().toLowerCase() : "";
 
-                    const totalIn =
-                      (totalInQtyMap[p.id] ?? 0) ||
-                      (nameKey ? (totalInQtyMap[nameKey] ?? 0) : 0) ||
-                      (codeKey ? (totalInQtyMap[codeKey] ?? 0) : 0);
+                    // Mutasi Harian (Daily): Kolom Receipt & Issued hanya menampilkan transaksi hari ini
+                    // Jika mutasi sudah beda hari, bernilai 0 sehingga otomatis kembali menjadi (-)
+                    const dailyReceipt =
+                      (dailyInQtyMap[p.id] ?? 0) ||
+                      (nameKey ? (dailyInQtyMap[nameKey] ?? 0) : 0) ||
+                      (codeKey ? (dailyInQtyMap[codeKey] ?? 0) : 0);
 
-                    const totalOut =
-                      (totalOutQtyMap[p.id] ?? 0) ||
-                      (nameKey ? (totalOutQtyMap[nameKey] ?? 0) : 0) ||
-                      (codeKey ? (totalOutQtyMap[codeKey] ?? 0) : 0);
+                    const dailyIssued =
+                      (dailyOutQtyMap[p.id] ?? 0) ||
+                      (nameKey ? (dailyOutQtyMap[nameKey] ?? 0) : 0) ||
+                      (codeKey ? (dailyOutQtyMap[codeKey] ?? 0) : 0);
 
                     // BEGINNING BALANCE = Ending Balance - Receipt + Issued
-                    const beginningBalance = Math.max(0, current - totalIn + totalOut);
+                    // Jika sudah beda hari (dailyReceipt === 0 & dailyIssued === 0),
+                    // maka Beginning Balance otomatis sama dengan Ending Balance (current)
+                    const beginningBalance = Math.max(0, current - dailyReceipt + dailyIssued);
 
                     // Logika Kondisi:
                     // 1. Order warna merah (current <= minStock)
@@ -3768,30 +3817,20 @@ function WarehouseAndProductsPage() {
 
                         {/* 7. RECEIPT */}
                         <td className="px-3 py-3 text-center font-mono font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                          {totalIn > 0
-                            ? Number(totalIn).toLocaleString("id-ID")
-                            : (() => {
-                                const lastIn =
-                                  latestInTxMap[p.id] ||
-                                  (nameKey ? latestInTxMap[nameKey] : undefined);
-                                return lastIn
-                                  ? `${Number(lastIn.quantity).toLocaleString("id-ID")}`
-                                  : "—";
-                              })()}
+                          {dailyReceipt > 0 ? (
+                            Number(dailyReceipt).toLocaleString("id-ID")
+                          ) : (
+                            <span className="text-muted-foreground/60">—</span>
+                          )}
                         </td>
 
                         {/* 8. ISSUED */}
                         <td className="px-3 py-3 text-center font-mono font-semibold text-rose-600 dark:text-rose-400 whitespace-nowrap">
-                          {totalOut > 0
-                            ? Number(totalOut).toLocaleString("id-ID")
-                            : (() => {
-                                const lastOut =
-                                  latestOutTxMap[p.id] ||
-                                  (nameKey ? latestOutTxMap[nameKey] : undefined);
-                                return lastOut
-                                  ? `${Number(lastOut.quantity).toLocaleString("id-ID")}`
-                                  : "—";
-                              })()}
+                          {dailyIssued > 0 ? (
+                            Number(dailyIssued).toLocaleString("id-ID")
+                          ) : (
+                            <span className="text-muted-foreground/60">—</span>
+                          )}
                         </td>
 
                         {/* 9. ENDING BALANCE */}
@@ -4318,11 +4357,11 @@ function WarehouseAndProductsPage() {
 
                         {/* 8. No. PO */}
                         <td className="px-3 py-3 text-xs">
-                          {tx.reference_no ? (
+                          {isMasuk && tx.reference_no ? (
                             <span className="font-mono text-xs text-foreground font-semibold">
                               {tx.reference_no}
                             </span>
-                          ) : tx.batch_number ? (
+                          ) : isMasuk && tx.batch_number ? (
                             <span className="font-mono text-[11px] text-muted-foreground">
                               {tx.batch_number}
                             </span>
@@ -6984,12 +7023,14 @@ function WarehouseAndProductsPage() {
                       {selectedTx.notes || selectedTx.reference_no || "—"}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">No. PO:</span>
-                    <span className="font-mono font-semibold text-foreground">
-                      {selectedTx.reference_no || "—"}
-                    </span>
-                  </div>
+                  {selectedTx.tx_type === "IN" && (
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">No. PO:</span>
+                      <span className="font-mono font-semibold text-foreground">
+                        {selectedTx.reference_no || "—"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
