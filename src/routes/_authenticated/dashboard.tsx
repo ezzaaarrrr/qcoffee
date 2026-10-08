@@ -474,7 +474,7 @@ function DashboardPage() {
     if (pct >= 92.0) {
       return {
         grade: "A",
-        badgeText: "GRADE A",
+        badgeText: "POINT A",
         color: "#03ff28ffff", // Hijau
         badgeClass:
           "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
@@ -484,7 +484,7 @@ function DashboardPage() {
     if (pct >= 90.0) {
       return {
         grade: "B",
-        badgeText: "GRADE B",
+        badgeText: "POINT B",
         color: "#37deffff", // Biru
         badgeClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
         dotClass: "bg-[#37deff]",
@@ -493,7 +493,7 @@ function DashboardPage() {
     if (pct >= 88.0) {
       return {
         grade: "C",
-        badgeText: "GRADE C",
+        badgeText: "POINT C",
         color: "#ffc929ff", // Kuning
         badgeClass: "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/30",
         dotClass: "bg-[#ffc929]",
@@ -502,7 +502,7 @@ function DashboardPage() {
     if (pct >= 85.0) {
       return {
         grade: "D",
-        badgeText: "GRADE D",
+        badgeText: "POINT D",
         color: "#ff9100ff", // Oren
         badgeClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30",
         dotClass: "bg-[#ff9100]",
@@ -510,8 +510,8 @@ function DashboardPage() {
     }
     return {
       grade: "E",
-      badgeText: "GRADE E",
-      color: "#ef4444", // Merah
+      badgeText: "POINT E",
+      color: "#f80000ff", // Merah
       badgeClass: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30",
       dotClass: "bg-red-500",
     };
@@ -904,7 +904,7 @@ function DashboardPage() {
             </div>
           </div>
 
-          {/* Card 3: Rasio Stok Aman (Emerald / Hijau Tebal) */}
+          {/* Card 3: Rasio Stok Aman (Dinamis: Hijau jika >= 95%, Merah jika < 95%) */}
           <div
             onClick={() => {
               setSelectedMetricModal("stok_aman");
@@ -912,24 +912,53 @@ function DashboardPage() {
               setMetricStatusFilter("all");
               setMetricSearchQuery("");
             }}
-            className="cursor-pointer bg-emerald-600 hover:bg-emerald-600/90 active:scale-[0.99] border border-emerald-400/40 rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none"
-            title="Klik untuk melihat daftar barang stok aman"
+            className={cn(
+              "cursor-pointer active:scale-[0.99] rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none",
+              ca.pctAman >= 95
+                ? "bg-emerald-600 hover:bg-emerald-600/90 border border-emerald-400/40"
+                : "bg-rose-600 hover:bg-rose-600/90 border border-rose-400/40",
+            )}
+            title={`Klik untuk melihat daftar barang stok aman (Rasio: ${ca.pctAman}%)`}
           >
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-100">
-                <CheckCircle2 className="size-3.5 text-emerald-200" />
+              <div
+                className={cn(
+                  "flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider",
+                  ca.pctAman >= 95 ? "text-emerald-100" : "text-rose-100",
+                )}
+              >
+                {ca.pctAman >= 95 ? (
+                  <CheckCircle2 className="size-3.5 text-emerald-200" />
+                ) : (
+                  <AlertTriangle className="size-3.5 text-rose-200" />
+                )}
                 Rasio Stok Aman
               </div>
-              <ArrowUpRight className="size-3.5 text-emerald-200 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+              <ArrowUpRight
+                className={cn(
+                  "size-3.5 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all",
+                  ca.pctAman >= 95 ? "text-emerald-200" : "text-rose-200",
+                )}
+              />
             </div>
             <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">
               {ca.pctAman}%
             </div>
-            <div className="flex items-center justify-between text-[11px] text-emerald-100/90 font-medium">
+            <div
+              className={cn(
+                "flex items-center justify-between text-[11px] font-medium",
+                ca.pctAman >= 95 ? "text-emerald-100/90" : "text-rose-100/90",
+              )}
+            >
               <span>
                 {ca.gabunganAman} dari {ca.totalGabungan} item aman
               </span>
-              <span className="text-[10px] text-emerald-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <span
+                className={cn(
+                  "text-[10px] underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity",
+                  ca.pctAman >= 95 ? "text-emerald-200" : "text-rose-200",
+                )}
+              >
                 Lihat Barang
               </span>
             </div>
@@ -1022,6 +1051,9 @@ function DashboardPage() {
       modalIcon = <Layers className="size-5 text-cyan-500" />;
       baseCount = ca.gabunganAman;
     }
+
+    const hideStatusCol =
+      selectedMetricModal === "donut_obs" || selectedMetricModal === "donut_all";
 
     return (
       <Dialog
@@ -1201,9 +1233,11 @@ function DashboardPage() {
                     <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">
                       MIN. STOK
                     </th>
-                    <th className="py-2.5 px-3 text-center w-28 font-bold text-muted-foreground">
-                      STATUS
-                    </th>
+                    {!hideStatusCol && (
+                      <th className="py-2.5 px-3 text-center w-28 font-bold text-muted-foreground">
+                        STATUS
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -1250,26 +1284,28 @@ function DashboardPage() {
                         <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">
                           {item.min_stock.toLocaleString("id-ID")} {item.unit}
                         </td>
-                        <td className="py-2.5 px-3 text-center">
-                          {isSafe && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                              <span className="size-1.5 rounded-full bg-emerald-500" />
-                              Aman
-                            </span>
-                          )}
-                          {isLimit && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-                              <span className="size-1.5 rounded-full bg-amber-500" />
-                              Limit
-                            </span>
-                          )}
-                          {isEmpty && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
-                              <span className="size-1.5 rounded-full bg-rose-500" />
-                              Habis
-                            </span>
-                          )}
-                        </td>
+                        {!hideStatusCol && (
+                          <td className="py-2.5 px-3 text-center">
+                            {isSafe && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                                <span className="size-1.5 rounded-full bg-emerald-500" />
+                                Aman
+                              </span>
+                            )}
+                            {isLimit && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                                <span className="size-1.5 rounded-full bg-amber-500" />
+                                Limit
+                              </span>
+                            )}
+                            {isEmpty && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
+                                <span className="size-1.5 rounded-full bg-rose-500" />
+                                Habis
+                              </span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -1453,7 +1489,7 @@ function DashboardPage() {
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={inventoryChartData}
-              margin={{ top: 10, right: 15, left: -15, bottom: 35 }}
+              margin={{ top: 10, right: 15, left: -15, bottom: 5 }}
             >
               <CartesianGrid
                 strokeDasharray="3 3"
@@ -1461,14 +1497,7 @@ function DashboardPage() {
                 stroke="#e2e8f0"
                 opacity={0.6}
               />
-              <XAxis
-                dataKey="name"
-                tick={{ fontSize: 10, fill: "#64748b" }}
-                angle={-20}
-                textAnchor="end"
-                interval={0}
-                stroke="#cbd5e1"
-              />
+              <XAxis dataKey="name" tick={false} tickLine={false} stroke="#cbd5e1" />
               <YAxis
                 tick={{ fontSize: 11, fill: "#64748b" }}
                 stroke="#cbd5e1"
@@ -1612,9 +1641,7 @@ function DashboardPage() {
         },
   ) {
     const isMasuk = tx.tx_type === "IN";
-    const titleType = isMasuk
-      ? "BUKTI PENERIMAAN BARANG"
-      : "BUKTI PENGELUARAN BARANG";
+    const titleType = isMasuk ? "BUKTI PENERIMAAN BARANG" : "BUKTI PENGELUARAN BARANG";
     const colorHeader = isMasuk ? "#059669" : "#e11d48";
     const dateFormatted = formatDate(tx.created_at);
 
@@ -1638,20 +1665,19 @@ function DashboardPage() {
           ];
 
     const itemRowsHtml = itemsToRender
-      .map(
-        (it, idx) => {
-          const itemCode =
-            (it as any).product_code ||
-            productCodeMap.get((it as any).product_id) ||
-            productCodeMap.get(it.product_name?.trim().toLowerCase()) ||
-            allBufferItems.find(
-              (b) =>
-                b.id === (it as any).product_id ||
-                b.name?.trim().toLowerCase() === it.product_name?.trim().toLowerCase(),
-            )?.code ||
-            "—";
+      .map((it, idx) => {
+        const itemCode =
+          (it as any).product_code ||
+          productCodeMap.get((it as any).product_id) ||
+          productCodeMap.get(it.product_name?.trim().toLowerCase()) ||
+          allBufferItems.find(
+            (b) =>
+              b.id === (it as any).product_id ||
+              b.name?.trim().toLowerCase() === it.product_name?.trim().toLowerCase(),
+          )?.code ||
+          "—";
 
-          return `
+        return `
         <tr>
           <td style="text-align: center; color: #64748b; font-size: 11px;">${idx + 1}</td>
           <td style="text-align: center; font-family: monospace; font-size: 12px; font-weight: 600; color: #334155;">
@@ -1675,8 +1701,7 @@ function DashboardPage() {
           </td>
         </tr>
       `;
-        },
-      )
+      })
       .join("");
 
     const htmlContent = `
@@ -2441,259 +2466,6 @@ function DashboardPage() {
             {/* Card 2: TOP 10 OUTGOING SPAREPART */}
             {renderInventoryChartPanel()}
           </div>
-
-          <Panel
-            title="Aktivitas Seluruh Sistem"
-            description="Riwayat mutasi pencatatan barang masuk (In) & barang keluar (Out)"
-            actions={
-              <Link to="/products" search={{ tab: "transactions" }}>
-                <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
-                  <History className="size-3.5 text-primary" />
-                  Lihat Semua Mutasi →
-                </Button>
-              </Link>
-            }
-            bodyClassName="p-0"
-          >
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left border-collapse border border-border">
-                <thead>
-                  <tr className="border-b border-blue-700 bg-blue-600 dark:bg-blue-700 text-white text-[11px] tracking-wider font-semibold divide-x divide-blue-500/40 text-center">
-                    <th className="px-3 py-3 whitespace-nowrap text-white text-center">Tanggal</th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white w-28 text-center">
-                      (Tipe Mutasi)
-                    </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[120px] text-center">
-                      KODE
-                    </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[220px] text-center">
-                      MATERIAL
-                    </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[110px] text-center">
-                      QTY
-                    </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
-                      Vendor
-                    </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
-                      Alasan Permintaan Barang
-                    </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[130px] text-center">
-                      No. Ref
-                    </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
-                      User
-                    </th>
-                    <th className="px-3 py-3 text-center w-36 font-semibold">Aksi & Dokumen</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {warehouseTx.isLoading && (
-                    <tr>
-                      <td colSpan={10} className="px-5 py-8 text-center text-muted-foreground">
-                        Memuat data mutasi gudang...
-                      </td>
-                    </tr>
-                  )}
-                  {groupedTxData.slice(0, 8).map((tx) => {
-                    const isMasuk = tx.tx_type === "IN";
-                    const isToday =
-                      new Date(tx.created_at).toDateString() === new Date().toDateString();
-
-                    return (
-                      <tr
-                        key={tx.transaction_number}
-                        className="hover:bg-surface-muted/40 transition-colors align-top divide-x divide-border"
-                      >
-                        {/* 1. Tanggal */}
-                        <td className="px-3 py-3 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5 font-medium text-foreground text-xs whitespace-nowrap">
-                            <span>{formatDate(tx.created_at)}</span>
-                            {isToday && (
-                              <span
-                                className="size-1.5 rounded-full bg-blue-500 inline-block shrink-0"
-                                title="Hari ini"
-                              />
-                            )}
-                          </div>
-                        </td>
-
-                        {/* 2. (Tipe Mutasi) */}
-                        <td className="px-3 py-3 text-center whitespace-nowrap">
-                          <span
-                            className={cn(
-                              "inline-flex items-center justify-center gap-1 w-16 h-6 rounded text-[11px] font-bold uppercase tracking-wide",
-                              isMasuk
-                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25"
-                                : "bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/25",
-                            )}
-                          >
-                            {isMasuk ? (
-                              <ArrowDownLeft className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                            ) : (
-                              <ArrowUpRight className="size-3 shrink-0 text-rose-600 dark:text-rose-400" />
-                            )}
-                            {isMasuk ? "IN" : "OUT"}
-                          </span>
-                        </td>
-
-                        {/* 3. Kode Material (Tanpa kotak) */}
-                        <td className="px-3 py-3 font-mono text-xs">
-                          <div className="space-y-1.5">
-                            {tx.items.map((it, idx) => {
-                              const code =
-                                productCodeMap.get(it.product_id) ||
-                                (it.product_name
-                                  ? productCodeMap.get(it.product_name.trim().toLowerCase())
-                                  : undefined);
-                              return (
-                                <div
-                                  key={it.id || idx}
-                                  className="py-0.5 font-medium text-foreground"
-                                >
-                                  {code || "—"}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </td>
-
-                        {/* 4. Nama Barang */}
-                        <td className="px-3 py-3">
-                          <div className="space-y-1.5">
-                            {tx.items.map((it, idx) => (
-                              <div key={it.id || idx} className="py-0.5">
-                                {tx.items.length > 1 && (
-                                  <span className="text-muted-foreground mr-1 text-[11px] shrink-0">
-                                    {idx + 1}.
-                                  </span>
-                                )}
-                                <span
-                                  className="font-medium text-foreground leading-snug truncate"
-                                  title={it.product_name}
-                                >
-                                  {it.product_name}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-
-                        {/* 5. QTY (Tanpa kotak) */}
-                        <td className="px-3 py-3 text-center whitespace-nowrap">
-                          <div className="space-y-1.5">
-                            {tx.items.map((it, idx) => (
-                              <div key={it.id || idx} className="py-0.5">
-                                <span
-                                  className={cn(
-                                    "font-mono font-bold text-xs inline-block",
-                                    isMasuk
-                                      ? "text-emerald-600 dark:text-emerald-400"
-                                      : "text-rose-600 dark:text-rose-400",
-                                  )}
-                                >
-                                  {isMasuk ? "+" : "-"}
-                                  {it.quantity.toLocaleString("id-ID")} {it.unit || "pcs"}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-
-                        {/* 6. Vendor */}
-                        <td className="px-3 py-3 text-xs">
-                          {isMasuk ? (
-                            <span className="font-medium text-foreground block">
-                              {tx.supplier_or_dest || "—"}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground/60 block">—</span>
-                          )}
-                        </td>
-
-                        {/* 7. Tujuan */}
-                        <td className="px-3 py-3 text-xs">
-                          {!isMasuk ? (
-                            <span className="font-medium text-foreground block">
-                              {tx.supplier_or_dest || "—"}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground/60 block">—</span>
-                          )}
-                        </td>
-
-                        {/* 8. No. Ref */}
-                        <td className="px-3 py-3 text-xs">
-                          {tx.reference_no ? (
-                            <span className="font-mono text-xs text-foreground font-semibold">
-                              {tx.reference_no}
-                            </span>
-                          ) : tx.batch_number ? (
-                            <span className="font-mono text-xs text-muted-foreground block">
-                              {tx.batch_number}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground/60">—</span>
-                          )}
-                        </td>
-
-                        {/* 9. User (Nama Petugas Shift) */}
-                        <td className="px-3 py-3 text-xs">
-                          <span className="font-medium text-foreground block">
-                            {tx.notes || tx.created_by_name || "Petugas Sparepart"}
-                          </span>
-                        </td>
-
-                        {/* 8. Aksi & Dokumen */}
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setSelectedTx(tx)}
-                              className="h-7 text-xs px-2 gap-1"
-                              title="Lihat rincian lengkap mutasi"
-                            >
-                              <Eye className="size-3.5 text-primary" />
-                              <span>Detail</span>
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => downloadTransactionPDF(tx)}
-                              className="h-7 text-xs px-2 gap-1 bg-primary/5 hover:bg-primary/10 text-primary border-primary/20"
-                              title="Cetak & Unduh Bukti Mutasi Barang PDF (1 Bon)"
-                            >
-                              <Download className="size-3.5" />
-                              <span>PDF</span>
-                            </Button>
-                            {tx.document_url && (
-                              <a
-                                href={tx.document_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center justify-center size-7 rounded border border-border bg-surface hover:bg-surface-muted text-muted-foreground hover:text-foreground"
-                                title="Buka lampiran surat jalan/bukti fisik"
-                              >
-                                <FileText className="size-3.5 text-blue-500" />
-                              </a>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!warehouseTx.isLoading && groupedTxData.length === 0 && (
-                    <tr>
-                      <td colSpan={8} className="px-5 py-8 text-center text-muted-foreground">
-                        Belum ada riwayat transaksi mutasi barang.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
         </div>
       )}
 
@@ -2768,242 +2540,6 @@ function DashboardPage() {
             {/* Card 2: TOP 10 OUTGOING SPAREPART */}
             {renderInventoryChartPanel()}
           </div>
-
-          <Panel
-            title="Aktivitas Seluruh Sistem"
-            description="Riwayat mutasi pencatatan barang masuk (In) & barang keluar (Out)"
-            actions={
-              <Link to="/products" search={{ tab: "transactions" }}>
-                <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
-                  <History className="size-3.5 text-primary" />
-                  Lihat Semua Mutasi →
-                </Button>
-              </Link>
-            }
-            bodyClassName="p-0"
-          >
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left border-collapse border border-border">
-                <thead>
-                  <tr className="border-b border-blue-700 bg-blue-600 dark:bg-blue-700 text-white uppercase text-[11px] tracking-wider font-bold divide-x divide-blue-500/40 text-center">
-                    <th className="px-4 py-3 w-36 font-bold text-center">Tanggal</th>
-                    <th className="px-3 py-3 w-32 whitespace-nowrap font-bold text-center">
-                      <div className="font-bold">Tipe Mutasi</div>
-                      <div className="text-[10px] text-blue-100 font-semibold normal-case">
-                        (In/Out)
-                      </div>
-                    </th>
-                    <th className="px-3 py-3 w-32 font-bold text-center">KODE</th>
-                    <th className="px-4 py-3 min-w-[220px] font-bold text-center">MATERIAL</th>
-                    <th className="px-4 py-3 w-40 font-bold text-center">Vendor / Tujuan</th>
-                    <th className="px-4 py-3 w-36 font-bold text-center">No. Ref</th>
-                    <th className="px-4 py-3 w-36 font-bold text-center">User</th>
-                    <th className="px-4 py-3 text-center w-36 font-bold">Aksi & Dokumen</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {warehouseTx.isLoading && (
-                    <tr>
-                      <td colSpan={8} className="px-5 py-8 text-center text-muted-foreground">
-                        Memuat data mutasi gudang...
-                      </td>
-                    </tr>
-                  )}
-                  {groupedTxData.slice(0, 8).map((tx) => {
-                    const isMasuk = tx.tx_type === "IN";
-                    const isToday =
-                      new Date(tx.created_at).toDateString() === new Date().toDateString();
-
-                    return (
-                      <tr
-                        key={tx.transaction_number}
-                        className="hover:bg-surface-muted/40 transition-colors align-top divide-x divide-border"
-                      >
-                        {/* 1. Tanggal */}
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5 font-medium text-foreground text-xs whitespace-nowrap">
-                            <span>{formatDate(tx.created_at)}</span>
-                            {isToday && (
-                              <span
-                                className="size-1.5 rounded-full bg-blue-500 inline-block shrink-0"
-                                title="Hari ini"
-                              />
-                            )}
-                          </div>
-                        </td>
-
-                        {/* 2. Tipe Mutasi (In/Out) */}
-                        <td className="px-3 py-3 text-center">
-                          <span
-                            className={cn(
-                              "inline-flex items-center justify-center gap-1 w-16 h-6 rounded text-[11px] font-semibold uppercase tracking-wide",
-                              isMasuk
-                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25"
-                                : "bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/25",
-                            )}
-                          >
-                            {isMasuk ? (
-                              <ArrowDownLeft className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                            ) : (
-                              <ArrowUpRight className="size-3 shrink-0 text-rose-600 dark:text-rose-400" />
-                            )}
-                            {isMasuk ? "In" : "Out"}
-                          </span>
-                        </td>
-
-                        {/* 3. Kode Material */}
-                        <td className="px-3 py-3">
-                          <div className="space-y-1">
-                            {tx.items.map((it, idx) => {
-                              const code =
-                                productCodeMap.get(it.product_id) ||
-                                (it.product_name
-                                  ? productCodeMap.get(it.product_name.trim().toLowerCase())
-                                  : undefined);
-                              return (
-                                <div
-                                  key={it.id || idx}
-                                  className="h-7 flex items-center justify-center"
-                                >
-                                  {code ? (
-                                    <span className="font-mono text-[11px] font-semibold bg-surface-muted px-1.5 py-0.5 rounded border border-border/60 text-foreground">
-                                      {code}
-                                    </span>
-                                  ) : (
-                                    <span className="font-mono text-muted-foreground text-xs">
-                                      —
-                                    </span>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </td>
-
-                        {/* 4. Nama Barang */}
-                        <td className="px-4 py-3">
-                          <div className="space-y-1">
-                            {tx.items.map((it, idx) => (
-                              <div
-                                key={it.id || idx}
-                                className="h-7 flex items-center justify-between gap-2 text-xs font-medium text-foreground leading-snug"
-                              >
-                                <div className="flex items-center gap-1 truncate max-w-[220px]">
-                                  {tx.items.length > 1 && (
-                                    <span className="text-muted-foreground mr-1 text-[11px] shrink-0">
-                                      {idx + 1}.
-                                    </span>
-                                  )}
-                                  <span className="truncate" title={it.product_name}>
-                                    {it.product_name}
-                                  </span>
-                                </div>
-                                <span
-                                  className={cn(
-                                    "font-mono font-bold text-[11px] px-1.5 py-0.5 rounded shrink-0",
-                                    isMasuk
-                                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-                                      : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20",
-                                  )}
-                                >
-                                  {isMasuk ? "+" : "-"}
-                                  {it.quantity} {it.unit || "pcs"}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-
-                        {/* 5. Vendor / Tujuan */}
-                        <td className="px-4 py-3 text-xs">
-                          <span className="text-[10px] uppercase font-semibold text-muted-foreground block">
-                            {isMasuk ? "Vendor Pengirim" : "Tujuan Line"}
-                          </span>
-                          <span className="font-medium text-foreground mt-0.5 block">
-                            {tx.supplier_or_dest || "—"}
-                          </span>
-                        </td>
-
-                        {/* 6. No. Ref */}
-                        <td className="px-4 py-3 text-xs">
-                          {tx.reference_no ? (
-                            <span className="font-mono text-xs text-foreground bg-surface-muted px-1.5 py-0.5 rounded border border-border/40 inline-block">
-                              {tx.reference_no}
-                            </span>
-                          ) : tx.batch_number ? (
-                            <span className="font-mono text-xs text-muted-foreground block">
-                              {tx.batch_number}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground/60">—</span>
-                          )}
-                        </td>
-
-                        {/* 7. User */}
-                        <td className="px-4 py-3 text-xs">
-                          <span className="font-medium text-foreground block">
-                            {tx.created_by_name || "User"}
-                          </span>
-                          {tx.notes && (
-                            <span
-                              className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1 italic"
-                              title={tx.notes}
-                            >
-                              &ldquo;{tx.notes}&rdquo;
-                            </span>
-                          )}
-                        </td>
-
-                        {/* 8. Aksi & Dokumen */}
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setSelectedTx(tx)}
-                              className="h-7 text-xs px-2 gap-1"
-                              title="Lihat rincian lengkap mutasi"
-                            >
-                              <Eye className="size-3.5 text-primary" />
-                              <span>Detail</span>
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => downloadTransactionPDF(tx)}
-                              className="h-7 text-xs px-2 gap-1 bg-primary/5 hover:bg-primary/10 text-primary border-primary/20"
-                              title="Cetak & Unduh Bukti Mutasi Barang PDF (1 Bon)"
-                            >
-                              <Download className="size-3.5" />
-                              <span>PDF</span>
-                            </Button>
-                            {tx.document_url && (
-                              <a
-                                href={tx.document_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center justify-center size-7 rounded border border-border bg-surface hover:bg-surface-muted text-muted-foreground hover:text-foreground"
-                                title="Buka lampiran surat jalan/bukti fisik"
-                              >
-                                <FileText className="size-3.5 text-blue-500" />
-                              </a>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!warehouseTx.isLoading && groupedTxData.length === 0 && (
-                    <tr>
-                      <td colSpan={8} className="px-5 py-8 text-center text-muted-foreground">
-                        Belum ada riwayat transaksi mutasi barang.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
         </div>
       )}
 

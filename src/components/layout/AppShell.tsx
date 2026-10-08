@@ -1,6 +1,6 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   LayoutDashboard,
   ClipboardList,
@@ -85,6 +85,35 @@ export function AppShell({
     .join("")
     .slice(0, 2)
     .toUpperCase();
+
+  // Sinkronisasi otomatis kredensial role user yang sedang aktif ke localStorage
+  useEffect(() => {
+    if (profile?.email && roles.length > 0) {
+      try {
+        const em = profile.email.toLowerCase();
+        roles.forEach((r) => {
+          localStorage.setItem(`role_auth_email_${r}`, em);
+        });
+        localStorage.setItem("last_active_account_email", em);
+
+        const rawMap = localStorage.getItem("role_accounts_map");
+        const map = rawMap ? JSON.parse(rawMap) : {};
+        roles.forEach((r) => {
+          const list = Array.isArray(map[r]) ? map[r] : [];
+          if (!list.includes(em)) list.push(em);
+          map[r] = list;
+        });
+        localStorage.setItem("role_accounts_map", JSON.stringify(map));
+
+        const rawKnown = localStorage.getItem("all_known_account_emails");
+        const knownList = rawKnown ? JSON.parse(rawKnown) : [];
+        if (Array.isArray(knownList) && !knownList.includes(em)) {
+          knownList.push(em);
+          localStorage.setItem("all_known_account_emails", JSON.stringify(knownList));
+        }
+      } catch {}
+    }
+  }, [profile?.email, roles]);
 
   async function handleSignOut() {
     await queryClient.cancelQueries();

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Users,
   UserPlus,
@@ -118,6 +118,38 @@ function UserManagementPage() {
   const roleOf = (userId: string): AppRole | undefined =>
     roles.data?.find((r) => r.user_id === userId)?.role as AppRole | undefined;
 
+  // Sinkronisasi otomatis daftar email akun per role ke localStorage untuk login role + kata sandi
+  useEffect(() => {
+    if (profiles.data && roles.data) {
+      try {
+        const rawMap = localStorage.getItem("role_accounts_map");
+        const map = rawMap ? JSON.parse(rawMap) : {};
+        const allKnownSet = new Set<string>();
+
+        profiles.data.forEach((p) => {
+          if (p.email) {
+            const em = p.email.toLowerCase();
+            allKnownSet.add(em);
+            const userRole = roles.data.find((r) => r.user_id === p.id)?.role as AppRole | undefined;
+            if (userRole) {
+              const list = Array.isArray(map[userRole]) ? map[userRole] : [];
+              if (!list.includes(em)) {
+                list.push(em);
+              }
+              map[userRole] = list;
+              localStorage.setItem(`role_auth_email_${userRole}`, em);
+            }
+          }
+        });
+
+        localStorage.setItem("role_accounts_map", JSON.stringify(map));
+        localStorage.setItem("all_known_account_emails", JSON.stringify(Array.from(allKnownSet)));
+      } catch (err) {
+        console.warn("Failed to sync role_accounts_map cache:", err);
+      }
+    }
+  }, [profiles.data, roles.data]);
+
   // Helper generator kata sandi acak yang aman
   const generateRandomPassword = () => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*";
@@ -200,7 +232,23 @@ function UserManagementPage() {
     onSuccess: () => {
       // Simpan cache email untuk role ini agar login langsung mengenali akun baru
       if (newEmail.trim()) {
-        localStorage.setItem(`role_auth_email_${newRole}`, newEmail.trim().toLowerCase());
+        const em = newEmail.trim().toLowerCase();
+        localStorage.setItem(`role_auth_email_${newRole}`, em);
+        try {
+          const rawMap = localStorage.getItem("role_accounts_map");
+          const map = rawMap ? JSON.parse(rawMap) : {};
+          const list = Array.isArray(map[newRole]) ? map[newRole] : [];
+          if (!list.includes(em)) list.push(em);
+          map[newRole] = list;
+          localStorage.setItem("role_accounts_map", JSON.stringify(map));
+
+          const rawKnown = localStorage.getItem("all_known_account_emails");
+          const knownList = rawKnown ? JSON.parse(rawKnown) : [];
+          if (Array.isArray(knownList) && !knownList.includes(em)) {
+            knownList.push(em);
+            localStorage.setItem("all_known_account_emails", JSON.stringify(knownList));
+          }
+        } catch {}
       }
       toast.success("Akun pengguna baru berhasil didaftarkan");
       setIsAddOpen(false);

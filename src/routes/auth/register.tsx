@@ -72,8 +72,26 @@ function RegisterPage() {
     await supabase.auth.signOut();
 
     // Simpan email terdaftar untuk role ini agar bisa langsung diautentikasi dengan role & password
-    localStorage.setItem(`role_auth_email_${role}`, email.trim().toLowerCase());
-    localStorage.setItem("last_active_account_email", email.trim().toLowerCase());
+    const regEmail = email.trim().toLowerCase();
+    localStorage.setItem(`role_auth_email_${role}`, regEmail);
+    localStorage.setItem("last_active_account_email", regEmail);
+    localStorage.setItem("last_active_role", role);
+
+    try {
+      const rawMap = localStorage.getItem("role_accounts_map");
+      const map = rawMap ? JSON.parse(rawMap) : {};
+      const list = Array.isArray(map[role]) ? map[role] : [];
+      if (!list.includes(regEmail)) list.push(regEmail);
+      map[role] = list;
+      localStorage.setItem("role_accounts_map", JSON.stringify(map));
+
+      const rawKnown = localStorage.getItem("all_known_account_emails");
+      const knownList = rawKnown ? JSON.parse(rawKnown) : [];
+      if (Array.isArray(knownList) && !knownList.includes(regEmail)) {
+        knownList.push(regEmail);
+        localStorage.setItem("all_known_account_emails", JSON.stringify(knownList));
+      }
+    } catch {}
 
     toast.success("Akun berhasil dibuat!", {
       description: "Silakan masuk dengan memilih departemen/role dan memasukkan kata sandi Anda.",

@@ -323,34 +323,35 @@ export interface ExportInventoryOptions {
 export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
   const {
     products,
-    latestInTxMap = {},
-    latestOutTxMap = {},
     totalInQtyMap = {},
     totalOutQtyMap = {},
-    generatedByName = "Staff Gudang Sparepart",
-    plant = "2000",
-    storageLocation = "Gudang Sparepart & Tools",
-    materialType = "Sparepart",
+    plant = "1201",
+    storageLocation = "GDSP",
+    materialType = "ERSA",
     period,
   } = options;
 
-  const printDate = formatReportDateTime(new Date());
   const fileDate = new Date().toISOString().split("T")[0];
   const periodText = period || new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
-
-  const totalSKU = products.length;
-  const totalEndingStock = products.reduce((acc, p) => acc + (p.current_stock ?? 0), 0);
-  const limitProducts = products.filter((p) => (p.current_stock ?? 0) <= (p.min_stock ?? 10));
 
   let totalMasukAll = 0;
   let totalPengeluaranAll = 0;
   let totalBeginningAll = 0;
+  let totalEndingStock = 0;
 
   const rowsHtml = products
     .map((p, idx) => {
       const minStock = p.min_stock ?? 10;
       const endingStock = p.current_stock ?? 0;
-      const isLimit = endingStock <= minStock;
+      totalEndingStock += endingStock;
+
+      const rawMax = (p as any).max_stock;
+      const maxStock =
+        rawMax !== null && rawMax !== undefined && rawMax !== ""
+          ? Number(rawMax)
+          : null;
+      const maxStockStr = maxStock !== null && !isNaN(maxStock) && maxStock > 0 ? String(maxStock) : "-";
+
       const nameKey = p.name ? p.name.trim().toLowerCase() : "";
       const codeKey = p.code ? p.code.trim().toLowerCase() : "";
 
@@ -372,154 +373,113 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
       const beginningBalance = Math.max(0, endingStock - totalIn + totalOut);
       totalBeginningAll += beginningBalance;
 
-      const maxStockStr = p.max_stock != null ? p.max_stock.toLocaleString("id-ID") : "—";
+      // 4. STATUS STOCK (AMAN jika di atas minStock, LIMIT / KRITIS jika <= minStock)
+      const isLimit = endingStock <= minStock;
       const statusStockStr = isLimit ? "LIMIT / KRITIS" : "AMAN";
 
-      const rowClass = isLimit ? "limit-row" : (idx % 2 === 0 ? "even" : "odd");
+      const codeVal = p.code || "-";
 
       return `
-        <tr class="${rowClass}">
-          <td style="text-align: center; color: #64748b; font-size: 9pt;">${idx + 1}</td>
-          <td style="font-family: Consolas, 'Courier New', monospace; font-weight: bold; font-size: 9.5pt; mso-number-format:'\\@';">
-            ${p.code || "—"}
-          </td>
-          <td style="font-weight: 600; color: #0f172a;">
-            ${p.name}
-          </td>
-          <td style="text-align: right; font-weight: 600; color: #0f172a;">
-            ${beginningBalance.toLocaleString("id-ID")}
-          </td>
-          <td style="text-align: right; color: #64748b; font-weight: 500;">
-            ${minStock.toLocaleString("id-ID")}
-          </td>
-          <td style="text-align: right; font-weight: 600; color: #047857;">
-            ${totalIn.toLocaleString("id-ID")}
-          </td>
-          <td style="text-align: right; font-weight: 600; color: ${totalOut > 0 ? "#be123c" : "#64748b"};">
-            ${totalOut.toLocaleString("id-ID")}
-          </td>
-          <td style="text-align: right; font-weight: bold; font-size: 10.5pt; ${isLimit ? "color: #be123c;" : "color: #047857;"}">
-            ${endingStock.toLocaleString("id-ID")}
-          </td>
-          <td style="text-align: right; color: #64748b; font-weight: 500;">
-            ${maxStockStr}
-          </td>
-          <td style="text-align: center;">
-            <span class="${isLimit ? "badge-limit" : "badge-safe"}">
-              ${statusStockStr}
-            </span>
-          </td>
+        <tr style="height: 22px;">
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 4px 6px;">${idx + 1}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: left; vertical-align: middle; padding: 4px 6px; mso-number-format:'\\@';" x:str>${codeVal}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: left; vertical-align: middle; padding: 4px 6px;">${p.name}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: right; vertical-align: middle; padding: 4px 6px; mso-number-format:'0';">${beginningBalance}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: right; vertical-align: middle; padding: 4px 6px; mso-number-format:'0';">${minStock}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 4px 6px;">${totalIn > 0 ? totalIn : "-"}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 4px 6px;">${totalOut > 0 ? totalOut : "-"}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: right; vertical-align: middle; padding: 4px 6px; mso-number-format:'0'; font-weight: bold;">${endingStock}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: right; vertical-align: middle; padding: 4px 6px;">${maxStockStr}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 4px 6px; font-weight: bold;">${statusStockStr}</td>
         </tr>
       `;
     })
     .join("");
 
   const contentHtml = `
-    <!-- Kop & Judul Laporan -->
-    <table class="header-table">
+    <!-- Header Informasi Parameter SAP / Gudang Sesuai Format Scan -->
+    <table style="border-collapse: collapse; font-family: Calibri, Arial, sans-serif; font-size: 11pt; margin-bottom: 14px;">
       <tr>
-        <td style="width: 70%; vertical-align: top;">
-          <div class="header-title">DEPARTEMEN WAREHOUSE — LAPORAN MUTASI & STATUS STOK SPAREPART</div>
-          <div class="header-meta">
-            Sistem Informasi Operasional Q-Coffee M2 &bull; 
-            Dicetak: <strong>${printDate}</strong> &bull; 
-            Petugas: <strong>${generatedByName}</strong>
-          </div>
-        </td>
-        <td style="width: 30%; text-align: right; vertical-align: top;">
-          <div style="display: inline-block; background-color: #0f172a; color: white; padding: 8px 16px; border-radius: 6px; font-weight: 700; font-size: 10pt; text-align: right;">
-            DOKUMEN INVENTARIS RESMI
-          </div>
-        </td>
+        <td colspan="10" style="font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; padding: 2px 0; color: #000000;">. PLANT &nbsp;&nbsp;: ${plant}</td>
+      </tr>
+      <tr>
+        <td colspan="10" style="font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; padding: 2px 0; color: #000000;">2. S.LOCATION : ${storageLocation}</td>
+      </tr>
+      <tr>
+        <td colspan="10" style="font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; padding: 2px 0; color: #000000;">3. MAT.TYPE &nbsp;: ${materialType}</td>
+      </tr>
+      <tr>
+        <td colspan="10" style="font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; padding: 2px 0; color: #000000;">4. PERIOD &nbsp;&nbsp;&nbsp;: ${periodText}</td>
+      </tr>
+      <tr style="height: 14px;">
+        <td colspan="10"></td>
       </tr>
     </table>
 
-    <!-- Parameter & Informasi Laporan SAP/ERP Sesuai Ketentuan -->
-    <table style="width: 100%; max-width: 600px; margin-bottom: 16px; border-collapse: collapse; font-family: Calibri, 'Segoe UI', Arial, sans-serif; font-size: 10pt;">
-      <tr>
-        <td style="width: 140px; font-weight: bold; padding: 3px 0; color: #0f172a;">1. PLANT</td>
-        <td style="padding: 3px 0; font-weight: 600; color: #334155;">: ${plant}</td>
-      </tr>
-      <tr>
-        <td style="font-weight: bold; padding: 3px 0; color: #0f172a;">2. S.LOCATION</td>
-        <td style="padding: 3px 0; font-weight: 600; color: #334155;">: ${storageLocation}</td>
-      </tr>
-      <tr>
-        <td style="font-weight: bold; padding: 3px 0; color: #0f172a;">3. MAT.TYPE</td>
-        <td style="padding: 3px 0; font-weight: 600; color: #334155;">: ${materialType}</td>
-      </tr>
-      <tr>
-        <td style="font-weight: bold; padding: 3px 0; color: #0f172a;">4. PERIOD</td>
-        <td style="padding: 3px 0; font-weight: 600; color: #334155;">: ${periodText}</td>
-      </tr>
-    </table>
-
-    <!-- Tabel Data Utama Laporan (Header Kuning) -->
-    <table class="main-table">
+    <!-- Tabel Data Utama Laporan (Header Kuning #FFFF00 & Border Hitam Sesuai Gambar Scan) -->
+    <table style="border-collapse: collapse; width: 100%; font-family: Calibri, Arial, sans-serif;">
       <thead>
-        <tr>
-          <th style="width: 40px; text-align: center; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">No</th>
-          <th style="width: 140px; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">Kode Part / SKU</th>
-          <th style="width: 320px; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">Nama Barang / Sparepart</th>
-          <th style="width: 150px; text-align: right; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">BEGINNING BALANCE</th>
-          <th style="width: 100px; text-align: right; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">MIN.STOK</th>
-          <th style="width: 110px; text-align: right; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">RECEIPT</th>
-          <th style="width: 110px; text-align: right; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">ISSUED</th>
-          <th style="width: 150px; text-align: right; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">ENDING BALANCE</th>
-          <th style="width: 100px; text-align: right; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">MAKS.STOK</th>
-          <th style="width: 130px; text-align: center; background-color: #ffff00; color: #000000; border: 1px solid #000000; font-weight: bold;">STATUS STOCK</th>
+        <tr style="height: 28px;">
+          <th style="background-color: #FFFF00; color: #000000; border: 1px solid #000000; font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 6px 4px; width: 45px;">No</th>
+          <th style="background-color: #FFFF00; color: #000000; border: 1px solid #000000; font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 6px 8px; width: 130px;">Kode</th>
+          <th style="background-color: #FFFF00; color: #000000; border: 1px solid #000000; font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 6px 10px; width: 340px;">MATERIAL</th>
+          <th style="background-color: #FFFF00; color: #000000; border: 1px solid #000000; font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 6px 8px; width: 160px;">BEGINNING BALANCE</th>
+          <th style="background-color: #FFFF00; color: #000000; border: 1px solid #000000; font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 6px 8px; width: 100px;">MIN.STOK</th>
+          <th style="background-color: #FFFF00; color: #000000; border: 1px solid #000000; font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 6px 8px; width: 100px;">RECEIPT</th>
+          <th style="background-color: #FFFF00; color: #000000; border: 1px solid #000000; font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 6px 8px; width: 100px;">ISSUED</th>
+          <th style="background-color: #FFFF00; color: #000000; border: 1px solid #000000; font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 6px 8px; width: 160px;">ENDING BALANCE</th>
+          <th style="background-color: #FFFF00; color: #000000; border: 1px solid #000000; font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 6px 8px; width: 110px;">MAKS.STOK</th>
+          <th style="background-color: #FFFF00; color: #000000; border: 1px solid #000000; font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 6px 8px; width: 130px;">STATUS STOCK</th>
         </tr>
       </thead>
       <tbody>
         ${rowsHtml}
       </tbody>
       <tfoot>
-        <tr>
-          <td colspan="3" class="footer-total" style="text-align: right;">TOTAL:</td>
-          <td class="footer-total" style="text-align: right; color: #0f172a;">${totalBeginningAll.toLocaleString("id-ID")}</td>
-          <td class="footer-total" style="text-align: right; color: #64748b;">—</td>
-          <td class="footer-total" style="text-align: right; color: #15803d;">+${totalMasukAll.toLocaleString("id-ID")}</td>
-          <td class="footer-total" style="text-align: right; color: #be123c;">-${totalPengeluaranAll.toLocaleString("id-ID")}</td>
-          <td class="footer-total" style="text-align: right; color: #0369a1;">${totalEndingStock.toLocaleString("id-ID")}</td>
-          <td class="footer-total" style="text-align: right; color: #64748b;">—</td>
-          <td class="footer-total" style="text-align: center; font-size: 9pt; color: #64748b;">
-            ${limitProducts.length > 0 ? `<strong style="color: #be123c;">${limitProducts.length} item limit</strong>` : "Aman"}
-          </td>
+        <tr style="height: 26px; font-weight: bold; background-color: #F8FAFC;">
+          <td colspan="3" style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: right; font-weight: bold; padding: 5px 8px;">TOTAL:</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: right; font-weight: bold; padding: 5px 8px; mso-number-format:'0';">${totalBeginningAll}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; padding: 5px 8px;">-</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; font-weight: bold; padding: 5px 8px;">${totalMasukAll > 0 ? totalMasukAll : "-"}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; font-weight: bold; padding: 5px 8px;">${totalPengeluaranAll > 0 ? totalPengeluaranAll : "-"}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: right; font-weight: bold; padding: 5px 8px; mso-number-format:'0';">${totalEndingStock}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; padding: 5px 8px;">-</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; font-weight: bold; padding: 5px 8px;">-</td>
         </tr>
       </tfoot>
     </table>
 
-    <!-- Lembar Tanda Tangan & Pengesahan -->
-    <table class="sig-table">
+    <!-- Lembar Tanda Tangan & Pengesahan Sesuai Permintaan Gambar -->
+    <table style="width: 100%; border-collapse: collapse; margin-top: 35px; font-family: Calibri, Arial, sans-serif; font-size: 11pt;">
       <tr>
-        <td class="sig-cell">
-          <div class="sig-title">Dibuat Oleh,<br /><strong>Unit Head</strong></div>
-          <div class="sig-line">( ............................................ )</div>
-          <div class="sig-role">Tanggal: .............................</div>
-        </td>
-        <td class="sig-cell">
-          <div class="sig-title">Diperiksa Oleh,<br /><strong>Section Head</strong></div>
-          <div class="sig-line">( ............................................ )</div>
-          <div class="sig-role">Tanggal: .............................</div>
-        </td>
-        <td class="sig-cell">
-          <div class="sig-title">Disetujui Oleh,<br /><strong>Departement Head</strong></div>
-          <div class="sig-line">( ............................................ )</div>
-          <div class="sig-role">Tanggal: .............................</div>
-        </td>
+        <td colspan="3" style="text-align: center; font-weight: bold; padding: 4px 0;">Dibuat oleh User,</td>
+        <td></td>
+        <td colspan="3" style="text-align: center; font-weight: bold; padding: 4px 0;">Diperiksa oleh UH/SH,</td>
+        <td></td>
+        <td colspan="2" style="text-align: center; font-weight: bold; padding: 4px 0;">Disetujui oleh Departement Head,</td>
+      </tr>
+      <tr style="height: 65px;">
+        <td colspan="3"></td>
+        <td></td>
+        <td colspan="3"></td>
+        <td></td>
+        <td colspan="2"></td>
+      </tr>
+      <tr>
+        <td colspan="3" style="text-align: center; font-weight: bold; padding: 4px 0;">( ............................................ )</td>
+        <td></td>
+        <td colspan="3" style="text-align: center; font-weight: bold; padding: 4px 0;">( ............................................ )</td>
+        <td></td>
+        <td colspan="2" style="text-align: center; font-weight: bold; padding: 4px 0;">( ............................................ )</td>
       </tr>
     </table>
-
-    <div class="doc-footer-note">
-      Dokumen ini dicetak secara otomatis melalui Sistem Q-Coffee M2. Informasi yang tertera bersifat rahasia.
-    </div>
   `;
 
-  const excelHtml = wrapOfficeExcelHtml("Inventaris Stok", contentHtml);
+  const excelHtml = wrapOfficeExcelHtml("Laporan Stok Sparepart", contentHtml);
   const blob = new Blob(["\uFEFF" + excelHtml], {
     type: "application/vnd.ms-excel;charset=utf-8;",
   });
-  triggerFileDownload(blob, `laporan_inventaris_sparepart_${fileDate}.xls`);
+  triggerFileDownload(blob, `laporan_stok_sparepart_${fileDate}.xls`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

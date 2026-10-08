@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { AlertCircle, ShieldAlert, Lock, UserCheck, Eye, EyeOff, Mail } from "lucide-react";
+import { AlertCircle, ShieldAlert, Lock, UserCheck, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,15 +28,107 @@ export const Route = createFileRoute("/auth/login")({
   component: LoginPage,
 });
 
+/** Helper untuk mengumpulkan seluruh calon email akun berdasarkan role yang dipilih */
+function getCandidateEmailsForRole(targetRole: AppRole): string[] {
+  const candidates: string[] = [];
+
+  // 1. Ambil akun yang tersimpan secara lokal khusus role ini
+  const cachedRoleEmail = localStorage.getItem(`role_auth_email_${targetRole}`);
+  if (cachedRoleEmail?.trim()) {
+    candidates.push(cachedRoleEmail.trim().toLowerCase());
+  }
+
+  // 2. Ambil dari mapping multi-akun role yang pernah terdaftar di browser ini
+  try {
+    const rawMap = localStorage.getItem("role_accounts_map");
+    if (rawMap) {
+      const map = JSON.parse(rawMap);
+      const list = map[targetRole];
+      if (Array.isArray(list)) {
+        list.forEach((em) => {
+          if (typeof em === "string" && em.trim()) candidates.push(em.trim().toLowerCase());
+        });
+      }
+      // Akun Super Admin dapat mengakses semua role
+      if (map["admin"] && Array.isArray(map["admin"])) {
+        map["admin"].forEach((em: string) => {
+          if (typeof em === "string" && em.trim()) candidates.push(em.trim().toLowerCase());
+        });
+      }
+    }
+  } catch {}
+
+  // 3. Akun aktif terakhir di perangkat ini
+  const lastActive = localStorage.getItem("last_active_account_email");
+  if (lastActive?.trim()) {
+    candidates.push(lastActive.trim().toLowerCase());
+  }
+
+  // 4. Riwayat seluruh email yang pernah diketahui di browser
+  try {
+    const rawAll = localStorage.getItem("all_known_account_emails");
+    if (rawAll) {
+      const list = JSON.parse(rawAll);
+      if (Array.isArray(list)) {
+        list.forEach((em) => {
+          if (typeof em === "string" && em.trim()) candidates.push(em.trim().toLowerCase());
+        });
+      }
+    }
+  } catch {}
+
+  // 5. Pola email bawaan/standar sistem sesuai masing-masing role & departemen
+  const roleSpecificEmails: Record<AppRole, string[]> = {
+    admin_process: [
+      "admin_process@gmail.com",
+      "produksi@gmail.com",
+      "produksi_cheking@gmail.com",
+      "cheking@gmail.com",
+      "admin_process@qcoffee.com",
+      "admin_process@coffee.m2",
+      "operator@gmail.com",
+    ],
+    qc_field: [
+      "qc_field@gmail.com",
+      "qc@gmail.com",
+      "ci@gmail.com",
+      "qc_field@qcoffee.com",
+      "qc_field@coffee.m2",
+      "quality@gmail.com",
+      "continuous_improvement@gmail.com",
+    ],
+    prod_process_uh: [
+      "prod_process_uh@gmail.com",
+      "warehouse@gmail.com",
+      "gudang@gmail.com",
+      "sparepart@gmail.com",
+      "prod_process_uh@qcoffee.com",
+      "prod_process_uh@coffee.m2",
+      "unit_head@gmail.com",
+    ],
+    admin: [
+      "admin@gmail.com",
+      "superadmin@gmail.com",
+      "admin@qcoffee.com",
+      "admin@coffee.m2",
+    ],
+  };
+
+  const defaults = roleSpecificEmails[targetRole] || [];
+  defaults.forEach((em) => candidates.push(em.toLowerCase()));
+
+  // 6. Akun Super Admin bawaan sebagai fallback akses universal
+  candidates.push("admin@gmail.com");
+  candidates.push("superadmin@gmail.com");
+
+  return Array.from(new Set(candidates.filter((e) => Boolean(e) && e.includes("@"))));
+}
+
 function LoginPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [role, setRole] = useState<AppRole>(() => {
     return (localStorage.getItem("last_active_role") as AppRole) || "prod_process_uh";
-  });
-  const [email, setEmail] = useState(() => {
-    const savedRole = (localStorage.getItem("last_active_role") as AppRole) || "prod_process_uh";
-    return localStorage.getItem(`role_auth_email_${savedRole}`) || localStorage.getItem("last_active_account_email") || "";
   });
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -51,17 +143,13 @@ function LoginPage() {
   const handleRoleChange = (newRole: AppRole) => {
     setRole(newRole);
     setErrorMessage(null);
-    const cached = localStorage.getItem(`role_auth_email_${newRole}`);
-    if (cached) {
-      setEmail(cached);
-    }
   };
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setErrorMessage(null);
 
-    // Validasi input awal
+    // Validasi input awal kata sandi
     if (!password) {
       setErrorMessage({
         title: "Kata Sandi Belum Diisi",
@@ -74,60 +162,39 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      // 1. Kumpulkan calon email akun untuk autentikasi
-      const candidateEmails: string[] = [];
+      // 1. Kumpulkan seluruh kandidat email akun untuk role yang dipilih
+      const candidateEmails = getCandidateEmailsForRole(role);
 
-      // A. Jika user memasukkan email secara manual
-      if (email.trim()) {
-        candidateEmails.push(email.trim().toLowerCase());
-      } else {
-        // B. Coba ambil email dari database RPC Supabase (SECURITY DEFINER)
-        try {
-          const { data: rpcEmails, error: rpcError } = await (supabase as any).rpc("get_auth_emails_by_role", {
-            p_role: role,
+      // Coba ambil dari database RPC Supabase jika fungsi terpasang
+      try {
+        const { data: rpcEmails, error: rpcError } = await (supabase as any).rpc("get_auth_emails_by_role", {
+          p_role: role,
+        });
+
+        if (!rpcError && Array.isArray(rpcEmails) && rpcEmails.length > 0) {
+          rpcEmails.forEach((item: any) => {
+            const em = typeof item === "string" ? item : item?.email;
+            if (em && typeof em === "string" && em.trim()) {
+              candidateEmails.unshift(em.trim().toLowerCase());
+            }
           });
-
-          if (!rpcError && Array.isArray(rpcEmails) && rpcEmails.length > 0) {
-            rpcEmails.forEach((item: any) => {
-              const em = typeof item === "string" ? item : item?.email;
-              if (em && typeof em === "string" && em.trim()) {
-                candidateEmails.push(em.trim().toLowerCase());
-              }
-            });
-          }
-        } catch (err) {
-          console.warn("RPC get_auth_emails_by_role lookup failed or not deployed:", err);
         }
-
-        // C. Ambil dari cache lokal browser (akun yang tersimpan untuk role ini / user aktif sebelumnya)
-        const cachedRoleEmail = localStorage.getItem(`role_auth_email_${role}`);
-        if (cachedRoleEmail && cachedRoleEmail.trim()) {
-          candidateEmails.push(cachedRoleEmail.trim().toLowerCase());
-        }
-        const lastKnownEmail = localStorage.getItem("last_active_account_email");
-        if (lastKnownEmail && lastKnownEmail.trim()) {
-          candidateEmails.push(lastKnownEmail.trim().toLowerCase());
-        }
-
-        // D. Fallback kredensial akun bawaan di sistem
-        candidateEmails.push(`${role}@gmail.com`);
-        candidateEmails.push(`${role}@qcoffee.com`);
-        candidateEmails.push(`${role}@coffee.m2`);
-        candidateEmails.push("admin@gmail.com");
+      } catch (err) {
+        console.warn("RPC get_auth_emails_by_role check:", err);
       }
 
       const uniqueEmails = Array.from(new Set(candidateEmails.filter(Boolean)));
 
       if (uniqueEmails.length === 0) {
         setLoading(false);
-        const title = "Email Akun Belum Diisi";
-        const desc = `Silakan masukkan email akun yang terdaftar untuk ${ROLE_LABELS[role]}.`;
+        const title = "Akun Tidak Ditemukan";
+        const desc = `Belum ada akun yang terdaftar untuk ${ROLE_LABELS[role]}. Silakan hubungi Super Admin atau daftar akun baru.`;
         setErrorMessage({ title, desc, type: "credentials" });
         toast.error(title, { description: desc });
         return;
       }
 
-      // 2. Coba autentikasi menggunakan Supabase Auth dengan kata sandi yang diinput
+      // 2. Autentikasi dengan Supabase Auth menggunakan kata sandi yang diinput
       let authenticatedUser: any = null;
       let authenticatedEmail: string | null = null;
       let lastError: any = null;
@@ -151,10 +218,8 @@ function LoginPage() {
 
       if (!authenticatedUser) {
         setLoading(false);
-        let title = "Gagal Masuk";
-        let desc = email.trim()
-          ? `Kata sandi atau email "${email}" salah untuk ${ROLE_LABELS[role]}. Silakan periksa kembali kata sandi dan email Anda.`
-          : `Kata sandi yang Anda masukkan salah untuk ${ROLE_LABELS[role]}, atau email akun Anda belum dimasukkan. Silakan isi kolom Email dengan alamat email yang Anda daftarkan.`;
+        let title = "Kata Sandi Salah";
+        let desc = `Kata sandi yang Anda masukkan tidak cocok untuk ${ROLE_LABELS[role]}. Silakan periksa kembali kata sandi Anda.`;
 
         if (lastError?.message?.toLowerCase().includes("too many requests")) {
           title = "Terlalu Banyak Percobaan";
@@ -177,7 +242,7 @@ function LoginPage() {
         const hasSelectedRole = registeredRoles.includes(role);
         const isSuperAdmin = registeredRoles.includes("admin");
 
-        // Jika role yang dipilih salah dan user bukan Super Admin
+        // Jika role yang dipilih tidak sesuai dan user bukan Super Admin
         if (!hasSelectedRole && !isSuperAdmin) {
           await supabase.auth.signOut();
           setLoading(false);
@@ -201,11 +266,22 @@ function LoginPage() {
         }
       }
 
-      // Simpan riwayat login role yang berhasil
+      // 4. Simpan riwayat login role yang berhasil ke localStorage
       if (authenticatedEmail) {
         localStorage.setItem(`role_auth_email_${role}`, authenticatedEmail);
         localStorage.setItem("last_active_account_email", authenticatedEmail);
         localStorage.setItem("last_active_role", role);
+
+        try {
+          const rawMap = localStorage.getItem("role_accounts_map");
+          const map = rawMap ? JSON.parse(rawMap) : {};
+          const list = Array.isArray(map[role]) ? map[role] : [];
+          if (!list.includes(authenticatedEmail)) {
+            list.push(authenticatedEmail);
+          }
+          map[role] = list;
+          localStorage.setItem("role_accounts_map", JSON.stringify(map));
+        } catch {}
       }
 
       setLoading(false);
@@ -285,7 +361,7 @@ function LoginPage() {
                 value={role}
                 onValueChange={(v) => handleRoleChange(v as AppRole)}
               >
-                <SelectTrigger id="role-select" className="w-full h-10 text-xs bg-[#05132d] border-blue-900/60 text-white focus:ring-cyan-500">
+                <SelectTrigger id="role-select" className="w-full h-10 text-xs bg-[#05132d] border-blue-900/60 text-white focus:ring-cyan-500 cursor-pointer">
                   <SelectValue placeholder="Pilih Peran / Hak Akses" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#081b3d] border-blue-900 text-white">
@@ -305,32 +381,7 @@ function LoginPage() {
               </Select>
             </div>
 
-            {/* Input 2: Email Akun */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="email" className="flex items-center gap-1.5 text-xs text-blue-100">
-                  <Mail className="size-3.5 text-cyan-400" />
-                  <span>Email Akun Terdaftar</span>
-                </Label>
-                <span className="text-[10px] text-blue-300/60 font-medium">
-                  {email ? "Terisi otomatis" : "Ketik email akun"}
-                </span>
-              </div>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  setErrorMessage(null);
-                }}
-                placeholder="nama@perusahaan.co.id"
-                className="h-10 text-xs bg-[#05132d] border-blue-900/60 text-white placeholder:text-blue-300/40 focus:border-cyan-500"
-              />
-            </div>
-
-            {/* Input 3: Password dengan Aksi Detail (Show/Hide) */}
+            {/* Input 2: Kata Sandi */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password" className="flex items-center gap-1.5 text-xs text-blue-100">
@@ -340,7 +391,7 @@ function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 font-medium transition-colors focus:outline-none"
+                  className="flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 font-medium transition-colors focus:outline-none cursor-pointer"
                   title={showPassword ? "Sembunyikan kata sandi" : "Tampilkan detail kata sandi"}
                 >
                   {showPassword ? (
@@ -373,7 +424,7 @@ function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-300/60 hover:text-cyan-400 transition-colors p-1 rounded hover:bg-blue-950/50"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-300/60 hover:text-cyan-400 transition-colors p-1 rounded hover:bg-blue-950/50 cursor-pointer"
                   tabIndex={-1}
                   title={showPassword ? "Sembunyikan kata sandi" : "Tampilkan detail kata sandi"}
                 >
@@ -385,10 +436,10 @@ function LoginPage() {
             <Button
               id="btn-login"
               type="submit"
-              className="w-full h-10 mt-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition-all"
+              className="w-full h-10 mt-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition-all cursor-pointer"
               disabled={loading}
             >
-              {loading ? "Memverifikasi Akun..." : "Masuk ke Sistem"}
+              {loading ? "Memverifikasi Akses..." : "Masuk ke Sistem"}
             </Button>
           </form>
 

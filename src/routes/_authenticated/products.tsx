@@ -1762,14 +1762,37 @@ function WarehouseAndProductsPage() {
     }
   }
 
+  // ── HELPER: FORMAT NAMA PETUGAS SHIFT ─────────────────────────────────────────
+  const getShiftOfficer = (dateInput?: string | Date, rawOfficerName?: string | null) => {
+    if (rawOfficerName && rawOfficerName.toLowerCase().includes("shift")) {
+      return rawOfficerName;
+    }
+    const d = dateInput ? new Date(dateInput) : new Date();
+    const h = d.getHours();
+    let shiftName = "Shift 1";
+    if (h >= 7 && h < 15) {
+      shiftName = "Shift 1";
+    } else if (h >= 15 && h < 23) {
+      shiftName = "Shift 2";
+    } else {
+      shiftName = "Shift 3";
+    }
+    const name = rawOfficerName || profile?.full_name || profile?.email || "Petugas Sparepart";
+    return `${shiftName} / ${name}`;
+  };
+
   // ── HELPER MUTATION: CATAT AKTIVITAS ──────────────────────────────────────────
-  const recordActivity = async (action: string, description: string) => {
+  const recordActivity = async (action: string, description: string, customOfficer?: string) => {
     try {
+      const officer = customOfficer?.trim()
+        ? (customOfficer.toLowerCase().includes("shift") ? customOfficer : `${getShiftOfficer()} / ${customOfficer}`)
+        : getShiftOfficer();
+
       await (supabase as any).from("warehouse_activity_logs").insert({
         action,
         description,
         user_id: profile?.id,
-        user_name: profile?.full_name || profile?.email || "Admin Gudang",
+        user_name: officer,
       });
       queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
     } catch {
@@ -1841,6 +1864,18 @@ function WarehouseAndProductsPage() {
       if (!editingItem) return;
       if (!editingItem.name.trim()) throw new Error("Nama barang wajib diisi");
 
+      const originalProduct = products.find((p) => p.id === editingItem.id);
+      const minStockToSave = isAdmin
+        ? (Number(editingItem.min_stock) || 10)
+        : (originalProduct?.min_stock ?? (Number(editingItem.min_stock) || 10));
+      const maxStockToSave = isAdmin
+        ? (editingItem.max_stock !== null &&
+           editingItem.max_stock !== undefined &&
+           (editingItem.max_stock as any) !== ""
+            ? Number(editingItem.max_stock)
+            : null)
+        : (originalProduct?.max_stock ?? null);
+
       const { error } = await supabase
         .from("products")
         .update({
@@ -1850,13 +1885,8 @@ function WarehouseAndProductsPage() {
           unit: editingItem.unit,
           location: editingItem.location,
           shelf: editingItem.shelf,
-          min_stock: Number(editingItem.min_stock) || 10,
-          max_stock:
-            editingItem.max_stock !== null &&
-            editingItem.max_stock !== undefined &&
-            (editingItem.max_stock as any) !== ""
-              ? Number(editingItem.max_stock)
-              : null,
+          min_stock: minStockToSave,
+          max_stock: maxStockToSave,
           current_stock: Number(editingItem.current_stock) || 0,
           description: editingItem.description?.trim() || null,
           image_url: editingItem.image_url || null,
@@ -2022,6 +2052,7 @@ function WarehouseAndProductsPage() {
       await recordActivity(
         txType === "IN" ? "BARANG_MASUK" : "BARANG_KELUAR",
         `Pencatatan ${txType === "IN" ? "Masuk" : "Keluar"} (${validItems.length} barang): ${recordedNames.join(", ")} (${txHeader.supplierOrDest || "-"})`,
+        txHeader.notes || undefined,
       );
     },
     onSuccess: () => {
@@ -2176,8 +2207,8 @@ function WarehouseAndProductsPage() {
       return;
     }
 
-    const periodStr = txDateFilter
-      ? new Date(txDateFilter).toLocaleDateString("id-ID", {
+    const periodStr = productDateFilter || txDateFilter
+      ? new Date(productDateFilter || txDateFilter).toLocaleDateString("id-ID", {
           day: "numeric",
           month: "long",
           year: "numeric",
@@ -2211,30 +2242,18 @@ function WarehouseAndProductsPage() {
     }
 
     const today = new Date();
-    const printDate =
-      today.toLocaleDateString("id-ID", {
-        day: "2-digit",
-        month: "long",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      }) + " WIB";
-
     const periodStr = productDateFilter || txDateFilter
       ? new Date(productDateFilter || txDateFilter).toLocaleDateString("id-ID", {
           day: "numeric",
           month: "long",
           year: "numeric",
         })
-      : today.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+      : today.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
     let totalBeginningAll = 0;
     let totalReceiptAll = 0;
     let totalIssuedAll = 0;
     let totalEndingStock = 0;
-    let orderCount = 0;
-    let safetyCount = 0;
-    let outOfStockCount = 0;
 
     const rows = dataToExport.map((p, idx) => {
       const minStock = p.min_stock ?? 10;
@@ -2265,62 +2284,52 @@ function WarehouseAndProductsPage() {
       totalIssuedAll += dailyOut;
       totalEndingStock += endingStock;
 
-      let statusStr = "SAFETY STOK";
-      if (maxStock !== null && !isNaN(maxStock) && endingStock > maxStock) {
-        statusStr = "OUT OF STOK";
-        outOfStockCount++;
-      } else if (endingStock <= minStock) {
-        statusStr = "ORDER";
-        orderCount++;
-      } else {
-        safetyCount++;
-      }
+      const statusStr = endingStock <= minStock ? "LIMIT / KRITIS" : "AMAN";
+      const maxStockStr = maxStock !== null && !isNaN(maxStock) && maxStock > 0 ? String(maxStock) : "-";
 
       return [
         String(idx + 1),
         `"${(p.code || "-").replace(/"/g, '""')}"`,
         `"${(p.name || "").replace(/"/g, '""')}"`,
-        `"${(p.unit || "PCS").toUpperCase()}"`,
-        String(minStock),
         String(beginningBalance),
+        String(minStock),
         dailyIn > 0 ? String(dailyIn) : "-",
         dailyOut > 0 ? String(dailyOut) : "-",
         String(endingStock),
-        maxStock !== null && !isNaN(maxStock) ? String(maxStock) : "-",
+        maxStockStr,
         `"${statusStr}"`,
       ].join(",");
     });
 
     const metaInfoLines = [
-      `"1. PLANT           : 1201"`,
-      `"2. STORAGE LOCATION: GDSP"`,
-      `"3. MATERIAL TYPE   : ERSA"`,
-      `"4. PERIODE MUTASI  : ${periodStr}"`,
+      `"1. PLANT   : 1201"`,
+      `"2. S.LOCATION : GDSP"`,
+      `"3. MAT.TYPE   : ERSA"`,
+      `"4. PERIOD     : ${periodStr}"`,
       "",
     ];
 
     const headers = [
       "No",
-      "Kode Material",
-      "Nama Barang",
-      "Satuan",
-      "Minimal Stok",
+      "Kode",
+      "MATERIAL",
       "BEGINNING BALANCE",
+      "MIN.STOK",
       "RECEIPT",
       "ISSUED",
       "ENDING BALANCE",
-      "Maksimal Stok",
-      "Kondisi Stok",
+      "MAKS.STOK",
+      "STATUS STOCK",
     ].map((h) => `"${h}"`).join(",");
 
     const signatureLines = [
       "",
       "",
-      `"Dibuat oleh User,","","","Diperiksa oleh UH/SH,","","","Disetujui oleh Departement Head,","","","",""`,
+      `"Dibuat oleh User,","","Diperiksa oleh UH/SH,","","","Disetujui oleh Departement Head,","","","",""`,
       "",
       "",
       "",
-      `"( ............................................ )","","","( ............................................ )","","","( ............................................ )","","","",""`,
+      `"( ............................................ )","","( ............................................ )","","","( ............................................ )","","","",""`,
     ];
 
     const csvContent = [
@@ -3230,7 +3239,7 @@ function WarehouseAndProductsPage() {
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
-          {activeTab === "transactions" || search.tab === "transactions" ? (
+          {activeTab === "logs" ? null : activeTab === "transactions" || search.tab === "transactions" ? (
             /* Layout Sejajar Horizontal 1 Baris khusus Riwayat Mutasi */
             <div className="flex items-center gap-2">
               {canManageWarehouse && (
@@ -3262,9 +3271,9 @@ function WarehouseAndProductsPage() {
 
               <Button
                 size="sm"
-                onClick={exportToCSV}
+                onClick={exportToExcel}
                 className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3"
-                title="Unduh Laporan Stok Sparepart (.csv resmi berformat rapi & tanda tangan)"
+                title="Unduh Laporan Stok Sparepart (.xls Excel resmi & tanda tangan)"
               >
                 <FileSpreadsheet className="size-3.5 text-emerald-400" />
                 Export Laporan
@@ -3339,9 +3348,9 @@ function WarehouseAndProductsPage() {
 
                 <Button
                   size="sm"
-                  onClick={exportToCSV}
+                  onClick={exportToExcel}
                   className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[155px]"
-                  title="Unduh Laporan Stok Sparepart (.csv resmi berformat rapi & tanda tangan)"
+                  title="Unduh Laporan Stok Sparepart (.xls Excel resmi & tanda tangan)"
                 >
                   <FileSpreadsheet className="size-3.5 text-emerald-400" />
                   Export Laporan
@@ -4609,27 +4618,30 @@ function WarehouseAndProductsPage() {
                   <tr className="border-b border-border bg-surface-muted/50">
                     <th className="label-caps px-4 py-3 text-left">Aksi</th>
                     <th className="label-caps px-4 py-3 text-left">Deskripsi Aktivitas</th>
-                    <th className="label-caps px-4 py-3 text-left">Petugas</th>
+                    <th className="label-caps px-4 py-3 text-left">Petugas Shift</th>
                     <th className="label-caps px-4 py-3 text-right">Waktu</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {activityLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-surface-muted/30">
-                      <td className="px-4 py-3">
-                        <Badge variant="outline" className="font-mono text-xs">
-                          {log.action}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 font-medium">{log.description}</td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
-                        {log.user_name || "Sistem"}
-                      </td>
-                      <td className="px-4 py-3 text-right text-xs text-muted-foreground">
-                        {formatDate(log.created_at)}
-                      </td>
-                    </tr>
-                  ))}
+                  {activityLogs.map((log) => {
+                    const shiftOfficerName = getShiftOfficer(log.created_at, log.user_name);
+                    return (
+                      <tr key={log.id} className="hover:bg-surface-muted/30">
+                        <td className="px-4 py-3">
+                          <Badge variant="outline" className="font-mono text-xs">
+                            {log.action}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 font-medium">{log.description}</td>
+                        <td className="px-4 py-3 text-xs font-semibold text-foreground">
+                          {shiftOfficerName}
+                        </td>
+                        <td className="px-4 py-3 text-right text-xs text-muted-foreground">
+                          {formatDate(log.created_at)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -5953,24 +5965,41 @@ function WarehouseAndProductsPage() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Minimal Stok</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold">Minimal Stok</Label>
+                    {!isAdmin && (
+                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                        (Hanya Super Admin)
+                      </span>
+                    )}
+                  </div>
                   <Input
                     type="number"
                     value={editingBufferItem.min_stock ?? 10}
+                    disabled={!isAdmin}
                     onChange={(e) =>
                       setEditingBufferItem({
                         ...editingBufferItem,
                         min_stock: Number(e.target.value),
                       })
                     }
-                    className="h-9 text-xs font-mono"
+                    className={cn("h-9 text-xs font-mono", !isAdmin && "bg-muted/50 cursor-not-allowed opacity-80")}
+                    title={!isAdmin ? "Hanya Super Admin yang dapat mengubah batas minimum stok" : undefined}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Maksimal Stok</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold">Maksimal Stok</Label>
+                    {!isAdmin && (
+                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                        (Hanya Super Admin)
+                      </span>
+                    )}
+                  </div>
                   <Input
                     type="number"
                     value={editingBufferItem.max_stock ?? ""}
+                    disabled={!isAdmin}
                     onChange={(e) =>
                       setEditingBufferItem({
                         ...editingBufferItem,
@@ -5978,7 +6007,8 @@ function WarehouseAndProductsPage() {
                       })
                     }
                     placeholder="opsional"
-                    className="h-9 text-xs font-mono"
+                    className={cn("h-9 text-xs font-mono", !isAdmin && "bg-muted/50 cursor-not-allowed opacity-80")}
+                    title={!isAdmin ? "Hanya Super Admin yang dapat mengubah batas maksimal stok" : undefined}
                   />
                 </div>
                 <div className="space-y-1.5 sm:col-span-2">
@@ -6638,73 +6668,63 @@ function WarehouseAndProductsPage() {
                 </Select>
               </div>
               <div className="space-y-1.5 col-span-2 sm:col-span-1">
-                <Label>Qty Masuk</Label>
+                <Label>Stok Saat Ini</Label>
                 <Input
                   type="number"
-                  value={editingItem.qty_in ?? ""}
+                  value={editingItem.current_stock ?? ""}
                   onChange={(e) =>
                     setEditingItem({
                       ...editingItem,
-                      qty_in: e.target.value !== "" ? Number(e.target.value) : "",
+                      current_stock: e.target.value !== "" ? Number(e.target.value) : 0,
                     })
                   }
-                  placeholder="0"
+                  placeholder="Contoh: 0"
                 />
               </div>
               <div className="space-y-1.5 col-span-2 sm:col-span-1">
-                <Label>Qty Keluar</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Batas Minimum Stok</Label>
+                  {!isAdmin && (
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                      (Hanya Super Admin)
+                    </span>
+                  )}
+                </div>
                 <Input
                   type="number"
-                  value={editingItem.qty_out ?? ""}
+                  value={editingItem.min_stock ?? 10}
+                  disabled={!isAdmin}
+                  onChange={(e) =>
+                    setEditingItem({ ...editingItem, min_stock: Number(e.target.value) })
+                  }
+                  placeholder="Contoh: 10"
+                  className={cn(!isAdmin && "bg-muted/50 cursor-not-allowed opacity-80")}
+                  title={!isAdmin ? "Hanya Super Admin yang dapat mengubah batas minimum stok" : undefined}
+                />
+              </div>
+              <div className="space-y-1.5 col-span-2 sm:col-span-1">
+                <div className="flex items-center justify-between">
+                  <Label>Maksimal Stok</Label>
+                  {!isAdmin && (
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                      (Hanya Super Admin)
+                    </span>
+                  )}
+                </div>
+                <Input
+                  type="number"
+                  value={editingItem.max_stock ?? ""}
+                  disabled={!isAdmin}
                   onChange={(e) =>
                     setEditingItem({
                       ...editingItem,
-                      qty_out: e.target.value !== "" ? Number(e.target.value) : "",
+                      max_stock: e.target.value ? Number(e.target.value) : null,
                     })
                   }
-                  placeholder="0"
+                  placeholder="Contoh: 50 (opsional)"
+                  className={cn(!isAdmin && "bg-muted/50 cursor-not-allowed opacity-80")}
+                  title={!isAdmin ? "Hanya Super Admin yang dapat mengubah batas maksimal stok" : undefined}
                 />
-              </div>
-              <div className="col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-1.5">
-                  <Label>Batas Minimum Stok</Label>
-                  <Input
-                    type="number"
-                    value={editingItem.min_stock ?? 10}
-                    onChange={(e) =>
-                      setEditingItem({ ...editingItem, min_stock: Number(e.target.value) })
-                    }
-                    placeholder="Contoh: 10"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Maksimal Stok</Label>
-                  <Input
-                    type="number"
-                    value={editingItem.max_stock ?? ""}
-                    onChange={(e) =>
-                      setEditingItem({
-                        ...editingItem,
-                        max_stock: e.target.value ? Number(e.target.value) : null,
-                      })
-                    }
-                    placeholder="Contoh: 50 (opsional)"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Stok Saat Ini</Label>
-                  <Input
-                    type="number"
-                    value={editingItem.current_stock ?? ""}
-                    onChange={(e) =>
-                      setEditingItem({
-                        ...editingItem,
-                        current_stock: e.target.value !== "" ? Number(e.target.value) : 0,
-                      })
-                    }
-                    placeholder="Contoh: 0"
-                  />
-                </div>
               </div>
             </div>
           )}
