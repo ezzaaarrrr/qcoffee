@@ -403,11 +403,13 @@ function LoginPage() {
                   className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors focus:outline-none cursor-pointer flex items-center gap-1"
                 >
                   <Mail className="size-3" />
-                  <span>{showCustomEmail ? "Sembunyikan email khusus" : "Ingin pakai email terdaftar tertentu?"}</span>
+                  <span>
+                    {showCustomEmail
+                      ? "Sembunyikan email khusus"
+                      : "Ingin pakai email terdaftar tertentu?"}
+                  </span>
                 </button>
-                {showCustomEmail && (
-                  <span className="text-blue-300/50 text-[10px]">Opsional</span>
-                )}
+                {showCustomEmail && <span className="text-blue-300/50 text-[10px]">Opsional</span>}
               </div>
               {showCustomEmail && (
                 <Input
