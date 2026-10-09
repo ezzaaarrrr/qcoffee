@@ -1382,7 +1382,7 @@ function WarehouseAndProductsPage() {
           obsMeta.receipt !== null ||
           obsMeta.issued !== null ||
           obsMeta.ending_balance !== null;
-        const obsDescription = hasObsData ? JSON.stringify(obsMeta) : (found?.description || null);
+        const obsDescription = hasObsData ? JSON.stringify(obsMeta) : found?.description || null;
 
         if (found) {
           // Data master barang: sertakan nama agar memenuhi NOT NULL constraint PostgreSQL saat upsert
@@ -1815,7 +1815,9 @@ function WarehouseAndProductsPage() {
   const recordActivity = async (action: string, description: string, customOfficer?: string) => {
     try {
       const officer = customOfficer?.trim()
-        ? (customOfficer.toLowerCase().includes("shift") ? customOfficer : `${getShiftOfficer()} / ${customOfficer}`)
+        ? customOfficer.toLowerCase().includes("shift")
+          ? customOfficer
+          : `${getShiftOfficer()} / ${customOfficer}`
         : getShiftOfficer();
 
       await (supabase as any).from("warehouse_activity_logs").insert({
@@ -1896,14 +1898,14 @@ function WarehouseAndProductsPage() {
 
       const originalProduct = products.find((p) => p.id === editingItem.id);
       const minStockToSave = isAdmin
-        ? (Number(editingItem.min_stock) || 10)
+        ? Number(editingItem.min_stock) || 10
         : (originalProduct?.min_stock ?? (Number(editingItem.min_stock) || 10));
       const maxStockToSave = isAdmin
-        ? (editingItem.max_stock !== null &&
-           editingItem.max_stock !== undefined &&
-           (editingItem.max_stock as any) !== ""
-            ? Number(editingItem.max_stock)
-            : null)
+        ? editingItem.max_stock !== null &&
+          editingItem.max_stock !== undefined &&
+          (editingItem.max_stock as any) !== ""
+          ? Number(editingItem.max_stock)
+          : null
         : (originalProduct?.max_stock ?? null);
 
       const { error } = await supabase
@@ -2157,8 +2159,7 @@ function WarehouseAndProductsPage() {
 
       // Cocokkan apakah transaksi terjadi pada target tanggal (hari ini / tanggal terpilih)
       const isTargetDay =
-        txDate === targetDate ||
-        (tx.batch_number && tx.batch_number.trim() === targetDate);
+        txDate === targetDate || (tx.batch_number && tx.batch_number.trim() === targetDate);
 
       // Jika transaksi berasal dari hari lain (sudah beda hari), tidak dimasukkan ke Receipt & Issued harian
       if (!isTargetDay) return;
@@ -2237,13 +2238,14 @@ function WarehouseAndProductsPage() {
       return;
     }
 
-    const periodStr = productDateFilter || txDateFilter
-      ? new Date(productDateFilter || txDateFilter).toLocaleDateString("id-ID", {
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        })
-      : new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+    const periodStr =
+      productDateFilter || txDateFilter
+        ? new Date(productDateFilter || txDateFilter).toLocaleDateString("id-ID", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          })
+        : new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
     exportSparepartInventoryExcel({
       products: dataToExport,
@@ -2272,13 +2274,14 @@ function WarehouseAndProductsPage() {
     }
 
     const today = new Date();
-    const periodStr = productDateFilter || txDateFilter
-      ? new Date(productDateFilter || txDateFilter).toLocaleDateString("id-ID", {
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        })
-      : today.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+    const periodStr =
+      productDateFilter || txDateFilter
+        ? new Date(productDateFilter || txDateFilter).toLocaleDateString("id-ID", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          })
+        : today.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
     let totalBeginningAll = 0;
     let totalReceiptAll = 0;
@@ -2290,9 +2293,7 @@ function WarehouseAndProductsPage() {
       const endingStock = p.current_stock ?? 0;
       const rawMax = (p as any).max_stock;
       const maxStock =
-        rawMax !== null && rawMax !== undefined && rawMax !== ""
-          ? Number(rawMax)
-          : null;
+        rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
 
       const nameKey = p.name ? p.name.trim().toLowerCase() : "";
       const codeKey = p.code ? p.code.trim().toLowerCase() : "";
@@ -2316,9 +2317,9 @@ function WarehouseAndProductsPage() {
       const rawBeg =
         obsMeta && obsMeta.beginning_balance !== null && obsMeta.beginning_balance !== undefined
           ? obsMeta.beginning_balance
-          : ((p as any).beginning_balance !== null && (p as any).beginning_balance !== undefined
-              ? Number((p as any).beginning_balance)
-              : null);
+          : (p as any).beginning_balance !== null && (p as any).beginning_balance !== undefined
+            ? Number((p as any).beginning_balance)
+            : null;
 
       const finalEndingStock =
         obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
@@ -2333,7 +2334,8 @@ function WarehouseAndProductsPage() {
       totalEndingStock += finalEndingStock;
 
       const statusStr = finalEndingStock <= minStock ? "LIMIT / KRITIS" : "AMAN";
-      const maxStockStr = maxStock !== null && !isNaN(maxStock) && maxStock > 0 ? String(maxStock) : "-";
+      const maxStockStr =
+        maxStock !== null && !isNaN(maxStock) && maxStock > 0 ? String(maxStock) : "-";
 
       return [
         String(idx + 1),
@@ -2341,8 +2343,12 @@ function WarehouseAndProductsPage() {
         `"${(p.name || "").replace(/"/g, '""')}"`,
         rawBeg !== null ? String(rawBeg) : "-",
         String(minStock),
-        dailyIn !== null && dailyIn !== undefined && (dailyIn > 0 || dailyIn === 0) ? String(dailyIn) : "-",
-        dailyOut !== null && dailyOut !== undefined && (dailyOut > 0 || dailyOut === 0) ? String(dailyOut) : "-",
+        dailyIn !== null && dailyIn !== undefined && (dailyIn > 0 || dailyIn === 0)
+          ? String(dailyIn)
+          : "-",
+        dailyOut !== null && dailyOut !== undefined && (dailyOut > 0 || dailyOut === 0)
+          ? String(dailyOut)
+          : "-",
         String(finalEndingStock),
         maxStockStr,
         `"${statusStr}"`,
@@ -2368,7 +2374,9 @@ function WarehouseAndProductsPage() {
       "ENDING BALANCE",
       "MAKS.STOK",
       "STATUS STOCK",
-    ].map((h) => `"${h}"`).join(",");
+    ]
+      .map((h) => `"${h}"`)
+      .join(",");
 
     const signatureLines = [
       "",
@@ -2380,12 +2388,7 @@ function WarehouseAndProductsPage() {
       `"( ............................................ )","","( ............................................ )","","","( ............................................ )","","","",""`,
     ];
 
-    const csvContent = [
-      ...metaInfoLines,
-      headers,
-      ...rows,
-      ...signatureLines,
-    ].join("\r\n");
+    const csvContent = [...metaInfoLines, headers, ...rows, ...signatureLines].join("\r\n");
 
     const bom = "\uFEFF";
     const blob = new Blob([bom + csvContent], { type: "text/csv;charset=utf-8;" });
@@ -3287,7 +3290,8 @@ function WarehouseAndProductsPage() {
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
-          {activeTab === "logs" ? null : activeTab === "transactions" || search.tab === "transactions" ? (
+          {activeTab === "logs" ? null : activeTab === "transactions" ||
+            search.tab === "transactions" ? (
             /* Layout Sejajar Horizontal 1 Baris khusus Riwayat Mutasi */
             <div className="flex items-center gap-2">
               {canManageWarehouse && (
@@ -3794,24 +3798,33 @@ function WarehouseAndProductsPage() {
                     const obsMeta = getProductObsMeta(p);
 
                     const beginningBalance =
-                      obsMeta && obsMeta.beginning_balance !== null && obsMeta.beginning_balance !== undefined
+                      obsMeta &&
+                      obsMeta.beginning_balance !== null &&
+                      obsMeta.beginning_balance !== undefined
                         ? obsMeta.beginning_balance
-                        : ((p as any).beginning_balance !== null && (p as any).beginning_balance !== undefined
-                            ? Number((p as any).beginning_balance)
-                            : null);
+                        : (p as any).beginning_balance !== null &&
+                            (p as any).beginning_balance !== undefined
+                          ? Number((p as any).beginning_balance)
+                          : null;
 
                     const receiptVal =
                       obsMeta && obsMeta.receipt !== null && obsMeta.receipt !== undefined
                         ? obsMeta.receipt
-                        : (dailyReceipt > 0 ? dailyReceipt : null);
+                        : dailyReceipt > 0
+                          ? dailyReceipt
+                          : null;
 
                     const issuedVal =
                       obsMeta && obsMeta.issued !== null && obsMeta.issued !== undefined
                         ? obsMeta.issued
-                        : (dailyIssued > 0 ? dailyIssued : null);
+                        : dailyIssued > 0
+                          ? dailyIssued
+                          : null;
 
                     const endingBalance =
-                      obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
+                      obsMeta &&
+                      obsMeta.ending_balance !== null &&
+                      obsMeta.ending_balance !== undefined
                         ? obsMeta.ending_balance
                         : current;
 
@@ -3900,7 +3913,9 @@ function WarehouseAndProductsPage() {
 
                         {/* 7. RECEIPT */}
                         <td className="px-3 py-3 text-center font-mono font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                          {receiptVal !== null && receiptVal !== undefined && (receiptVal > 0 || receiptVal === 0) ? (
+                          {receiptVal !== null &&
+                          receiptVal !== undefined &&
+                          (receiptVal > 0 || receiptVal === 0) ? (
                             Number(receiptVal).toLocaleString("id-ID")
                           ) : (
                             <span className="text-muted-foreground/60">—</span>
@@ -3909,7 +3924,9 @@ function WarehouseAndProductsPage() {
 
                         {/* 8. ISSUED */}
                         <td className="px-3 py-3 text-center font-mono font-semibold text-rose-600 dark:text-rose-400 whitespace-nowrap">
-                          {issuedVal !== null && issuedVal !== undefined && (issuedVal > 0 || issuedVal === 0) ? (
+                          {issuedVal !== null &&
+                          issuedVal !== undefined &&
+                          (issuedVal > 0 || issuedVal === 0) ? (
                             Number(issuedVal).toLocaleString("id-ID")
                           ) : (
                             <span className="text-muted-foreground/60">—</span>
@@ -6057,8 +6074,15 @@ function WarehouseAndProductsPage() {
                         min_stock: Number(e.target.value),
                       })
                     }
-                    className={cn("h-9 text-xs font-mono", !isAdmin && "bg-muted/50 cursor-not-allowed opacity-80")}
-                    title={!isAdmin ? "Hanya Super Admin yang dapat mengubah batas minimum stok" : undefined}
+                    className={cn(
+                      "h-9 text-xs font-mono",
+                      !isAdmin && "bg-muted/50 cursor-not-allowed opacity-80",
+                    )}
+                    title={
+                      !isAdmin
+                        ? "Hanya Super Admin yang dapat mengubah batas minimum stok"
+                        : undefined
+                    }
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -6081,8 +6105,15 @@ function WarehouseAndProductsPage() {
                       })
                     }
                     placeholder="opsional"
-                    className={cn("h-9 text-xs font-mono", !isAdmin && "bg-muted/50 cursor-not-allowed opacity-80")}
-                    title={!isAdmin ? "Hanya Super Admin yang dapat mengubah batas maksimal stok" : undefined}
+                    className={cn(
+                      "h-9 text-xs font-mono",
+                      !isAdmin && "bg-muted/50 cursor-not-allowed opacity-80",
+                    )}
+                    title={
+                      !isAdmin
+                        ? "Hanya Super Admin yang dapat mengubah batas maksimal stok"
+                        : undefined
+                    }
                   />
                 </div>
                 <div className="space-y-1.5 sm:col-span-2">
@@ -6779,7 +6810,11 @@ function WarehouseAndProductsPage() {
                   }
                   placeholder="Contoh: 10"
                   className={cn(!isAdmin && "bg-muted/50 cursor-not-allowed opacity-80")}
-                  title={!isAdmin ? "Hanya Super Admin yang dapat mengubah batas minimum stok" : undefined}
+                  title={
+                    !isAdmin
+                      ? "Hanya Super Admin yang dapat mengubah batas minimum stok"
+                      : undefined
+                  }
                 />
               </div>
               <div className="space-y-1.5 col-span-2 sm:col-span-1">
@@ -6803,7 +6838,11 @@ function WarehouseAndProductsPage() {
                   }
                   placeholder="Contoh: 50 (opsional)"
                   className={cn(!isAdmin && "bg-muted/50 cursor-not-allowed opacity-80")}
-                  title={!isAdmin ? "Hanya Super Admin yang dapat mengubah batas maksimal stok" : undefined}
+                  title={
+                    !isAdmin
+                      ? "Hanya Super Admin yang dapat mengubah batas maksimal stok"
+                      : undefined
+                  }
                 />
               </div>
             </div>
@@ -6971,7 +7010,7 @@ function WarehouseAndProductsPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>No. Referensi (PO / SPK / Surat Jalan)</Label>
+                <Label>USER</Label>
                 <Input
                   value={txHeader.referenceNo}
                   onChange={(e) => setTxHeader({ ...txHeader, referenceNo: e.target.value })}
