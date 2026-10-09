@@ -356,7 +356,7 @@ function LoginPage() {
                 className="flex items-center gap-1.5 text-xs text-blue-100"
               >
                 <UserCheck className="size-3.5 text-cyan-400" />
-                <span> (User & Role)</span>
+                <span> User & Role</span>
               </Label>
               <Select value={role} onValueChange={(v) => handleRoleChange(v as AppRole)}>
                 <SelectTrigger
