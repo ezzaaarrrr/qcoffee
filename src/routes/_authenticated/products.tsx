@@ -2300,37 +2300,40 @@ function WarehouseAndProductsPage() {
 
       const obsMeta = getProductObsMeta(p);
 
-      const dailyIn =
+      const baseReceipt =
         obsMeta && obsMeta.receipt !== null && obsMeta.receipt !== undefined
-          ? obsMeta.receipt
-          : (dailyInQtyMap[p.id] ?? 0) ||
-            (nameKey ? (dailyInQtyMap[nameKey] ?? 0) : 0) ||
-            (codeKey ? (dailyInQtyMap[codeKey] ?? 0) : 0);
+          ? Number(obsMeta.receipt)
+          : 0;
+      const additionalIn =
+        (dailyInQtyMap[p.id] ?? 0) ||
+        (nameKey ? (dailyInQtyMap[nameKey] ?? 0) : 0) ||
+        (codeKey ? (dailyInQtyMap[codeKey] ?? 0) : 0);
+      const totalReceipt = baseReceipt + additionalIn;
 
-      const dailyOut =
+      const baseIssued =
         obsMeta && obsMeta.issued !== null && obsMeta.issued !== undefined
-          ? obsMeta.issued
-          : (dailyOutQtyMap[p.id] ?? 0) ||
-            (nameKey ? (dailyOutQtyMap[nameKey] ?? 0) : 0) ||
-            (codeKey ? (dailyOutQtyMap[codeKey] ?? 0) : 0);
+          ? Number(obsMeta.issued)
+          : 0;
+      const additionalOut =
+        (dailyOutQtyMap[p.id] ?? 0) ||
+        (nameKey ? (dailyOutQtyMap[nameKey] ?? 0) : 0) ||
+        (codeKey ? (dailyOutQtyMap[codeKey] ?? 0) : 0);
+      const totalIssued = baseIssued + additionalOut;
 
       const rawBeg =
         obsMeta && obsMeta.beginning_balance !== null && obsMeta.beginning_balance !== undefined
-          ? obsMeta.beginning_balance
+          ? Number(obsMeta.beginning_balance)
           : (p as any).beginning_balance !== null && (p as any).beginning_balance !== undefined
             ? Number((p as any).beginning_balance)
-            : null;
+            : endingStock;
+      const beginningBalance = rawBeg !== null && !isNaN(rawBeg) ? rawBeg : 0;
 
-      const finalEndingStock =
-        obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
-          ? obsMeta.ending_balance
-          : endingStock;
+      // Ending Balance = Beginning Balance + Receipt - Issued
+      const finalEndingStock = Math.max(0, beginningBalance + totalReceipt - totalIssued);
 
-      if (typeof rawBeg === "number") {
-        totalBeginningAll += rawBeg;
-      }
-      totalReceiptAll += typeof dailyIn === "number" ? dailyIn : 0;
-      totalIssuedAll += typeof dailyOut === "number" ? dailyOut : 0;
+      totalBeginningAll += beginningBalance;
+      totalReceiptAll += totalReceipt;
+      totalIssuedAll += totalIssued;
       totalEndingStock += finalEndingStock;
 
       const statusStr = finalEndingStock <= minStock ? "LIMIT / KRITIS" : "AMAN";
@@ -2341,14 +2344,10 @@ function WarehouseAndProductsPage() {
         String(idx + 1),
         `"${(p.code || "-").replace(/"/g, '""')}"`,
         `"${(p.name || "").replace(/"/g, '""')}"`,
-        rawBeg !== null ? String(rawBeg) : "-",
+        String(beginningBalance),
         String(minStock),
-        dailyIn !== null && dailyIn !== undefined && (dailyIn > 0 || dailyIn === 0)
-          ? String(dailyIn)
-          : "-",
-        dailyOut !== null && dailyOut !== undefined && (dailyOut > 0 || dailyOut === 0)
-          ? String(dailyOut)
-          : "-",
+        String(totalReceipt),
+        String(totalIssued),
         String(finalEndingStock),
         maxStockStr,
         `"${statusStr}"`,
@@ -3035,6 +3034,16 @@ function WarehouseAndProductsPage() {
             <div class="meta-label">${isMasuk ? "Tanggal Penerimaan" : "Tanggal Pengeluaran"}</div>
             <div class="meta-value">${receiptDate}</div>
           </div>
+          ${
+            !isMasuk
+              ? `
+          <div class="meta-item">
+            <div class="meta-label">USER / PEMOHON:</div>
+            <div class="meta-value">${tx.reference_no || "—"}</div>
+          </div>
+          `
+              : ""
+          }
         </div>
 
         <div style="font-size: 12px; font-weight: 700; margin-bottom: 8px; color: #334155;">
@@ -3060,7 +3069,7 @@ function WarehouseAndProductsPage() {
         <div class="signatures">
           <div>
             <div style="font-size: 11px; color: #64748b;">Dibuat oleh User,</div>
-            <div class="sig-line">( ............................................ )</div>
+            <div class="sig-line">(${!isMasuk && tx.reference_no ? ` ${tx.reference_no} ` : " ............................................ "})</div>
           </div>
           <div>
             <div style="font-size: 11px; color: #64748b;">Diperiksa oleh UH/SH,</div>
@@ -3792,41 +3801,37 @@ function WarehouseAndProductsPage() {
                       (nameKey ? (dailyOutQtyMap[nameKey] ?? 0) : 0) ||
                       (codeKey ? (dailyOutQtyMap[codeKey] ?? 0) : 0);
 
-                    // Membaca murni kolom mutasi OBS dari file Excel / metadata:
-                    // BEGINNING BALANCE, RECEIPT, ISSUED, ENDING BALANCE
-                    // TIDAK membaca/menghitung beginning balance sama dengan hasilnya dengan ending balance!
+                    // BEGINNING BALANCE tetap tidak berubah dari hasil excel:
                     const obsMeta = getProductObsMeta(p);
 
                     const beginningBalance =
                       obsMeta &&
                       obsMeta.beginning_balance !== null &&
                       obsMeta.beginning_balance !== undefined
-                        ? obsMeta.beginning_balance
+                        ? Number(obsMeta.beginning_balance)
                         : (p as any).beginning_balance !== null &&
                             (p as any).beginning_balance !== undefined
                           ? Number((p as any).beginning_balance)
-                          : null;
+                          : current;
 
-                    const receiptVal =
+                    // RECEIPT: data receipt dari excel + transaksi catatan masuk
+                    const baseReceipt =
                       obsMeta && obsMeta.receipt !== null && obsMeta.receipt !== undefined
-                        ? obsMeta.receipt
-                        : dailyReceipt > 0
-                          ? dailyReceipt
-                          : null;
+                        ? Number(obsMeta.receipt)
+                        : 0;
+                    const receiptVal = baseReceipt + dailyReceipt;
 
-                    const issuedVal =
+                    // ISSUED: data issued dari excel + transaksi catatan keluar
+                    const baseIssued =
                       obsMeta && obsMeta.issued !== null && obsMeta.issued !== undefined
-                        ? obsMeta.issued
-                        : dailyIssued > 0
-                          ? dailyIssued
-                          : null;
+                        ? Number(obsMeta.issued)
+                        : 0;
+                    const issuedVal = baseIssued + dailyIssued;
 
-                    const endingBalance =
-                      obsMeta &&
-                      obsMeta.ending_balance !== null &&
-                      obsMeta.ending_balance !== undefined
-                        ? obsMeta.ending_balance
-                        : current;
+                    // ENDING BALANCE: jika terjadi transaksi catatan masuk di kolom receipt maka jumlah ending balance yang akan bertambah,
+                    // jika terjadi transaksi keluar di kolom issued maka kolom ending balance akan mengurangi.
+                    // Dan untuk beginning balance jumlah nya tetap tidak berubah dari hasil excel.
+                    const endingBalance = Math.max(0, beginningBalance + receiptVal - issuedVal);
 
                     // Logika Kondisi:
                     // 1. Order warna merah (endingBalance <= minStock)
@@ -3904,33 +3909,17 @@ function WarehouseAndProductsPage() {
 
                         {/* 6. BEGINNING BALANCE */}
                         <td className="px-3 py-3 text-center font-mono font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                          {beginningBalance !== null && beginningBalance !== undefined ? (
-                            Number(beginningBalance).toLocaleString("id-ID")
-                          ) : (
-                            <span className="text-muted-foreground/60">—</span>
-                          )}
+                          {Number(beginningBalance).toLocaleString("id-ID")}
                         </td>
 
                         {/* 7. RECEIPT */}
                         <td className="px-3 py-3 text-center font-mono font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                          {receiptVal !== null &&
-                          receiptVal !== undefined &&
-                          (receiptVal > 0 || receiptVal === 0) ? (
-                            Number(receiptVal).toLocaleString("id-ID")
-                          ) : (
-                            <span className="text-muted-foreground/60">—</span>
-                          )}
+                          {Number(receiptVal).toLocaleString("id-ID")}
                         </td>
 
                         {/* 8. ISSUED */}
                         <td className="px-3 py-3 text-center font-mono font-semibold text-rose-600 dark:text-rose-400 whitespace-nowrap">
-                          {issuedVal !== null &&
-                          issuedVal !== undefined &&
-                          (issuedVal > 0 || issuedVal === 0) ? (
-                            Number(issuedVal).toLocaleString("id-ID")
-                          ) : (
-                            <span className="text-muted-foreground/60">—</span>
-                          )}
+                          {Number(issuedVal).toLocaleString("id-ID")}
                         </td>
 
                         {/* 9. ENDING BALANCE */}
@@ -4317,13 +4306,16 @@ function WarehouseAndProductsPage() {
                       Vendor
                     </th>
                     <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
+                      User
+                    </th>
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
                       Alasan Permintaan Barang
                     </th>
                     <th className="px-3 py-3 whitespace-nowrap text-white min-w-[130px] text-center">
-                      No. PO
+                      NO. PO
                     </th>
                     <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
-                      User
+                      Petugas Shift
                     </th>
                     <th className="px-3 py-3 whitespace-nowrap text-white text-center w-28">
                       Aksi
@@ -4444,7 +4436,18 @@ function WarehouseAndProductsPage() {
                           )}
                         </td>
 
-                        {/* 7. Alasan Permintaan Barang */}
+                        {/* 7. User */}
+                        <td className="px-3 py-3 text-xs">
+                          {!isMasuk ? (
+                            <span className="font-medium text-foreground block">
+                              {tx.reference_no || "—"}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/60 block">—</span>
+                          )}
+                        </td>
+
+                        {/* 8. Alasan Permintaan Barang */}
                         <td className="px-3 py-3 text-xs">
                           {!isMasuk ? (
                             <span className="font-medium text-foreground block">
@@ -4455,7 +4458,7 @@ function WarehouseAndProductsPage() {
                           )}
                         </td>
 
-                        {/* 8. No. PO */}
+                        {/* 9. No. PO */}
                         <td className="px-3 py-3 text-xs">
                           {isMasuk && tx.reference_no ? (
                             <span className="font-mono text-xs text-foreground font-semibold">
@@ -4466,11 +4469,11 @@ function WarehouseAndProductsPage() {
                               {tx.batch_number}
                             </span>
                           ) : (
-                            <span className="text-muted-foreground/60">—</span>
+                            <span className="text-muted-foreground/60 block">—</span>
                           )}
                         </td>
 
-                        {/* 9. User (Nama Petugas Shift) */}
+                        {/* 10. Petugas Shift */}
                         <td className="px-3 py-3 text-xs">
                           <span className="font-medium text-foreground block">
                             {tx.notes || tx.created_by_name || "Petugas Sparepart"}
@@ -7010,11 +7013,11 @@ function WarehouseAndProductsPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>USER</Label>
+                <Label>{txType === "IN" ? "No. PO / Referensi" : "User"}</Label>
                 <Input
                   value={txHeader.referenceNo}
                   onChange={(e) => setTxHeader({ ...txHeader, referenceNo: e.target.value })}
-                  placeholder="cth. SJ-99120"
+                  placeholder={txType === "IN" ? "cth. PO-99120" : "cth. Nama Pemohon / User"}
                   className="h-9 text-xs"
                 />
               </div>
@@ -7130,12 +7133,21 @@ function WarehouseAndProductsPage() {
                         : formatDate(selectedTx.created_at)}
                     </span>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">User:</span>
-                    <span className="font-medium text-foreground">
-                      {selectedTx.created_by_name || "Warehouse Sparepart"}
-                    </span>
-                  </div>
+                  {selectedTx.tx_type === "IN" ? (
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">No. PO:</span>
+                      <span className="font-mono font-semibold text-foreground">
+                        {selectedTx.reference_no || "—"}
+                      </span>
+                    </div>
+                  ) : (
+                    <div>
+                      <span className="text-muted-foreground block text-[11px]">User:</span>
+                      <span className="font-medium text-foreground">
+                        {selectedTx.reference_no || "—"}
+                      </span>
+                    </div>
+                  )}
                   <div>
                     <span className="text-muted-foreground block text-[11px]">
                       {selectedTx.tx_type === "IN"
@@ -7158,18 +7170,8 @@ function WarehouseAndProductsPage() {
                     <span className="text-muted-foreground block text-[11px]">
                       Petugas Sparepart Shift 1/2/3:
                     </span>
-                    <span className="font-medium text-foreground">
-                      {selectedTx.notes || selectedTx.reference_no || "—"}
-                    </span>
+                    <span className="font-medium text-foreground">{selectedTx.notes || "—"}</span>
                   </div>
-                  {selectedTx.tx_type === "IN" && (
-                    <div>
-                      <span className="text-muted-foreground block text-[11px]">No. PO:</span>
-                      <span className="font-mono font-semibold text-foreground">
-                        {selectedTx.reference_no || "—"}
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
 

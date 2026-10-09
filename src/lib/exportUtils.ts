@@ -444,7 +444,6 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
     .map((p, idx) => {
       const minStock = p.min_stock ?? 10;
       const endingStock = p.current_stock ?? 0;
-      totalEndingStock += endingStock;
 
       const rawMax = (p as any).max_stock;
       const maxStock =
@@ -459,41 +458,44 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
       // Ekstrak metadata saldo OBS asli dari file Excel jika tersedia
       const obsMeta = getProductObsMeta(p);
 
-      // 1. Data Riwayat Keluar (ISSUED)
-      const totalOut =
+      // 1. Data Riwayat Keluar (ISSUED): dasar dari Excel + mutasi keluar
+      const baseOut =
         obsMeta && obsMeta.issued !== null && obsMeta.issued !== undefined
-          ? obsMeta.issued
-          : (totalOutQtyMap[p.id] ?? 0) ||
-            (nameKey ? totalOutQtyMap[nameKey] ?? 0 : 0) ||
-            (codeKey ? totalOutQtyMap[codeKey] ?? 0 : 0);
+          ? Number(obsMeta.issued)
+          : 0;
+      const additionalOut =
+        (totalOutQtyMap[p.id] ?? 0) ||
+        (nameKey ? totalOutQtyMap[nameKey] ?? 0 : 0) ||
+        (codeKey ? totalOutQtyMap[codeKey] ?? 0 : 0);
+      const totalOut = baseOut + additionalOut;
       totalPengeluaranAll += totalOut;
 
-      // 2. Data Riwayat Masuk (RECEIPT)
-      const totalIn =
+      // 2. Data Riwayat Masuk (RECEIPT): dasar dari Excel + mutasi masuk
+      const baseIn =
         obsMeta && obsMeta.receipt !== null && obsMeta.receipt !== undefined
-          ? obsMeta.receipt
-          : (totalInQtyMap[p.id] ?? 0) ||
-            (nameKey ? totalInQtyMap[nameKey] ?? 0 : 0) ||
-            (codeKey ? totalInQtyMap[codeKey] ?? 0 : 0);
+          ? Number(obsMeta.receipt)
+          : 0;
+      const additionalIn =
+        (totalInQtyMap[p.id] ?? 0) ||
+        (nameKey ? totalInQtyMap[nameKey] ?? 0 : 0) ||
+        (codeKey ? totalInQtyMap[codeKey] ?? 0 : 0);
+      const totalIn = baseIn + additionalIn;
       totalMasukAll += totalIn;
 
-      // 3. BEGINNING BALANCE — membaca murni dari kolom Excel jika ada, tidak memaksa sama dengan Ending Balance
+      // 3. BEGINNING BALANCE — nilainya tetap dari hasil Excel
       const rawBeg =
         obsMeta && obsMeta.beginning_balance !== null && obsMeta.beginning_balance !== undefined
-          ? obsMeta.beginning_balance
-          : ((p as any).beginning_balance !== null && (p as any).beginning_balance !== undefined
+          ? Number(obsMeta.beginning_balance)
+          : (p as any).beginning_balance !== null && (p as any).beginning_balance !== undefined
               ? Number((p as any).beginning_balance)
-              : null);
-      const beginningBalance = rawBeg !== null ? rawBeg : "-";
-      if (typeof rawBeg === "number") {
-        totalBeginningAll += rawBeg;
-      }
+              : endingStock;
+      const beginningBalance = rawBeg !== null && !isNaN(rawBeg) ? rawBeg : 0;
+      totalBeginningAll += beginningBalance;
 
-      // 4. ENDING BALANCE — membaca dari kolom Excel jika ada, fallback ke current_stock
-      const finalEndingStock =
-        obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
-          ? obsMeta.ending_balance
-          : endingStock;
+      // 4. ENDING BALANCE — bertambah jika receipt bertambah, berkurang jika issued bertambah:
+      // Ending Balance = Beginning Balance + Receipt - Issued
+      const finalEndingStock = Math.max(0, beginningBalance + totalIn - totalOut);
+      totalEndingStock += finalEndingStock;
 
       // 5. STATUS STOCK (AMAN jika di atas minStock, LIMIT / KRITIS jika <= minStock)
       const isLimit = finalEndingStock <= minStock;
@@ -673,7 +675,9 @@ export function exportSparepartMutasiExcel(options: ExportMutasiOptions) {
         .join("");
 
       const batchStr = tx.batch_number ? `Batch: <strong>${tx.batch_number}</strong>` : "Batch: —";
-      const refStr = tx.reference_no ? `Ref: <strong>${tx.reference_no}</strong>` : "Ref: —";
+      const refStr = tx.reference_no
+        ? (isMasuk ? `PO: <strong>${tx.reference_no}</strong>` : `User: <strong>${tx.reference_no}</strong>`)
+        : (isMasuk ? "PO: —" : "User: —");
       const pihakStr = tx.supplier_or_dest || "—";
       const noteStr = tx.notes ? `<div style="font-size: 8.5pt; color: #64748b; margin-top: 2px;"><em>Ket: ${tx.notes}</em></div>` : "";
 

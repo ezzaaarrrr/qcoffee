@@ -1853,6 +1853,16 @@ function DashboardPage() {
             <div class="meta-label">${isMasuk ? "Tanggal Penerimaan" : "Tanggal Pengeluaran"}</div>
             <div class="meta-value">${receiptDate}</div>
           </div>
+          ${
+            !isMasuk
+              ? `
+          <div class="meta-item">
+            <div class="meta-label">USER / PEMOHON:</div>
+            <div class="meta-value">${tx.reference_no || "—"}</div>
+          </div>
+          `
+              : ""
+          }
         </div>
 
         <div style="font-size: 12px; font-weight: 700; margin-bottom: 8px; color: #334155;">
@@ -1878,7 +1888,7 @@ function DashboardPage() {
         <div class="signatures">
           <div>
             <div style="font-size: 11px; color: #64748b;">Dibuat oleh User,</div>
-            <div class="sig-line">( ............................................ )</div>
+            <div class="sig-line">(${!isMasuk && tx.reference_no ? ` ${tx.reference_no} ` : " ............................................ "})</div>
           </div>
           <div>
             <div style="font-size: 11px; color: #64748b;">Diperiksa oleh UH/SH,</div>
@@ -2584,7 +2594,9 @@ function DashboardPage() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground">No. Referensi:</span>{" "}
+                    <span className="text-muted-foreground">
+                      {selectedTx.tx_type === "IN" ? "No. PO / Ref:" : "User:"}
+                    </span>{" "}
                     <span className="font-mono font-medium text-foreground">
                       {selectedTx.reference_no || "—"}
                     </span>
@@ -2595,12 +2607,6 @@ function DashboardPage() {
                     </span>{" "}
                     <span className="font-medium text-foreground">
                       {selectedTx.supplier_or_dest || "—"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Petugas:</span>{" "}
-                    <span className="font-medium text-foreground">
-                      {selectedTx.created_by_name || "Petugas"}
                     </span>
                   </div>
                 </div>
