@@ -18,10 +18,10 @@ import { ROLE_LABELS, type AppRole } from "@/lib/domain";
 export const Route = createFileRoute("/auth/login")({
   head: () => ({
     meta: [
-      { title: "Masuk — Q-Coffee M2" },
+      { title: "Masuk — GDSPM2" },
       {
         name: "description",
-        content: "Masuk ke sistem checklist digital produksi kopi Q-Coffee M2.",
+        content: "Masuk ke sistem Management Sparepart M2.",
       },
     ],
   }),
@@ -106,12 +106,7 @@ function getCandidateEmailsForRole(targetRole: AppRole): string[] {
       "prod_process_uh@coffee.m2",
       "unit_head@gmail.com",
     ],
-    admin: [
-      "admin@gmail.com",
-      "superadmin@gmail.com",
-      "admin@qcoffee.com",
-      "admin@coffee.m2",
-    ],
+    admin: ["admin@gmail.com", "superadmin@gmail.com", "admin@qcoffee.com", "admin@coffee.m2"],
   };
 
   const defaults = roleSpecificEmails[targetRole] || [];
@@ -132,7 +127,11 @@ function LoginPage() {
   });
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<{ title: string; desc: string; type: "credentials" | "role" } | null>(null);
+  const [errorMessage, setErrorMessage] = useState<{
+    title: string;
+    desc: string;
+    type: "credentials" | "role";
+  } | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -167,9 +166,12 @@ function LoginPage() {
 
       // Coba ambil dari database RPC Supabase jika fungsi terpasang
       try {
-        const { data: rpcEmails, error: rpcError } = await (supabase as any).rpc("get_auth_emails_by_role", {
-          p_role: role,
-        });
+        const { data: rpcEmails, error: rpcError } = await (supabase as any).rpc(
+          "get_auth_emails_by_role",
+          {
+            p_role: role,
+          },
+        );
 
         if (!rpcError && Array.isArray(rpcEmails) && rpcEmails.length > 0) {
           rpcEmails.forEach((item: any) => {
@@ -247,9 +249,7 @@ function LoginPage() {
           await supabase.auth.signOut();
           setLoading(false);
 
-          const actualRoleNames = registeredRoles
-            .map((r) => ROLE_LABELS[r] || r)
-            .join(", ");
+          const actualRoleNames = registeredRoles.map((r) => ROLE_LABELS[r] || r).join(", ");
 
           const errorDetail = {
             title: "Hak Akses (Role) Tidak Sesuai",
@@ -320,9 +320,7 @@ function LoginPage() {
               className="size-11 object-contain rounded-lg border border-blue-500/20 bg-[#041129] p-1 md:hidden shadow-md"
             />
             <div>
-              <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">
-                Masuk ke Akun
-              </h1>
+              <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white"></h1>
               <p className="text-xs text-blue-200/70 mt-1 font-medium">
                 GUDANG SPAREPART M2 — Sparepart Management System
               </p>
@@ -353,30 +351,25 @@ function LoginPage() {
           <form onSubmit={handleSignIn} className="space-y-4">
             {/* Input 1: Role / Hak Akses */}
             <div className="space-y-1.5">
-              <Label htmlFor="role-select" className="flex items-center gap-1.5 text-xs text-blue-100">
-                <UserCheck className="size-3.5 text-cyan-400" />
-                <span>Masuk Sebagai (Role / Hak Akses)</span>
-              </Label>
-              <Select
-                value={role}
-                onValueChange={(v) => handleRoleChange(v as AppRole)}
+              <Label
+                htmlFor="role-select"
+                className="flex items-center gap-1.5 text-xs text-blue-100"
               >
-                <SelectTrigger id="role-select" className="w-full h-10 text-xs bg-[#05132d] border-blue-900/60 text-white focus:ring-cyan-500 cursor-pointer">
+                <UserCheck className="size-3.5 text-cyan-400" />
+                <span> (User & Role)</span>
+              </Label>
+              <Select value={role} onValueChange={(v) => handleRoleChange(v as AppRole)}>
+                <SelectTrigger
+                  id="role-select"
+                  className="w-full h-10 text-xs bg-[#05132d] border-blue-900/60 text-white focus:ring-cyan-500 cursor-pointer"
+                >
                   <SelectValue placeholder="Pilih Peran / Hak Akses" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#081b3d] border-blue-900 text-white">
-                  <SelectItem value="admin_process">
-                    {ROLE_LABELS["admin_process"]}
-                  </SelectItem>
-                  <SelectItem value="qc_field">
-                    {ROLE_LABELS["qc_field"]}
-                  </SelectItem>
-                  <SelectItem value="prod_process_uh">
-                    {ROLE_LABELS["prod_process_uh"]}
-                  </SelectItem>
-                  <SelectItem value="admin">
-                    {ROLE_LABELS["admin"]}
-                  </SelectItem>
+                  <SelectItem value="admin_process">{ROLE_LABELS["admin_process"]}</SelectItem>
+                  <SelectItem value="qc_field">{ROLE_LABELS["qc_field"]}</SelectItem>
+                  <SelectItem value="prod_process_uh">{ROLE_LABELS["prod_process_uh"]}</SelectItem>
+                  <SelectItem value="admin">{ROLE_LABELS["admin"]}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -384,7 +377,10 @@ function LoginPage() {
             {/* Input 2: Kata Sandi */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="flex items-center gap-1.5 text-xs text-blue-100">
+                <Label
+                  htmlFor="password"
+                  className="flex items-center gap-1.5 text-xs text-blue-100"
+                >
                   <Lock className="size-3.5 text-blue-300/70" />
                   <span>Kata Sandi</span>
                 </Label>
@@ -445,7 +441,10 @@ function LoginPage() {
 
           <p className="mt-6 text-center text-xs text-blue-200/60">
             Belum punya akun?{" "}
-            <Link to="/auth/register" className="font-semibold text-cyan-400 hover:text-cyan-300 underline underline-offset-4">
+            <Link
+              to="/auth/register"
+              className="font-semibold text-cyan-400 hover:text-cyan-300 underline underline-offset-4"
+            >
               Daftar sekarang
             </Link>
           </p>
