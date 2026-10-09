@@ -93,7 +93,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/domain";
-import { exportSparepartInventoryExcel } from "@/lib/exportUtils";
+import { exportSparepartInventoryExcel, getProductObsMeta } from "@/lib/exportUtils";
 
 type ProductsSearch = {
   tab?: string | undefined;
@@ -716,30 +716,24 @@ function parseExcelWorkbookToSheets(
       let endingBalance = rawEnding;
 
       if (hasStockInFile) {
-        receipt = rawReceipt ?? 0;
-        issued = rawIssued ?? 0;
-        beginningBalance = rawBeginning ?? 0;
-        endingBalance = rawEnding ?? 0;
-
+        // HANYA membaca sesuai dengan kolom pada excel sesuaikan,
+        // TIDAK membaca/menghitung beginning balance sama dengan hasilnya dengan ending balance!
         if (rawEnding === null && rawBeginning !== null) {
-          endingBalance = Math.max(0, beginningBalance + receipt - issued);
-        } else if (rawBeginning === null && rawEnding !== null) {
-          beginningBalance = Math.max(0, endingBalance - receipt + issued);
+          endingBalance = rawBeginning;
         } else if (rawBeginning === null && rawEnding === null) {
-          const fallbackStock = currentStockIdx >= 0 ? (parseNum(row[currentStockIdx], 0) ?? 0) : 0;
+          const fallbackStock = currentStockIdx >= 0 ? parseNum(row[currentStockIdx], null) : null;
           endingBalance = fallbackStock;
-          beginningBalance = fallbackStock;
         }
       }
 
       const itemObj: any = {
         name: rawName,
         code: rawCode || null,
-        beginning_balance: beginningBalance,
-        receipt: receipt,
-        issued: issued,
+        beginning_balance: rawBeginning,
+        receipt: rawReceipt,
+        issued: rawIssued,
         ending_balance: endingBalance,
-        current_stock: endingBalance,
+        current_stock: endingBalance ?? rawBeginning ?? 0,
         safe_stock: safeStockIdx >= 0 ? (parseNum(row[safeStockIdx], 1) ?? 1) : 1,
         min_stock: minStockIdx >= 0 ? parseNum(row[minStockIdx], null) : null,
         max_stock: maxStockIdx >= 0 ? parseNum(row[maxStockIdx], null) : null,
@@ -1376,6 +1370,20 @@ function WarehouseAndProductsPage() {
         const hasMaxInFile = item.max_stock !== null && item.max_stock !== undefined;
         const hasMinInFile = item.min_stock !== null && item.min_stock !== undefined;
 
+        // Metadata OBS untuk kolom BEGINNING BALANCE, RECEIPT, ISSUED, ENDING BALANCE
+        const obsMeta = {
+          beginning_balance: item.beginning_balance !== undefined ? item.beginning_balance : null,
+          receipt: item.receipt !== undefined ? item.receipt : null,
+          issued: item.issued !== undefined ? item.issued : null,
+          ending_balance: item.ending_balance !== undefined ? item.ending_balance : null,
+        };
+        const hasObsData =
+          obsMeta.beginning_balance !== null ||
+          obsMeta.receipt !== null ||
+          obsMeta.issued !== null ||
+          obsMeta.ending_balance !== null;
+        const obsDescription = hasObsData ? JSON.stringify(obsMeta) : (found?.description || null);
+
         if (found) {
           // Data master barang: sertakan nama agar memenuhi NOT NULL constraint PostgreSQL saat upsert
           toUpdate.push({
@@ -1395,6 +1403,7 @@ function WarehouseAndProductsPage() {
             min_stock: hasMinInFile ? Number(item.min_stock) : (found.min_stock ?? 10),
             // Rekam kolom maksimal stock jika ada di file, jika tidak pertahankan dari database
             max_stock: hasMaxInFile ? Number(item.max_stock) : (found.max_stock ?? null),
+            description: obsDescription,
             is_active: true,
           });
         } else {
@@ -1411,9 +1420,30 @@ function WarehouseAndProductsPage() {
             min_stock: hasMinInFile ? Number(item.min_stock) : 10,
             // Rekam maksimal stock jika ada di file
             max_stock: hasMaxInFile ? Number(item.max_stock) : null,
+            description: obsDescription,
             is_active: true,
           });
         }
+      }
+
+      // Simpan metadata saldo OBS ke localStorage cache agar seketika tersedia di tabel & export
+      try {
+        const obsMap = JSON.parse(localStorage.getItem("obs_stock_balances_map") || "{}");
+        for (const item of importPreview) {
+          const mCode = item.code ? String(item.code).trim().toLowerCase() : "";
+          const mName = item.name ? String(item.name).trim().toLowerCase() : "";
+          const mData = {
+            beginning_balance: item.beginning_balance !== undefined ? item.beginning_balance : null,
+            receipt: item.receipt !== undefined ? item.receipt : null,
+            issued: item.issued !== undefined ? item.issued : null,
+            ending_balance: item.ending_balance !== undefined ? item.ending_balance : null,
+          };
+          if (mCode) obsMap[mCode] = mData;
+          if (mName) obsMap[mName] = mData;
+        }
+        localStorage.setItem("obs_stock_balances_map", JSON.stringify(obsMap));
+      } catch (e) {
+        console.warn("Could not save to localStorage obs_stock_balances_map:", e);
       }
 
       const CHUNK_SIZE = 100;
@@ -2267,35 +2297,53 @@ function WarehouseAndProductsPage() {
       const nameKey = p.name ? p.name.trim().toLowerCase() : "";
       const codeKey = p.code ? p.code.trim().toLowerCase() : "";
 
+      const obsMeta = getProductObsMeta(p);
+
       const dailyIn =
-        (dailyInQtyMap[p.id] ?? 0) ||
-        (nameKey ? (dailyInQtyMap[nameKey] ?? 0) : 0) ||
-        (codeKey ? (dailyInQtyMap[codeKey] ?? 0) : 0);
+        obsMeta && obsMeta.receipt !== null && obsMeta.receipt !== undefined
+          ? obsMeta.receipt
+          : (dailyInQtyMap[p.id] ?? 0) ||
+            (nameKey ? (dailyInQtyMap[nameKey] ?? 0) : 0) ||
+            (codeKey ? (dailyInQtyMap[codeKey] ?? 0) : 0);
 
       const dailyOut =
-        (dailyOutQtyMap[p.id] ?? 0) ||
-        (nameKey ? (dailyOutQtyMap[nameKey] ?? 0) : 0) ||
-        (codeKey ? (dailyOutQtyMap[codeKey] ?? 0) : 0);
+        obsMeta && obsMeta.issued !== null && obsMeta.issued !== undefined
+          ? obsMeta.issued
+          : (dailyOutQtyMap[p.id] ?? 0) ||
+            (nameKey ? (dailyOutQtyMap[nameKey] ?? 0) : 0) ||
+            (codeKey ? (dailyOutQtyMap[codeKey] ?? 0) : 0);
 
-      const beginningBalance = Math.max(0, endingStock - dailyIn + dailyOut);
+      const rawBeg =
+        obsMeta && obsMeta.beginning_balance !== null && obsMeta.beginning_balance !== undefined
+          ? obsMeta.beginning_balance
+          : ((p as any).beginning_balance !== null && (p as any).beginning_balance !== undefined
+              ? Number((p as any).beginning_balance)
+              : null);
 
-      totalBeginningAll += beginningBalance;
-      totalReceiptAll += dailyIn;
-      totalIssuedAll += dailyOut;
-      totalEndingStock += endingStock;
+      const finalEndingStock =
+        obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
+          ? obsMeta.ending_balance
+          : endingStock;
 
-      const statusStr = endingStock <= minStock ? "LIMIT / KRITIS" : "AMAN";
+      if (typeof rawBeg === "number") {
+        totalBeginningAll += rawBeg;
+      }
+      totalReceiptAll += typeof dailyIn === "number" ? dailyIn : 0;
+      totalIssuedAll += typeof dailyOut === "number" ? dailyOut : 0;
+      totalEndingStock += finalEndingStock;
+
+      const statusStr = finalEndingStock <= minStock ? "LIMIT / KRITIS" : "AMAN";
       const maxStockStr = maxStock !== null && !isNaN(maxStock) && maxStock > 0 ? String(maxStock) : "-";
 
       return [
         String(idx + 1),
         `"${(p.code || "-").replace(/"/g, '""')}"`,
         `"${(p.name || "").replace(/"/g, '""')}"`,
-        String(beginningBalance),
+        rawBeg !== null ? String(rawBeg) : "-",
         String(minStock),
-        dailyIn > 0 ? String(dailyIn) : "-",
-        dailyOut > 0 ? String(dailyOut) : "-",
-        String(endingStock),
+        dailyIn !== null && dailyIn !== undefined && (dailyIn > 0 || dailyIn === 0) ? String(dailyIn) : "-",
+        dailyOut !== null && dailyOut !== undefined && (dailyOut > 0 || dailyOut === 0) ? String(dailyOut) : "-",
+        String(finalEndingStock),
         maxStockStr,
         `"${statusStr}"`,
       ].join(",");
@@ -3740,24 +3788,46 @@ function WarehouseAndProductsPage() {
                       (nameKey ? (dailyOutQtyMap[nameKey] ?? 0) : 0) ||
                       (codeKey ? (dailyOutQtyMap[codeKey] ?? 0) : 0);
 
-                    // BEGINNING BALANCE = Ending Balance - Receipt + Issued
-                    // Jika sudah beda hari (dailyReceipt === 0 & dailyIssued === 0),
-                    // maka Beginning Balance otomatis sama dengan Ending Balance (current)
-                    const beginningBalance = Math.max(0, current - dailyReceipt + dailyIssued);
+                    // Membaca murni kolom mutasi OBS dari file Excel / metadata:
+                    // BEGINNING BALANCE, RECEIPT, ISSUED, ENDING BALANCE
+                    // TIDAK membaca/menghitung beginning balance sama dengan hasilnya dengan ending balance!
+                    const obsMeta = getProductObsMeta(p);
+
+                    const beginningBalance =
+                      obsMeta && obsMeta.beginning_balance !== null && obsMeta.beginning_balance !== undefined
+                        ? obsMeta.beginning_balance
+                        : ((p as any).beginning_balance !== null && (p as any).beginning_balance !== undefined
+                            ? Number((p as any).beginning_balance)
+                            : null);
+
+                    const receiptVal =
+                      obsMeta && obsMeta.receipt !== null && obsMeta.receipt !== undefined
+                        ? obsMeta.receipt
+                        : (dailyReceipt > 0 ? dailyReceipt : null);
+
+                    const issuedVal =
+                      obsMeta && obsMeta.issued !== null && obsMeta.issued !== undefined
+                        ? obsMeta.issued
+                        : (dailyIssued > 0 ? dailyIssued : null);
+
+                    const endingBalance =
+                      obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
+                        ? obsMeta.ending_balance
+                        : current;
 
                     // Logika Kondisi:
-                    // 1. Order warna merah (current <= minStock)
-                    // 2. Safety stok warna hijau (current > minStock dan <= maxStock)
-                    // 3. Out of stok warna kuning (current > maxStock)
+                    // 1. Order warna merah (endingBalance <= minStock)
+                    // 2. Safety stok warna hijau (endingBalance > minStock dan <= maxStock)
+                    // 3. Out of stok warna kuning (endingBalance > maxStock)
                     let kondisiText = "SAFETY STOK";
                     let kondisiStyle =
                       "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
 
-                    if (maxStock !== null && !isNaN(maxStock) && current > maxStock) {
+                    if (maxStock !== null && !isNaN(maxStock) && endingBalance > maxStock) {
                       kondisiText = "OUT OF STOK";
                       kondisiStyle =
                         "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
-                    } else if (current <= minStock) {
+                    } else if (endingBalance <= minStock) {
                       kondisiText = "ORDER";
                       kondisiStyle =
                         "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800";
@@ -3821,13 +3891,17 @@ function WarehouseAndProductsPage() {
 
                         {/* 6. BEGINNING BALANCE */}
                         <td className="px-3 py-3 text-center font-mono font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                          {beginningBalance.toLocaleString("id-ID")}
+                          {beginningBalance !== null && beginningBalance !== undefined ? (
+                            Number(beginningBalance).toLocaleString("id-ID")
+                          ) : (
+                            <span className="text-muted-foreground/60">—</span>
+                          )}
                         </td>
 
                         {/* 7. RECEIPT */}
                         <td className="px-3 py-3 text-center font-mono font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                          {dailyReceipt > 0 ? (
-                            Number(dailyReceipt).toLocaleString("id-ID")
+                          {receiptVal !== null && receiptVal !== undefined && (receiptVal > 0 || receiptVal === 0) ? (
+                            Number(receiptVal).toLocaleString("id-ID")
                           ) : (
                             <span className="text-muted-foreground/60">—</span>
                           )}
@@ -3835,8 +3909,8 @@ function WarehouseAndProductsPage() {
 
                         {/* 8. ISSUED */}
                         <td className="px-3 py-3 text-center font-mono font-semibold text-rose-600 dark:text-rose-400 whitespace-nowrap">
-                          {dailyIssued > 0 ? (
-                            Number(dailyIssued).toLocaleString("id-ID")
+                          {issuedVal !== null && issuedVal !== undefined && (issuedVal > 0 || issuedVal === 0) ? (
+                            Number(issuedVal).toLocaleString("id-ID")
                           ) : (
                             <span className="text-muted-foreground/60">—</span>
                           )}
@@ -3847,14 +3921,14 @@ function WarehouseAndProductsPage() {
                           <span
                             className={cn(
                               "tabular-nums text-sm",
-                              current <= 0
+                              endingBalance <= 0
                                 ? "text-rose-600 dark:text-rose-400 font-extrabold"
-                                : current <= minStock
+                                : endingBalance <= minStock
                                   ? "text-rose-600 dark:text-rose-400"
                                   : "text-emerald-600 dark:text-emerald-400",
                             )}
                           >
-                            {current.toLocaleString("id-ID")}
+                            {Number(endingBalance).toLocaleString("id-ID")}
                           </span>
                         </td>
 
@@ -6555,18 +6629,24 @@ function WarehouseAndProductsPage() {
                                 </span>
                               </td>
                               <td className="p-2.5 text-center font-mono font-semibold text-slate-700 dark:text-slate-300">
-                                {Number(it.beginning_balance ?? 0).toLocaleString("id-ID")}
+                                {it.beginning_balance !== null && it.beginning_balance !== undefined
+                                  ? Number(it.beginning_balance).toLocaleString("id-ID")
+                                  : "—"}
                               </td>
                               <td className="p-2.5 text-center font-mono font-semibold text-emerald-600 dark:text-emerald-400">
-                                {Number(it.receipt ?? 0).toLocaleString("id-ID")}
+                                {it.receipt !== null && it.receipt !== undefined
+                                  ? Number(it.receipt).toLocaleString("id-ID")
+                                  : "—"}
                               </td>
                               <td className="p-2.5 text-center font-mono font-semibold text-rose-600 dark:text-rose-400">
-                                {Number(it.issued ?? 0).toLocaleString("id-ID")}
+                                {it.issued !== null && it.issued !== undefined
+                                  ? Number(it.issued).toLocaleString("id-ID")
+                                  : "—"}
                               </td>
                               <td className="p-2.5 text-center font-mono font-bold text-emerald-700 dark:text-emerald-300">
-                                {Number(it.ending_balance ?? it.current_stock ?? 0).toLocaleString(
-                                  "id-ID",
-                                )}
+                                {it.ending_balance !== null && it.ending_balance !== undefined
+                                  ? Number(it.ending_balance).toLocaleString("id-ID")
+                                  : Number(it.current_stock ?? 0).toLocaleString("id-ID")}
                               </td>
                               <td className="p-2.5 text-center font-mono font-medium text-slate-700 dark:text-slate-300">
                                 {it.max_stock !== null && it.max_stock !== undefined

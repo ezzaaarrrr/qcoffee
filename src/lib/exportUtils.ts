@@ -16,8 +16,109 @@ export interface ExportProductItem {
   max_stock?: number | null;
   location?: string | null;
   shelf?: string | null;
+  description?: string | null;
+  beginning_balance?: number | null;
+  receipt?: number | null;
+  issued?: number | null;
+  ending_balance?: number | null;
   is_active?: boolean;
   created_at?: string;
+}
+
+export type ObsStockMeta = {
+  beginning_balance: number | null;
+  receipt: number | null;
+  issued: number | null;
+  ending_balance: number | null;
+};
+
+/**
+ * Ekstrak metadata saldo OBS (BEGINNING BALANCE, RECEIPT, ISSUED, ENDING BALANCE)
+ * yang tersimpan secara terstruktur pada field description produk atau cache browser.
+ */
+export function getProductObsMeta(p?: {
+  id?: string;
+  code?: string | null;
+  name?: string;
+  description?: string | null;
+  beginning_balance?: number | null;
+  receipt?: number | null;
+  issued?: number | null;
+  ending_balance?: number | null;
+} | null): ObsStockMeta | null {
+  if (!p) return null;
+  if (
+    p.beginning_balance !== undefined && p.beginning_balance !== null ||
+    p.receipt !== undefined && p.receipt !== null ||
+    p.issued !== undefined && p.issued !== null ||
+    p.ending_balance !== undefined && p.ending_balance !== null
+  ) {
+    return {
+      beginning_balance: p.beginning_balance ?? null,
+      receipt: p.receipt ?? null,
+      issued: p.issued ?? null,
+      ending_balance: p.ending_balance ?? null,
+    };
+  }
+  if (p.description) {
+    try {
+      const parsed = JSON.parse(p.description);
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        ("beginning_balance" in parsed ||
+          "beg" in parsed ||
+          "ending_balance" in parsed ||
+          "receipt" in parsed ||
+          "issued" in parsed)
+      ) {
+        return {
+          beginning_balance:
+            parsed.beginning_balance !== undefined
+              ? parsed.beginning_balance
+              : (parsed.beg ?? null),
+          receipt:
+            parsed.receipt !== undefined
+              ? parsed.receipt
+              : (parsed.rec ?? parsed.in ?? null),
+          issued:
+            parsed.issued !== undefined
+              ? parsed.issued
+              : (parsed.iss ?? parsed.out ?? null),
+          ending_balance:
+            parsed.ending_balance !== undefined
+              ? parsed.ending_balance
+              : (parsed.end ?? null),
+        };
+      }
+    } catch {}
+  }
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      const rawMap = window.localStorage.getItem("obs_stock_balances_map");
+      if (rawMap) {
+        const map = JSON.parse(rawMap);
+        const codeKey = p.code ? String(p.code).trim().toLowerCase() : "";
+        const nameKey = p.name ? String(p.name).trim().toLowerCase() : "";
+        const idKey = p.id ? String(p.id).trim() : "";
+        const found =
+          (codeKey && map[codeKey]) ||
+          (nameKey && map[nameKey]) ||
+          (idKey && map[idKey]);
+        if (found) {
+          return {
+            beginning_balance:
+              found.beginning_balance !== undefined ? found.beginning_balance : null,
+            receipt: found.receipt !== undefined ? found.receipt : null,
+            issued: found.issued !== undefined ? found.issued : null,
+            ending_balance:
+              found.ending_balance !== undefined ? found.ending_balance : null,
+          };
+        }
+      }
+    } catch {}
+  }
+  return null;
 }
 
 export interface ExportGroupedTransaction {
@@ -355,26 +456,47 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
       const nameKey = p.name ? p.name.trim().toLowerCase() : "";
       const codeKey = p.code ? p.code.trim().toLowerCase() : "";
 
+      // Ekstrak metadata saldo OBS asli dari file Excel jika tersedia
+      const obsMeta = getProductObsMeta(p);
+
       // 1. Data Riwayat Keluar (ISSUED)
       const totalOut =
-        (totalOutQtyMap[p.id] ?? 0) ||
-        (nameKey ? totalOutQtyMap[nameKey] ?? 0 : 0) ||
-        (codeKey ? totalOutQtyMap[codeKey] ?? 0 : 0);
+        obsMeta && obsMeta.issued !== null && obsMeta.issued !== undefined
+          ? obsMeta.issued
+          : (totalOutQtyMap[p.id] ?? 0) ||
+            (nameKey ? totalOutQtyMap[nameKey] ?? 0 : 0) ||
+            (codeKey ? totalOutQtyMap[codeKey] ?? 0 : 0);
       totalPengeluaranAll += totalOut;
 
       // 2. Data Riwayat Masuk (RECEIPT)
       const totalIn =
-        (totalInQtyMap[p.id] ?? 0) ||
-        (nameKey ? totalInQtyMap[nameKey] ?? 0 : 0) ||
-        (codeKey ? totalInQtyMap[codeKey] ?? 0 : 0);
+        obsMeta && obsMeta.receipt !== null && obsMeta.receipt !== undefined
+          ? obsMeta.receipt
+          : (totalInQtyMap[p.id] ?? 0) ||
+            (nameKey ? totalInQtyMap[nameKey] ?? 0 : 0) ||
+            (codeKey ? totalInQtyMap[codeKey] ?? 0 : 0);
       totalMasukAll += totalIn;
 
-      // 3. BEGINNING BALANCE = Ending Balance - Receipt + Issued
-      const beginningBalance = Math.max(0, endingStock - totalIn + totalOut);
-      totalBeginningAll += beginningBalance;
+      // 3. BEGINNING BALANCE — membaca murni dari kolom Excel jika ada, tidak memaksa sama dengan Ending Balance
+      const rawBeg =
+        obsMeta && obsMeta.beginning_balance !== null && obsMeta.beginning_balance !== undefined
+          ? obsMeta.beginning_balance
+          : ((p as any).beginning_balance !== null && (p as any).beginning_balance !== undefined
+              ? Number((p as any).beginning_balance)
+              : null);
+      const beginningBalance = rawBeg !== null ? rawBeg : "-";
+      if (typeof rawBeg === "number") {
+        totalBeginningAll += rawBeg;
+      }
 
-      // 4. STATUS STOCK (AMAN jika di atas minStock, LIMIT / KRITIS jika <= minStock)
-      const isLimit = endingStock <= minStock;
+      // 4. ENDING BALANCE — membaca dari kolom Excel jika ada, fallback ke current_stock
+      const finalEndingStock =
+        obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
+          ? obsMeta.ending_balance
+          : endingStock;
+
+      // 5. STATUS STOCK (AMAN jika di atas minStock, LIMIT / KRITIS jika <= minStock)
+      const isLimit = finalEndingStock <= minStock;
       const statusStockStr = isLimit ? "LIMIT / KRITIS" : "AMAN";
 
       const codeVal = p.code || "-";
@@ -386,9 +508,9 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
           <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: left; vertical-align: middle; padding: 4px 6px;">${p.name}</td>
           <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: right; vertical-align: middle; padding: 4px 6px; mso-number-format:'0';">${beginningBalance}</td>
           <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: right; vertical-align: middle; padding: 4px 6px; mso-number-format:'0';">${minStock}</td>
-          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 4px 6px;">${totalIn > 0 ? totalIn : "-"}</td>
-          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 4px 6px;">${totalOut > 0 ? totalOut : "-"}</td>
-          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: right; vertical-align: middle; padding: 4px 6px; mso-number-format:'0'; font-weight: bold;">${endingStock}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 4px 6px;">${totalIn !== null && totalIn !== undefined ? totalIn : "-"}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 4px 6px;">${totalOut !== null && totalOut !== undefined ? totalOut : "-"}</td>
+          <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: right; vertical-align: middle; padding: 4px 6px; mso-number-format:'0'; font-weight: bold;">${finalEndingStock}</td>
           <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: right; vertical-align: middle; padding: 4px 6px;">${maxStockStr}</td>
           <td style="border: 1px solid #000000; font-family: Calibri, Arial, sans-serif; font-size: 11pt; text-align: center; vertical-align: middle; padding: 4px 6px; font-weight: bold;">${statusStockStr}</td>
         </tr>
