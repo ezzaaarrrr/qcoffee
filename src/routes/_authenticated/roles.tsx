@@ -100,9 +100,9 @@ function RolesAndDepartmentsPage() {
       const { data, error } = await (supabase as any).from("departments").select("*").order("name");
       if (error) {
         return [
-          { id: "1", name: "Departemen Countinous Improvment", code: "CI", description: "Departemen Countinous Improvment" },
-          { id: "2", name: "Departemen Produksi Cheking", code: "Produksi CK", description: "Operator Admin Ceklis" },
-          { id: "3", name: "Department Warehouse - Sparepart", code: "WH-SP", description: "Admin Gudang & Operasional Sparepart" },
+          { id: "1", name: "CI1201", code: "CI", description: "Departemen CI1201" },
+          { id: "2", name: "CK1201", code: "Produksi CK", description: "Operator Admin Ceklis" },
+          { id: "3", name: "GDSP1201", code: "WH-SP", description: "Admin Gudang & Operasional Sparepart" },
           { id: "4", name: "Super Admin", code: "SA", description: "Super Admin System" },
         ] as DepartmentRow[];
       }

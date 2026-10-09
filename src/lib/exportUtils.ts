@@ -720,7 +720,7 @@ export function exportDashboardSparepartExecutiveExcel(options: ExportDashboardO
     barangMasukCount,
     barangKeluarCount,
     generatedByName = "Pengguna Sistem",
-    userRoleLabel = "Department Warehouse - Sparepart",
+    userRoleLabel = "GDSP1201",
   } = options;
 
   const printDate = formatReportDateTime(new Date());
