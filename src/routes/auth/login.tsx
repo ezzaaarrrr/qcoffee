@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { AlertCircle, ShieldAlert, Lock, UserCheck, Eye, EyeOff } from "lucide-react";
+import { AlertCircle, ShieldAlert, Lock, UserCheck, Eye, EyeOff, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,16 +79,21 @@ function getCandidateEmailsForRole(targetRole: AppRole): string[] {
 
   // 5. Pola email bawaan/standar sistem sesuai masing-masing role & departemen
   const roleSpecificEmails: Record<AppRole, string[]> = {
-    admin_process: [
-      "admin_process@gmail.com",
-      "produksi@gmail.com",
-      "produksi_cheking@gmail.com",
-      "cheking@gmail.com",
-      "admin_process@qcoffee.com",
-      "admin_process@coffee.m2",
-      "operator@gmail.com",
+    prod_process_uh: [
+      "ground2@gmail.com",
+      "gdsp1201@gmail.com",
+      "prod_process_uh@gmail.com",
+      "sparepart@gmail.com",
+      "warehouse@gmail.com",
+      "gudang@gmail.com",
+      "prod_process_uh@qcoffee.com",
+      "prod_process_uh@coffee.m2",
+      "unit_head@gmail.com",
     ],
     qc_field: [
+      "goldasharon@gmail.com",
+      "ezzaaarrrr@gmail.com",
+      "ci1201@gmail.com",
       "qc_field@gmail.com",
       "qc@gmail.com",
       "ci@gmail.com",
@@ -97,16 +102,24 @@ function getCandidateEmailsForRole(targetRole: AppRole): string[] {
       "quality@gmail.com",
       "continuous_improvement@gmail.com",
     ],
-    prod_process_uh: [
-      "prod_process_uh@gmail.com",
-      "warehouse@gmail.com",
-      "gudang@gmail.com",
-      "sparepart@gmail.com",
-      "prod_process_uh@qcoffee.com",
-      "prod_process_uh@coffee.m2",
-      "unit_head@gmail.com",
+    admin_process: [
+      "ezzaaarrrr@gmail.com",
+      "ck1201@gmail.com",
+      "admin_process@gmail.com",
+      "produksi@gmail.com",
+      "produksi_cheking@gmail.com",
+      "cheking@gmail.com",
+      "admin_process@qcoffee.com",
+      "admin_process@coffee.m2",
+      "operator@gmail.com",
     ],
-    admin: ["admin@gmail.com", "superadmin@gmail.com", "admin@qcoffee.com", "admin@coffee.m2"],
+    admin: [
+      "admin@gmail.com",
+      "superadmin@gmail.com",
+      "admin@qcoffee.com",
+      "admin@coffee.m2",
+      "ezzaaarrrr@gmail.com",
+    ],
   };
 
   const defaults = roleSpecificEmails[targetRole] || [];
@@ -127,6 +140,8 @@ function LoginPage() {
   });
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [customEmail, setCustomEmail] = useState("");
+  const [showCustomEmail, setShowCustomEmail] = useState(false);
   const [errorMessage, setErrorMessage] = useState<{
     title: string;
     desc: string;
@@ -163,6 +178,11 @@ function LoginPage() {
     try {
       // 1. Kumpulkan seluruh kandidat email akun untuk role yang dipilih
       const candidateEmails = getCandidateEmailsForRole(role);
+
+      // Jika user menginput email spesifik, prioritaskan di urutan paling awal
+      if (customEmail.trim() && customEmail.includes("@")) {
+        candidateEmails.unshift(customEmail.trim().toLowerCase());
+      }
 
       // Coba ambil dari database RPC Supabase jika fungsi terpasang
       try {
@@ -372,6 +392,37 @@ function LoginPage() {
                   <SelectItem value="admin">{ROLE_LABELS["admin"]}</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Opsi Email Spesifik / Manual (Opsional) */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setShowCustomEmail(!showCustomEmail)}
+                  className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors focus:outline-none cursor-pointer flex items-center gap-1"
+                >
+                  <Mail className="size-3" />
+                  <span>{showCustomEmail ? "Sembunyikan email khusus" : "Ingin pakai email terdaftar tertentu?"}</span>
+                </button>
+                {showCustomEmail && (
+                  <span className="text-blue-300/50 text-[10px]">Opsional</span>
+                )}
+              </div>
+              {showCustomEmail && (
+                <Input
+                  id="custom-email"
+                  type="email"
+                  autoComplete="email"
+                  value={customEmail}
+                  onChange={(e) => {
+                    setCustomEmail(e.target.value);
+                    setErrorMessage(null);
+                  }}
+                  placeholder="Contoh: ground2@gmail.com"
+                  className="h-10 text-xs bg-[#05132d] border-blue-900/60 text-white placeholder:text-blue-300/40 focus:border-cyan-500"
+                />
+              )}
             </div>
 
             {/* Input 2: Kata Sandi */}
