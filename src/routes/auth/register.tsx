@@ -17,10 +17,10 @@ import { ROLE_LABELS, type AppRole } from "@/lib/domain";
 export const Route = createFileRoute("/auth/register")({
   head: () => ({
     meta: [
-      { title: "Daftar — Q-Coffee M2" },
+      { title: "Daftar — GDSPM2" },
       {
         name: "description",
-        content: "Buat akun baru untuk sistem checklist digital produksi kopi Q-Coffee M2.",
+        content: "Buat akun baru.",
       },
     ],
   }),
@@ -162,13 +162,9 @@ function RegisterPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="admin_process">
-                    {ROLE_LABELS["admin_process"]}
-                  </SelectItem>
+                  <SelectItem value="admin_process">{ROLE_LABELS["admin_process"]}</SelectItem>
                   <SelectItem value="qc_field">{ROLE_LABELS["qc_field"]}</SelectItem>
-                  <SelectItem value="prod_process_uh">
-                    {ROLE_LABELS["prod_process_uh"]}
-                  </SelectItem>
+                  <SelectItem value="prod_process_uh">{ROLE_LABELS["prod_process_uh"]}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -179,7 +175,10 @@ function RegisterPage() {
 
           <p className="mt-5 text-center text-sm text-muted-foreground">
             Sudah punya akun?{" "}
-            <Link to="/auth/login" className="font-medium text-primary underline-offset-4 hover:underline">
+            <Link
+              to="/auth/login"
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
               Masuk di sini
             </Link>
           </p>

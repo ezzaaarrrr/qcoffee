@@ -591,7 +591,7 @@ export function exportSparepartMutasiExcel(options: ExportMutasiOptions) {
         <td style="width: 70%; vertical-align: top;">
           <div class="header-title">DEPARTEMEN WAREHOUSE — LAPORAN RIWAYAT TRANSAKSI & MUTASI GUDANG</div>
           <div class="header-meta">
-            Sistem Informasi Operasional Q-Coffee M2 &bull; 
+            Sistem Informasi Operasional GDSP-M2ull; 
             Periode: <strong>${startDate && endDate ? `${startDate} s/d ${endDate}` : "Seluruh Riwayat Mutasi"}</strong> &bull; 
             Dicetak: <strong>${printDate}</strong> &bull; 
             Petugas: <strong>${generatedByName}</strong>
@@ -687,7 +687,7 @@ export function exportSparepartMutasiExcel(options: ExportMutasiOptions) {
     </table>
 
     <div class="doc-footer-note">
-      Dokumen ini dicetak secara otomatis melalui Sistem Q-Coffee M2. Seluruh histori mutasi tercatat secara digital dan terintegrasi dalam database operasional.
+      Dokumen ini dicetak secara otomatis melalui Sistem Management Sparepart M2. Seluruh historis tercatat secara terintegrasi dengann database.
     </div>
   `;
 
@@ -922,7 +922,7 @@ export function exportDashboardSparepartExecutiveExcel(options: ExportDashboardO
     </table>
 
     <div class="doc-footer-note">
-      Dokumen ini dicetak dari Dashboard OBS Sparepart Q-Coffee M2.
+      Dokumen ini dicetak dari Dashboard OBS Sparepart GDSPM2.
     </div>
   `;
 
