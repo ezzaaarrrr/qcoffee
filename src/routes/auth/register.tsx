@@ -108,14 +108,12 @@ function RegisterPage() {
             <div className="size-4 bg-primary" />
           </div>
           <span className="text-2xl font-bold uppercase tracking-tighter">
-            Q-Coffee <span className="text-primary">M2</span>
+            GDSP<span className="text-primary">M2</span>
           </span>
         </div>
 
         <h1 className="text-xl font-bold tracking-tight">Buat Akun Baru</h1>
-        <p className="mt-1 mb-6 text-sm text-muted-foreground">
-          Daftarkan diri Anda untuk mengakses sistem checklist produksi.
-        </p>
+        <p className="mt-1 mb-6 text-sm text-muted-foreground"></p>
 
         <div className="border border-border bg-surface p-6">
           <form onSubmit={handleSignUp} className="space-y-4">
@@ -156,7 +154,7 @@ function RegisterPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="role-select">Departemen / Peran</Label>
+              <Label htmlFor="role-select">Departemen </Label>
               <Select value={role} onValueChange={(v) => setRole(v as AppRole)}>
                 <SelectTrigger id="role-select">
                   <SelectValue />
