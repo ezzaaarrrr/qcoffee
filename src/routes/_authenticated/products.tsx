@@ -2111,21 +2111,41 @@ function WarehouseAndProductsPage() {
     const inQty: Record<string, number> = {};
     const outQty: Record<string, number> = {};
 
+    const productById = new Map<string, ProductItem>();
+    const productByName = new Map<string, ProductItem>();
+    products.forEach((p) => {
+      if (p.id) productById.set(p.id, p);
+      if (p.name) productByName.set(p.name.trim().toLowerCase(), p);
+    });
+
     transactions.forEach((tx) => {
       const qty = Number(tx.quantity) || 0;
       const idKey = tx.product_id;
       const nameKey = tx.product_name ? tx.product_name.trim().toLowerCase() : "";
 
+      const pObj =
+        (idKey ? productById.get(idKey) : undefined) ||
+        (nameKey ? productByName.get(nameKey) : undefined);
+      const targetId = pObj?.id || idKey;
+      const targetName = pObj?.name ? pObj.name.trim().toLowerCase() : nameKey;
+      const targetCode = pObj?.code ? pObj.code.trim().toLowerCase() : "";
+
       if (tx.tx_type === "IN") {
-        if (idKey && !inMap[idKey]) inMap[idKey] = tx;
-        if (nameKey && !inMap[nameKey]) inMap[nameKey] = tx;
-        if (idKey) inQty[idKey] = (inQty[idKey] || 0) + qty;
-        if (nameKey) inQty[nameKey] = (inQty[nameKey] || 0) + qty;
+        if (targetId && !inMap[targetId]) inMap[targetId] = tx;
+        if (targetName && !inMap[targetName]) inMap[targetName] = tx;
+        if (targetCode && !inMap[targetCode]) inMap[targetCode] = tx;
+        if (targetId) inQty[targetId] = (inQty[targetId] || 0) + qty;
+        if (targetName && targetName !== targetId)
+          inQty[targetName] = (inQty[targetName] || 0) + qty;
+        if (targetCode) inQty[targetCode] = (inQty[targetCode] || 0) + qty;
       } else if (tx.tx_type === "OUT") {
-        if (idKey && !outMap[idKey]) outMap[idKey] = tx;
-        if (nameKey && !outMap[nameKey]) outMap[nameKey] = tx;
-        if (idKey) outQty[idKey] = (outQty[idKey] || 0) + qty;
-        if (nameKey) outQty[nameKey] = (outQty[nameKey] || 0) + qty;
+        if (targetId && !outMap[targetId]) outMap[targetId] = tx;
+        if (targetName && !outMap[targetName]) outMap[targetName] = tx;
+        if (targetCode && !outMap[targetCode]) outMap[targetCode] = tx;
+        if (targetId) outQty[targetId] = (outQty[targetId] || 0) + qty;
+        if (targetName && targetName !== targetId)
+          outQty[targetName] = (outQty[targetName] || 0) + qty;
+        if (targetCode) outQty[targetCode] = (outQty[targetCode] || 0) + qty;
       }
     });
 
@@ -2135,18 +2155,23 @@ function WarehouseAndProductsPage() {
       totalInQtyMap: inQty,
       totalOutQtyMap: outQty,
     };
-  }, [transactions]);
+  }, [transactions, products]);
 
-  // ── MAP MUTASI HARIAN (DAILY RECEIPT & ISSUED) UNTUK TABEL OBS SPAREPART ──────
-  // Kolom Receipt dan Issued harian: jika transaksi sudah beda hari, bernilai 0 sehingga tampil (-)
+  // ── MAP MUTASI (RECEIPT & ISSUED) UNTUK TABEL OBS SPAREPART ──────
+  // Kolom Receipt dan Issued mencatat transaksi mutasi masuk & keluar secara akumulatif harian.
+  // Setiap ada catatan keluar atau masuk (meskipun di hari yang berbeda), nilai Issued & Receipt
+  // akan terus bertambah, dan Ending Balance berkurang/bertambah sesuai transaksi tersebut.
+  // Kolom Beginning Balance tetap tidak berubah dari hasil import data Excel awal.
   const { dailyInQtyMap, dailyOutQtyMap } = useMemo(() => {
     const inQty: Record<string, number> = {};
     const outQty: Record<string, number> = {};
 
-    // Tanggal target: jika filter kalender diisi gunakan itu, jika kosong gunakan tanggal hari ini (daily)
-    const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-    const targetDate = productDateFilter || todayStr;
+    const productById = new Map<string, ProductItem>();
+    const productByName = new Map<string, ProductItem>();
+    products.forEach((p) => {
+      if (p.id) productById.set(p.id, p);
+      if (p.name) productByName.set(p.name.trim().toLowerCase(), p);
+    });
 
     transactions.forEach((tx) => {
       let txDate = "";
@@ -2157,23 +2182,30 @@ function WarehouseAndProductsPage() {
         }
       }
 
-      // Cocokkan apakah transaksi terjadi pada target tanggal (hari ini / tanggal terpilih)
-      const isTargetDay =
-        txDate === targetDate || (tx.batch_number && tx.batch_number.trim() === targetDate);
-
-      // Jika transaksi berasal dari hari lain (sudah beda hari), tidak dimasukkan ke Receipt & Issued harian
-      if (!isTargetDay) return;
+      // Jika ada filter tanggal kalender, batasi mutasi s/d tanggal tersebut (cut-off)
+      if (productDateFilter && txDate && txDate > productDateFilter) return;
 
       const qty = Number(tx.quantity) || 0;
       const idKey = tx.product_id;
       const nameKey = tx.product_name ? tx.product_name.trim().toLowerCase() : "";
 
+      const pObj =
+        (idKey ? productById.get(idKey) : undefined) ||
+        (nameKey ? productByName.get(nameKey) : undefined);
+      const targetId = pObj?.id || idKey;
+      const targetName = pObj?.name ? pObj.name.trim().toLowerCase() : nameKey;
+      const targetCode = pObj?.code ? pObj.code.trim().toLowerCase() : "";
+
       if (tx.tx_type === "IN") {
-        if (idKey) inQty[idKey] = (inQty[idKey] || 0) + qty;
-        if (nameKey) inQty[nameKey] = (inQty[nameKey] || 0) + qty;
+        if (targetId) inQty[targetId] = (inQty[targetId] || 0) + qty;
+        if (targetName && targetName !== targetId)
+          inQty[targetName] = (inQty[targetName] || 0) + qty;
+        if (targetCode) inQty[targetCode] = (inQty[targetCode] || 0) + qty;
       } else if (tx.tx_type === "OUT") {
-        if (idKey) outQty[idKey] = (outQty[idKey] || 0) + qty;
-        if (nameKey) outQty[nameKey] = (outQty[nameKey] || 0) + qty;
+        if (targetId) outQty[targetId] = (outQty[targetId] || 0) + qty;
+        if (targetName && targetName !== targetId)
+          outQty[targetName] = (outQty[targetName] || 0) + qty;
+        if (targetCode) outQty[targetCode] = (outQty[targetCode] || 0) + qty;
       }
     });
 
@@ -2181,7 +2213,7 @@ function WarehouseAndProductsPage() {
       dailyInQtyMap: inQty,
       dailyOutQtyMap: outQty,
     };
-  }, [transactions, productDateFilter]);
+  }, [transactions, products, productDateFilter]);
 
   // ── GROUPING LOKASI & RAK BERDASARKAN MASTER BARANG & CATATAN MASUK ──────────────
   const shelfLocationGroups = useMemo(() => {
@@ -3789,8 +3821,7 @@ function WarehouseAndProductsPage() {
                     const nameKey = p.name ? p.name.trim().toLowerCase() : "";
                     const codeKey = p.code ? p.code.trim().toLowerCase() : "";
 
-                    // Mutasi Harian (Daily): Kolom Receipt & Issued hanya menampilkan transaksi hari ini
-                    // Jika mutasi sudah beda hari, bernilai 0 sehingga otomatis kembali menjadi (-)
+                    // Mutasi Masuk & Keluar: Kolom Receipt & Issued mengakumulasi transaksi catatan masuk & keluar (meskipun di hari yang berbeda)
                     const dailyReceipt =
                       (dailyInQtyMap[p.id] ?? 0) ||
                       (nameKey ? (dailyInQtyMap[nameKey] ?? 0) : 0) ||
