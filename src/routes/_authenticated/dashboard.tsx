@@ -1024,13 +1024,13 @@ function DashboardPage() {
       modalIcon = <Activity className="size-5 text-cyan-500" />;
       baseCount = unifiedMetricItems.length;
     } else if (selectedMetricModal === "stok_aman") {
-      modalTitle = "Daftar Barang Stok Aman (Normal / Surplus)";
+      modalTitle = "STOK TERSEDIA";
       modalDesc = `Total ${ca.gabunganAman} item (${ca.pctAman}%) dengan status ketersediaan normal di atas batas minimum stok.`;
       modalBadge = `${ca.gabunganAman} Item Aman`;
       modalIcon = <CheckCircle2 className="size-5 text-emerald-500" />;
       baseCount = ca.gabunganAman;
     } else if (selectedMetricModal === "perlu_perhatian") {
-      modalTitle = "Daftar Barang Perlu Perhatian (Limit & Habis)";
+      modalTitle = "STOK BARANG LIMIT & HABIS";
       modalDesc = `Total ${ca.gabunganLimit + ca.gabunganHabis} item (${ca.pctLimit + ca.pctHabis}%) kritis yang memerlukan penanganan pengadaan atau restock segera.`;
       modalBadge = `${ca.gabunganLimit + ca.gabunganHabis} Item Kritis`;
       modalIcon = <AlertTriangle className="size-5 text-amber-500" />;
