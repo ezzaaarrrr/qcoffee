@@ -1053,7 +1053,11 @@ function DashboardPage() {
     }
 
     const hideStatusCol =
-      selectedMetricModal === "donut_obs" || selectedMetricModal === "donut_all";
+      selectedMetricModal === "donut_obs" ||
+      selectedMetricModal === "donut_all" ||
+      selectedMetricModal === "total_stok" ||
+      selectedMetricModal === "stok_aman" ||
+      selectedMetricModal === "perlu_perhatian";
 
     return (
       <Dialog
