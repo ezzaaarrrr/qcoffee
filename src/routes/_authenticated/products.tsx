@@ -3325,8 +3325,8 @@ function WarehouseAndProductsPage() {
               : activeTab === "transactions"
                 ? "Mencatat riwayat mutasi masuk dan keluar"
                 : activeTab === "logs"
-                  ? "Rekap jejak audit dan riwayat seluruh aktivitas operasional gudang."
-                  : "Kelola data master barang, pencatatan masuk/keluar, audit stok, kategori, rak, dan dokumen."}
+                  ? "Rekap riwayat seluruh aktivitas operasional gudang."
+                  : "Kelola data master barang, pencatatan masuk/keluar, audit stok."}
           </p>
         </div>
 
