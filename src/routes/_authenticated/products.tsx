@@ -3559,129 +3559,210 @@ function WarehouseAndProductsPage() {
           {/* ── MONITORING INFO CARDS OBS SPAREPART ────────────────────────── */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {/* Card 1: Total Item OBS */}
-            <div className="rise-in group relative overflow-hidden rounded-lg border border-blue-500 bg-blue-600 p-4 text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg cursor-pointer active:scale-[0.99]">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="flex items-center justify-center size-8 rounded-md bg-blue-500 text-white border border-blue-400">
-                  <Boxes className="size-4" />
+            <div
+              className={cn(
+                "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                stockStatusFilter === "ALL" && !searchQuery && !productDateFilter
+                  ? "border-blue-400 bg-blue-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                  : "border-blue-500 bg-blue-600 hover:bg-blue-700 hover:shadow-lg opacity-95 hover:opacity-100",
+              )}
+              onClick={() => {
+                setStockStatusFilter("ALL");
+                setSearchQuery("");
+                setProductDateFilter("");
+              }}
+              title="Klik untuk menampilkan semua data barang OBS (Reset seluruh filter)"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center size-8 rounded-md bg-blue-500 text-white border border-blue-400 group-hover:scale-105 transition-transform">
+                    <Boxes className="size-4" />
+                  </div>
+                  <span className="label-caps !text-white">Total Item</span>
                 </div>
 
-                <span className="label-caps !text-white">Total Item</span>
+                {stockStatusFilter === "ALL" && !searchQuery && !productDateFilter && (
+                  <div className="size-2 rounded-full bg-white animate-pulse" title="Semua data aktif" />
+                )}
               </div>
 
               <div className="font-mono text-2xl font-bold tabular-nums text-white">
                 {loadingProducts ? "—" : totalActiveItemsObs}
               </div>
 
-              <div className="mt-1 text-[10px] text-white">Barang aktif terdaftar</div>
+              <div className="mt-1 flex items-center justify-between text-[10px] text-blue-100">
+                <span>Barang aktif terdaftar</span>
+                <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                  Lihat Semua
+                </span>
+              </div>
             </div>
 
             {/* Card 2: Total Stok Qty */}
             <div
-              className="rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all hover:shadow-lg cursor-pointer active:scale-[0.99]"
+              className={cn(
+                "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                sortOption === "STOCK_DESC" || sortOption === "STOCK_ASC"
+                  ? "ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                  : "hover:shadow-lg opacity-95 hover:opacity-100",
+              )}
               style={{
                 animationDelay: "50ms",
                 backgroundColor: "#0092B8",
                 borderColor: "#0083A6",
               }}
+              onClick={() => {
+                setSortOption((prev) => (prev === "STOCK_DESC" ? "STOCK_ASC" : "STOCK_DESC"));
+              }}
+              title="Klik untuk mengurutkan daftar berdasarkan jumlah stok (Terbanyak / Tersedikit)"
             >
-              <div className="flex items-center gap-2 mb-3">
-                <div
-                  className="flex items-center justify-center size-8 rounded-md text-white border"
-                  style={{
-                    backgroundColor: "#00ACCF",
-                    borderColor: "#00A0C2",
-                  }}
-                >
-                  <Package className="size-4" />
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="flex items-center justify-center size-8 rounded-md text-white border group-hover:scale-105 transition-transform"
+                    style={{
+                      backgroundColor: "#00ACCF",
+                      borderColor: "#00A0C2",
+                    }}
+                  >
+                    <Package className="size-4" />
+                  </div>
+                  <span className="label-caps !text-white">Total Stok</span>
                 </div>
 
-                <span className="label-caps !text-white">Total Stok</span>
+                {(sortOption === "STOCK_DESC" || sortOption === "STOCK_ASC") && (
+                  <span className="flex items-center gap-1 bg-black/25 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded backdrop-blur-xs">
+                    <ArrowUpDown className="size-2.5" />
+                    {sortOption === "STOCK_DESC" ? "Terbanyak" : "Tersedikit"}
+                  </span>
+                )}
               </div>
 
               <div className="font-mono text-2xl font-bold tabular-nums text-white">
                 {loadingProducts ? "—" : totalStockQtyObs.toLocaleString("id-ID")}
               </div>
 
-              <div className="mt-1 text-[10px] text-white">Jumlah seluruh pcs/unit</div>
+              <div className="mt-1 flex items-center justify-between text-[10px] text-cyan-100">
+                <span>Jumlah seluruh pcs/unit</span>
+                <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                  Urut Stok
+                </span>
+              </div>
             </div>
 
             {/* Card 3: ORDER — Perlu Restock */}
             <div
-              className="rise-in group relative overflow-hidden rounded-lg border border-red-500 bg-red-600 p-4 text-white shadow-md transition-all hover:bg-red-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+              className={cn(
+                "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                stockStatusFilter === "ORDER"
+                  ? "border-rose-400 bg-red-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                  : "border-red-500 bg-red-600 hover:bg-red-700 hover:shadow-lg opacity-95 hover:opacity-100",
+              )}
               style={{ animationDelay: "100ms" }}
               onClick={() => setStockStatusFilter(stockStatusFilter === "ORDER" ? "ALL" : "ORDER")}
+              title="Klik untuk memfilter barang berstatus ORDER (Stok ≤ batas minimum)"
             >
-              <div className="flex items-center gap-2 mb-3">
-                <div className="flex items-center justify-center size-8 rounded-md bg-rose-500 text-white border border-rose-400">
-                  <CircleAlert className="size-4" />
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center size-8 rounded-md bg-rose-500 text-white border border-rose-400 group-hover:scale-105 transition-transform">
+                    <CircleAlert className="size-4" />
+                  </div>
+                  <span className="label-caps !text-white">Order</span>
                 </div>
 
-                <span className="label-caps !text-white">Order</span>
+                {stockStatusFilter === "ORDER" && (
+                  <div className="size-2 rounded-full bg-white animate-pulse" title="Filter Order Aktif" />
+                )}
               </div>
 
               <div className="font-mono text-2xl font-bold tabular-nums text-white">
                 {loadingProducts ? "—" : obsOrderCount}
               </div>
 
-              <div className="mt-1 text-[10px] text-white">Stok ≤ batas minimum</div>
-
-              {stockStatusFilter === "ORDER" && (
-                <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
-              )}
+              <div className="mt-1 flex items-center justify-between text-[10px] text-rose-100">
+                <span>Stok ≤ batas minimum</span>
+                <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                  {stockStatusFilter === "ORDER" ? "Reset" : "Filter"}
+                </span>
+              </div>
             </div>
 
             {/* Card 4: SAFETY STOK */}
             <div
-              className="rise-in group relative overflow-hidden rounded-lg border border-green-500 bg-green-600 p-4 text-white shadow-md transition-all hover:bg-green-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+              className={cn(
+                "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                stockStatusFilter === "SAFETY"
+                  ? "border-emerald-400 bg-green-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                  : "border-green-500 bg-green-600 hover:bg-green-700 hover:shadow-lg opacity-95 hover:opacity-100",
+              )}
               style={{ animationDelay: "150ms" }}
               onClick={() =>
                 setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
               }
+              title="Klik untuk memfilter barang berstatus SAFETY STOK (Stok aman > minimum)"
             >
-              <div className="flex items-center gap-2 mb-3">
-                <div className="flex items-center justify-center size-8 rounded-md bg-green-500 text-white border border-green-400">
-                  <ShieldCheck className="size-4" />
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center size-8 rounded-md bg-green-500 text-white border border-green-400 group-hover:scale-105 transition-transform">
+                    <ShieldCheck className="size-4" />
+                  </div>
+                  <span className="label-caps !text-white">Safety Stok</span>
                 </div>
 
-                <span className="label-caps !text-white">Safety Stok</span>
+                {stockStatusFilter === "SAFETY" && (
+                  <div className="size-2 rounded-full bg-white animate-pulse" title="Filter Safety Aktif" />
+                )}
               </div>
 
               <div className="font-mono text-2xl font-bold tabular-nums text-white">
                 {loadingProducts ? "—" : obsSafetyCount}
               </div>
 
-              <div className="mt-1 text-[10px] text-white">Stok aman &gt; minimum</div>
-
-              {stockStatusFilter === "SAFETY" && (
-                <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
-              )}
+              <div className="mt-1 flex items-center justify-between text-[10px] text-emerald-100">
+                <span>Stok aman &gt; minimum</span>
+                <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                  {stockStatusFilter === "SAFETY" ? "Reset" : "Filter"}
+                </span>
+              </div>
             </div>
 
             {/* Card 5: OUT OF STOK */}
             <div
-              className="rise-in group relative overflow-hidden rounded-lg border border-amber-500 bg-amber-600 p-4 text-white shadow-md transition-all hover:bg-amber-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+              className={cn(
+                "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                stockStatusFilter === "OUT_OF_STOCK"
+                  ? "border-amber-400 bg-amber-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                  : "border-amber-500 bg-amber-600 hover:bg-amber-700 hover:shadow-lg opacity-95 hover:opacity-100",
+              )}
               style={{ animationDelay: "200ms" }}
               onClick={() =>
                 setStockStatusFilter(stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK")
               }
+              title="Klik untuk memfilter barang berstatus OUT OF STOK (Melebihi maks. stok)"
             >
-              <div className="flex items-center gap-2 mb-3">
-                <div className="flex items-center justify-center size-8 rounded-md bg-amber-500 text-white border border-amber-400">
-                  <TrendingDown className="size-4" />
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center size-8 rounded-md bg-amber-500 text-white border border-amber-400 group-hover:scale-105 transition-transform">
+                    <TrendingDown className="size-4" />
+                  </div>
+                  <span className="label-caps !text-white">Out of Stok</span>
                 </div>
 
-                <span className="label-caps !text-white">Out of Stok</span>
+                {stockStatusFilter === "OUT_OF_STOCK" && (
+                  <div className="size-2 rounded-full bg-white animate-pulse" title="Filter Out of Stok Aktif" />
+                )}
               </div>
 
               <div className="font-mono text-2xl font-bold tabular-nums text-white">
                 {loadingProducts ? "—" : obsOutOfStockCount}
               </div>
 
-              <div className="mt-1 text-[10px] text-white">Melebihi maks. stok</div>
-
-              {stockStatusFilter === "OUT_OF_STOCK" && (
-                <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
-              )}
+              <div className="mt-1 flex items-center justify-between text-[10px] text-amber-100">
+                <span>Melebihi maks. stok</span>
+                <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                  {stockStatusFilter === "OUT_OF_STOCK" ? "Reset" : "Filter"}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -3700,28 +3781,48 @@ function WarehouseAndProductsPage() {
               <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                 {obsSafetyPct > 0 && (
                   <div
-                    className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-700 ease-out"
+                    className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-700 ease-out cursor-pointer hover:opacity-85"
                     style={{ width: `${obsSafetyPct}%` }}
-                    title={`Safety Stok: ${obsSafetyCount} item (${obsSafetyPct}%)`}
+                    onClick={() =>
+                      setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
+                    }
+                    title={`Safety Stok: ${obsSafetyCount} item (${obsSafetyPct}%) — Klik untuk filter`}
                   />
                 )}
                 {obsOrderPct > 0 && (
                   <div
-                    className="h-full bg-gradient-to-r from-rose-500 to-rose-400 transition-all duration-700 ease-out"
+                    className="h-full bg-gradient-to-r from-rose-500 to-rose-400 transition-all duration-700 ease-out cursor-pointer hover:opacity-85"
                     style={{ width: `${obsOrderPct}%` }}
-                    title={`Order: ${obsOrderCount} item (${obsOrderPct}%)`}
+                    onClick={() =>
+                      setStockStatusFilter(stockStatusFilter === "ORDER" ? "ALL" : "ORDER")
+                    }
+                    title={`Order: ${obsOrderCount} item (${obsOrderPct}%) — Klik untuk filter`}
                   />
                 )}
                 {obsOutOfStockPct > 0 && (
                   <div
-                    className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-700 ease-out"
+                    className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-700 ease-out cursor-pointer hover:opacity-85"
                     style={{ width: `${obsOutOfStockPct}%` }}
-                    title={`Out of Stok: ${obsOutOfStockCount} item (${obsOutOfStockPct}%)`}
+                    onClick={() =>
+                      setStockStatusFilter(stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK")
+                    }
+                    title={`Out of Stok: ${obsOutOfStockCount} item (${obsOutOfStockPct}%) — Klik untuk filter`}
                   />
                 )}
               </div>
               <div className="flex items-center gap-4 mt-2.5 flex-wrap">
-                <div className="flex items-center gap-1.5">
+                <div
+                  className={cn(
+                    "flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded transition-all select-none",
+                    stockStatusFilter === "SAFETY"
+                      ? "bg-emerald-50 dark:bg-emerald-950/40 ring-1 ring-emerald-400 font-semibold"
+                      : "hover:bg-slate-100 dark:hover:bg-slate-800",
+                  )}
+                  onClick={() =>
+                    setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
+                  }
+                  title="Klik untuk memfilter barang Safety Stok"
+                >
                   <div className="size-2.5 rounded-full bg-emerald-500" />
                   <span className="text-[10px] text-muted-foreground">
                     Safety{" "}
@@ -3730,7 +3831,18 @@ function WarehouseAndProductsPage() {
                     </span>
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div
+                  className={cn(
+                    "flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded transition-all select-none",
+                    stockStatusFilter === "ORDER"
+                      ? "bg-rose-50 dark:bg-rose-950/40 ring-1 ring-rose-400 font-semibold"
+                      : "hover:bg-slate-100 dark:hover:bg-slate-800",
+                  )}
+                  onClick={() =>
+                    setStockStatusFilter(stockStatusFilter === "ORDER" ? "ALL" : "ORDER")
+                  }
+                  title="Klik untuk memfilter barang Order"
+                >
                   <div className="size-2.5 rounded-full bg-rose-500" />
                   <span className="text-[10px] text-muted-foreground">
                     Order{" "}
@@ -3739,7 +3851,18 @@ function WarehouseAndProductsPage() {
                     </span>
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div
+                  className={cn(
+                    "flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded transition-all select-none",
+                    stockStatusFilter === "OUT_OF_STOCK"
+                      ? "bg-amber-50 dark:bg-amber-950/40 ring-1 ring-amber-400 font-semibold"
+                      : "hover:bg-slate-100 dark:hover:bg-slate-800",
+                  )}
+                  onClick={() =>
+                    setStockStatusFilter(stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK")
+                  }
+                  title="Klik untuk memfilter barang Out of Stok"
+                >
                   <div className="size-2.5 rounded-full bg-amber-500" />
                   <span className="text-[10px] text-muted-foreground">
                     Out of Stok{" "}
@@ -3787,12 +3910,6 @@ function WarehouseAndProductsPage() {
                     </th>
                     <th className="label-caps px-3 py-3 text-center min-w-[130px] whitespace-nowrap text-white font-semibold">
                       BEGINNING BALANCE
-                    </th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
-                      RECEIPT
-                    </th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
-                      ISSUED
                     </th>
                     <th className="label-caps px-3 py-3 text-right min-w-[120px] whitespace-nowrap text-white font-semibold">
                       ENDING BALANCE
@@ -3943,17 +4060,7 @@ function WarehouseAndProductsPage() {
                           {Number(beginningBalance).toLocaleString("id-ID")}
                         </td>
 
-                        {/* 7. RECEIPT */}
-                        <td className="px-3 py-3 text-center font-mono font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                          {Number(receiptVal).toLocaleString("id-ID")}
-                        </td>
-
-                        {/* 8. ISSUED */}
-                        <td className="px-3 py-3 text-center font-mono font-semibold text-rose-600 dark:text-rose-400 whitespace-nowrap">
-                          {Number(issuedVal).toLocaleString("id-ID")}
-                        </td>
-
-                        {/* 9. ENDING BALANCE */}
+                        {/* 7. ENDING BALANCE */}
                         <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap">
                           <span
                             className={cn(
@@ -4920,133 +5027,216 @@ function WarehouseAndProductsPage() {
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   {/* Card 1: Total Item Buffer */}
-                  <div className="rise-in group relative overflow-hidden rounded-lg border border-blue-500 bg-blue-600 p-4 text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg cursor-pointer active:scale-[0.99]">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="flex items-center justify-center size-8 rounded-md bg-blue-500 text-white border border-blue-400">
-                        <Boxes className="size-4" />
+                  <div
+                    className={cn(
+                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                      bufferStatusFilter === "ALL" && !bufferSearchQuery && !bufferDateFilter
+                        ? "border-blue-400 bg-blue-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                        : "border-blue-500 bg-blue-600 hover:bg-blue-700 hover:shadow-lg opacity-95 hover:opacity-100",
+                    )}
+                    onClick={() => {
+                      setBufferStatusFilter("ALL");
+                      setBufferSearchQuery("");
+                      setBufferDateFilter("");
+                    }}
+                    title="Klik untuk menampilkan seluruh item Buffer Stok (Reset seluruh filter)"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-center size-8 rounded-md bg-blue-500 text-white border border-blue-400 group-hover:scale-105 transition-transform">
+                          <Boxes className="size-4" />
+                        </div>
+                        <span className="label-caps !text-white">Total Item</span>
                       </div>
 
-                      <span className="label-caps !text-white">Total Item</span>
+                      {bufferStatusFilter === "ALL" && !bufferSearchQuery && !bufferDateFilter && (
+                        <div className="size-2 rounded-full bg-white animate-pulse" title="Semua data aktif" />
+                      )}
                     </div>
 
                     <div className="font-mono text-2xl font-bold tabular-nums text-white">
                       {loadingBuffer ? "—" : totalBufferItems}
                     </div>
 
-                    <div className="mt-1 text-[10px] text-white">Item buffer aktif</div>
+                    <div className="mt-1 flex items-center justify-between text-[10px] text-blue-100">
+                      <span>Item buffer aktif</span>
+                      <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                        Lihat Semua
+                      </span>
+                    </div>
                   </div>
 
                   {/* Card 2: Total Stok Qty */}
                   <div
-                    className="rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all hover:shadow-lg cursor-pointer active:scale-[0.99]"
+                    className={cn(
+                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                      bufferSortOption === "STOCK_DESC" || bufferSortOption === "STOCK_ASC"
+                        ? "ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                        : "hover:shadow-lg opacity-95 hover:opacity-100",
+                    )}
                     style={{
                       animationDelay: "50ms",
                       backgroundColor: "#0092B8",
                       borderColor: "#0083A6",
                     }}
+                    onClick={() => {
+                      setBufferSortOption((prev) =>
+                        prev === "STOCK_DESC" ? "STOCK_ASC" : "STOCK_DESC",
+                      );
+                    }}
+                    title="Klik untuk mengurutkan daftar berdasarkan jumlah stok buffer (Terbanyak / Tersedikit)"
                   >
-                    <div className="flex items-center gap-2 mb-3">
-                      <div
-                        className="flex items-center justify-center size-8 rounded-md text-white border"
-                        style={{
-                          backgroundColor: "#00ACCF",
-                          borderColor: "#00A0C2",
-                        }}
-                      >
-                        <Package className="size-4" />
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="flex items-center justify-center size-8 rounded-md text-white border group-hover:scale-105 transition-transform"
+                          style={{
+                            backgroundColor: "#00ACCF",
+                            borderColor: "#00A0C2",
+                          }}
+                        >
+                          <Package className="size-4" />
+                        </div>
+                        <span className="label-caps !text-white">Total Stok</span>
                       </div>
 
-                      <span className="label-caps !text-white">Total Stok</span>
+                      {(bufferSortOption === "STOCK_DESC" || bufferSortOption === "STOCK_ASC") && (
+                        <span className="flex items-center gap-1 bg-black/25 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded backdrop-blur-xs">
+                          <ArrowUpDown className="size-2.5" />
+                          {bufferSortOption === "STOCK_DESC" ? "Terbanyak" : "Tersedikit"}
+                        </span>
+                      )}
                     </div>
 
                     <div className="font-mono text-2xl font-bold tabular-nums text-white">
                       {loadingBuffer ? "—" : totalBufferQty.toLocaleString("id-ID")}
                     </div>
 
-                    <div className="mt-1 text-[10px] text-white">Jumlah seluruh pcs/unit</div>
+                    <div className="mt-1 flex items-center justify-between text-[10px] text-cyan-100">
+                      <span>Jumlah seluruh pcs/unit</span>
+                      <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                        Urut Stok
+                      </span>
+                    </div>
                   </div>
 
                   {/* Card 3: ORDER */}
                   <div
-                    className="rise-in group relative overflow-hidden rounded-lg border border-red-500 bg-red-600 p-4 text-white shadow-md transition-all hover:bg-red-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+                    className={cn(
+                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                      bufferStatusFilter === "ORDER"
+                        ? "border-rose-400 bg-red-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                        : "border-red-500 bg-red-600 hover:bg-red-700 hover:shadow-lg opacity-95 hover:opacity-100",
+                    )}
                     style={{ animationDelay: "100ms" }}
                     onClick={() =>
                       setBufferStatusFilter(bufferStatusFilter === "ORDER" ? "ALL" : "ORDER")
                     }
+                    title="Klik untuk memfilter barang buffer berstatus ORDER (Stok ≤ batas minimum)"
                   >
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="flex items-center justify-center size-8 rounded-md bg-rose-500 text-white border border-rose-400">
-                        <CircleAlert className="size-4" />
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-center size-8 rounded-md bg-rose-500 text-white border border-rose-400 group-hover:scale-105 transition-transform">
+                          <CircleAlert className="size-4" />
+                        </div>
+                        <span className="label-caps !text-white">Order</span>
                       </div>
 
-                      <span className="label-caps !text-white">Order</span>
+                      {bufferStatusFilter === "ORDER" && (
+                        <div className="size-2 rounded-full bg-white animate-pulse" title="Filter Order Aktif" />
+                      )}
                     </div>
 
                     <div className="font-mono text-2xl font-bold tabular-nums text-white">
                       {loadingBuffer ? "—" : bufOrderCount}
                     </div>
 
-                    <div className="mt-1 text-[10px] text-white">Stok ≤ batas minimum</div>
-
-                    {bufferStatusFilter === "ORDER" && (
-                      <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
-                    )}
+                    <div className="mt-1 flex items-center justify-between text-[10px] text-rose-100">
+                      <span>Stok ≤ batas minimum</span>
+                      <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                        {bufferStatusFilter === "ORDER" ? "Reset" : "Filter"}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Card 4: SAFETY STOK */}
                   <div
-                    className="rise-in group relative overflow-hidden rounded-lg border border-green-500 bg-green-600 p-4 text-white shadow-md transition-all hover:bg-green-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+                    className={cn(
+                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                      bufferStatusFilter === "SAFETY"
+                        ? "border-emerald-400 bg-green-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                        : "border-green-500 bg-green-600 hover:bg-green-700 hover:shadow-lg opacity-95 hover:opacity-100",
+                    )}
                     style={{ animationDelay: "150ms" }}
                     onClick={() =>
                       setBufferStatusFilter(bufferStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
                     }
+                    title="Klik untuk memfilter barang buffer berstatus SAFETY STOK (Stok aman > minimum)"
                   >
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="flex items-center justify-center size-8 rounded-md bg-green-500 text-white border border-green-400">
-                        <ShieldCheck className="size-4" />
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-center size-8 rounded-md bg-green-500 text-white border border-green-400 group-hover:scale-105 transition-transform">
+                          <ShieldCheck className="size-4" />
+                        </div>
+                        <span className="label-caps !text-white">Safety Stok</span>
                       </div>
 
-                      <span className="label-caps !text-white">Safety Stok</span>
+                      {bufferStatusFilter === "SAFETY" && (
+                        <div className="size-2 rounded-full bg-white animate-pulse" title="Filter Safety Aktif" />
+                      )}
                     </div>
 
                     <div className="font-mono text-2xl font-bold tabular-nums text-white">
                       {loadingBuffer ? "—" : bufSafetyCount}
                     </div>
 
-                    <div className="mt-1 text-[10px] text-white">Stok aman &gt; minimum</div>
-
-                    {bufferStatusFilter === "SAFETY" && (
-                      <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
-                    )}
+                    <div className="mt-1 flex items-center justify-between text-[10px] text-emerald-100">
+                      <span>Stok aman &gt; minimum</span>
+                      <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                        {bufferStatusFilter === "SAFETY" ? "Reset" : "Filter"}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Card 5: OUT OF STOK */}
                   <div
-                    className="rise-in group relative overflow-hidden rounded-lg border border-amber-500 bg-amber-600 p-4 text-white shadow-md transition-all hover:bg-amber-700 hover:shadow-lg cursor-pointer active:scale-[0.99]"
+                    className={cn(
+                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                      bufferStatusFilter === "OUT_OF_STOCK"
+                        ? "border-amber-400 bg-amber-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                        : "border-amber-500 bg-amber-600 hover:bg-amber-700 hover:shadow-lg opacity-95 hover:opacity-100",
+                    )}
                     style={{ animationDelay: "200ms" }}
                     onClick={() =>
                       setBufferStatusFilter(
                         bufferStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK",
                       )
                     }
+                    title="Klik untuk memfilter barang buffer berstatus OUT OF STOK (Melebihi maks. stok)"
                   >
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="flex items-center justify-center size-8 rounded-md bg-amber-500 text-white border border-amber-400">
-                        <TrendingDown className="size-4" />
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-center size-8 rounded-md bg-amber-500 text-white border border-amber-400 group-hover:scale-105 transition-transform">
+                          <TrendingDown className="size-4" />
+                        </div>
+                        <span className="label-caps !text-white">Out of Stok</span>
                       </div>
 
-                      <span className="label-caps !text-white">Out of Stok</span>
+                      {bufferStatusFilter === "OUT_OF_STOCK" && (
+                        <div className="size-2 rounded-full bg-white animate-pulse" title="Filter Out of Stok Aktif" />
+                      )}
                     </div>
 
                     <div className="font-mono text-2xl font-bold tabular-nums text-white">
                       {loadingBuffer ? "—" : bufOutOfStockCount}
                     </div>
 
-                    <div className="mt-1 text-[10px] text-white">Melebihi maks. stok</div>
-
-                    {bufferStatusFilter === "OUT_OF_STOCK" && (
-                      <div className="absolute top-2 right-2 size-2 rounded-full bg-white animate-pulse" />
-                    )}
+                    <div className="mt-1 flex items-center justify-between text-[10px] text-amber-100">
+                      <span>Melebihi maks. stok</span>
+                      <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                        {bufferStatusFilter === "OUT_OF_STOCK" ? "Reset" : "Filter"}
+                      </span>
+                    </div>
                   </div>
                 </div>
 

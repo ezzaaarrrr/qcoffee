@@ -524,7 +524,7 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
     <!-- Header Informasi Parameter SAP / Gudang Sesuai Format Scan -->
     <table style="border-collapse: collapse; font-family: Calibri, Arial, sans-serif; font-size: 11pt; margin-bottom: 14px;">
       <tr>
-        <td colspan="10" style="font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; padding: 2px 0; color: #000000;">. PLANT &nbsp;&nbsp;: ${plant}</td>
+        <td colspan="10" style="font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; padding: 2px 0; color: #000000;">1. PLANT &nbsp;&nbsp;: ${plant}</td>
       </tr>
       <tr>
         <td colspan="10" style="font-weight: bold; font-family: Calibri, Arial, sans-serif; font-size: 11pt; padding: 2px 0; color: #000000;">2. S.LOCATION : ${storageLocation}</td>
