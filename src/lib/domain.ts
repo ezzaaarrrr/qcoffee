@@ -62,6 +62,13 @@ export function formatDate(value?: string | null): string {
   return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+export function formatUnit(value?: string | null): string {
+  if (!value) return "pcs";
+  const trimmed = value.trim();
+  if (trimmed.toUpperCase() === "METER") return "M";
+  return trimmed;
+}
+
 /** Standar organoleptik grinding: aroma khas kopi, pH 4.8–5.6, MC ≤ 5%. */
 export function organoleptikSesuai(item: {
   aroma?: string | null;

@@ -5,6 +5,8 @@
  * baris total, serta kolom tanda tangan pengesahan resmi.
  */
 
+import { formatUnit } from "@/lib/domain";
+
 export interface ExportProductItem {
   id: string;
   code?: string | null;
@@ -864,7 +866,7 @@ export function exportDashboardSparepartExecutiveExcel(options: ExportDashboardO
           <td style="font-family: Consolas, monospace; font-weight: bold; mso-number-format:'\\@';">${p.code || "—"}</td>
           <td style="font-weight: bold; color: #be123c;">${p.name}</td>
           <td>${p.category || "Sparepart"}</td>
-          <td style="text-align: center;">${p.unit || "pcs"}</td>
+          <td style="text-align: center;">${formatUnit(p.unit)}</td>
           <td>${p.location || "Gudang Utama"} / ${p.shelf || "Rak A-1"}</td>
           <td style="text-align: right; font-weight: bold; color: #be123c;">${(p.current_stock ?? 0).toLocaleString("id-ID")}</td>
           <td style="text-align: right; color: #64748b;">${(p.min_stock ?? 10).toLocaleString("id-ID")}</td>
@@ -882,7 +884,7 @@ export function exportDashboardSparepartExecutiveExcel(options: ExportDashboardO
         <td style="font-family: Consolas, monospace; font-weight: bold; font-size: 9pt; mso-number-format:'\\@';">${p.code || "—"}</td>
         <td style="font-weight: 600;">${p.name}</td>
         <td>${p.category || "Sparepart"}</td>
-        <td style="text-align: center;">${p.unit || "pcs"}</td>
+        <td style="text-align: center;">${formatUnit(p.unit)}</td>
         <td>${p.location || "Gudang"} (${p.shelf || "Rak"})</td>
         <td style="text-align: right; font-weight: bold; ${isLimit ? "color: #be123c;" : "color: #047857;"}">
           ${(p.current_stock ?? 0).toLocaleString("id-ID")}

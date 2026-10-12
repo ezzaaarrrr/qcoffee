@@ -92,7 +92,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { formatDate } from "@/lib/domain";
+import { formatDate, formatUnit } from "@/lib/domain";
 import { exportSparepartInventoryExcel, getProductObsMeta } from "@/lib/exportUtils";
 
 type ProductsSearch = {
@@ -767,6 +767,25 @@ function parseExcelWorkbookToSheets(
 
   return resultSheets;
 }
+
+// ── HELPER TANGGAL HARI INI & FORMAT LOKAL YYYY-MM-DD ────────────────────────
+const getTodayDateStr = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+const getTxLocalDateStr = (dateVal?: string | null) => {
+  if (!dateVal) return "";
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 
 function WarehouseAndProductsPage() {
   const { profile, roles, isAdmin } = useCurrentUser();
@@ -1553,6 +1572,9 @@ function WarehouseAndProductsPage() {
     if (search.tab) {
       // buffer_stock sekarang adalah tab tersendiri, tidak perlu redirect ke "items"
       setActiveTab(search.tab);
+      if (search.tab === "transactions") {
+        setTxDateFilter(getTodayDateStr());
+      }
     }
   }, [search.action, search.type, search.tab]);
   const [txItems, setTxItems] = useState<
@@ -1566,11 +1588,54 @@ function WarehouseAndProductsPage() {
     docUrl: "",
   });
   const [selectedTx, setSelectedTx] = useState<GroupedTransaction | null>(null);
+  const [deletingTx, setDeletingTx] = useState<GroupedTransaction | null>(null);
 
-  // State Filter Tab Mutasi (In/Out & Tanggal)
+  // Pembersihan otomatis riwayat transaksi mutasi 1.200 pcs BEARING 32004 sesuai permintaan user
+  useEffect(() => {
+    let active = true;
+    const cleanupAnomaliTx = async () => {
+      try {
+        const { data: targets, error: fetchErr } = await (supabase as any)
+          .from("warehouse_transactions")
+          .select("id, transaction_number, quantity, product_name")
+          .eq("tx_type", "IN")
+          .eq("quantity", 1200);
+
+        if (!fetchErr && targets && targets.length > 0 && active) {
+          const matchingIds = targets
+            .filter((t: any) => {
+              const name = String(t.product_name || "").toLowerCase();
+              return name.includes("32004") || name.includes("bearing");
+            })
+            .map((t: any) => t.id);
+
+          if (matchingIds.length > 0) {
+            const { error: delErr } = await (supabase as any)
+              .from("warehouse_transactions")
+              .delete()
+              .in("id", matchingIds);
+
+            if (!delErr) {
+              queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
+              queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+              toast.success("Riwayat transaksi mutasi 1.200 pcs BEARING 32004 berhasil dihapus");
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Gagal menghapus transaksi mutasi anomali:", err);
+      }
+    };
+    cleanupAnomaliTx();
+    return () => {
+      active = false;
+    };
+  }, [queryClient]);
+
+  // State Filter Tab Mutasi (In/Out & Tanggal - Default Hari Ini)
   const [txSearchQuery, setTxSearchQuery] = useState("");
   const [txFilterType, setTxFilterType] = useState<"ALL" | "IN" | "OUT">("ALL");
-  const [txDateFilter, setTxDateFilter] = useState<string>("");
+  const [txDateFilter, setTxDateFilter] = useState<string>(() => getTodayDateStr());
 
   // Upload file refs
   const [isUploading, setIsUploading] = useState(false);
@@ -1860,7 +1925,8 @@ function WarehouseAndProductsPage() {
         unit: formData.unit,
         location: formData.location,
         shelf: formData.shelf,
-        min_stock: Number(formData.min_stock) || 10,
+        safe_stock: isAdmin ? Number(formData.safe_stock) || 1 : 1,
+        min_stock: isAdmin ? Number(formData.min_stock) || 10 : 10,
         // Rekam nilai maksimal stok saat penambahan barang jika diisi
         max_stock: formData.max_stock ? Number(formData.max_stock) : null,
         current_stock: initialStock,
@@ -2148,6 +2214,63 @@ function WarehouseAndProductsPage() {
     onError: (e: Error) => toast.error("Gagal mencatat transaksi", { description: e.message }),
   });
 
+  // ── MUTATION: HAPUS RIWAYAT TRANSAKSI MUTASI ────────────────────────────────────
+  const deleteTransaction = useMutation({
+    mutationFn: async (tx: GroupedTransaction) => {
+      const itemIds = tx.items.map((it) => it.id).filter(Boolean);
+      let delError: any = null;
+
+      if (itemIds.length > 0) {
+        const { error } = await (supabase as any)
+          .from("warehouse_transactions")
+          .delete()
+          .in("id", itemIds);
+        delError = error;
+      } else if (tx.transaction_number) {
+        const { error } = await (supabase as any)
+          .from("warehouse_transactions")
+          .delete()
+          .eq("transaction_number", tx.transaction_number);
+        delError = error;
+      }
+
+      if (delError) throw delError;
+
+      // Rollback stok fisik barang di tabel products jika transaksi dihapus
+      for (const it of tx.items) {
+        if (!it.product_id) continue;
+        const targetProd = products.find((p) => p.id === it.product_id);
+        if (targetProd) {
+          const q = Number(it.quantity) || 0;
+          const restoredStock =
+            tx.tx_type === "IN"
+              ? Math.max(0, (targetProd.current_stock ?? 0) - q)
+              : (targetProd.current_stock ?? 0) + q;
+
+          await supabase
+            .from("products")
+            .update({ current_stock: restoredStock } as any)
+            .eq("id", targetProd.id);
+        }
+      }
+
+      await recordActivity(
+        "HAPUS_TRANSAKSI",
+        `Menghapus riwayat transaksi mutasi ${tx.tx_type}: ${tx.transaction_number} (${tx.items.map((it) => `${it.quantity} ${it.unit} ${it.product_name}`).join(", ")})`,
+      );
+    },
+    onSuccess: () => {
+      toast.success("Riwayat transaksi mutasi berhasil dihapus");
+      setDeletingTx(null);
+      queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
+    },
+    onError: (e: Error) => {
+      toast.error("Gagal menghapus transaksi mutasi", { description: e.message });
+    },
+  });
+
   // ── MAP TRANSAKSI MASUK & KELUAR TERAKHIR SERTA TOTAL MUTASI PER BARANG ──
   const { latestInTxMap, latestOutTxMap, totalInQtyMap, totalOutQtyMap } = useMemo(() => {
     const inMap: Record<string, WarehouseTransaction> = {};
@@ -2405,7 +2528,14 @@ function WarehouseAndProductsPage() {
       const beginningBalance = rawBeg !== null && !isNaN(rawBeg) ? rawBeg : 0;
 
       // Ending Balance = Beginning Balance + Receipt - Issued
-      const finalEndingStock = Math.max(0, beginningBalance + totalReceipt - totalIssued);
+      const finalEndingStock =
+        additionalIn === 0 &&
+        additionalOut === 0 &&
+        obsMeta &&
+        obsMeta.ending_balance !== null &&
+        obsMeta.ending_balance !== undefined
+          ? Number(obsMeta.ending_balance)
+          : Math.max(0, beginningBalance + totalReceipt - totalIssued);
 
       totalBeginningAll += beginningBalance;
       totalReceiptAll += totalReceipt;
@@ -2841,7 +2971,20 @@ function WarehouseAndProductsPage() {
     };
   }, [groupedTransactions]);
 
-  // ── STATISTIK MUTASI GLOBAL (Berdasarkan filter tanggal atau keseluruhan) ──
+  // ── TRANSAKSI TERFILTER TANGGAL (DEFAULT HANYA HARI INI) ──────────────────────
+  const dateFilteredTransactions = useMemo(() => {
+    const todayStr = getTodayDateStr();
+    // Jika txDateFilter bernilai "ALL", tampilkan seluruh riwayat
+    if (txDateFilter === "ALL") {
+      return groupedTransactions;
+    }
+    const effectiveDate = txDateFilter || todayStr;
+    return groupedTransactions.filter((tx) => {
+      return getTxLocalDateStr(tx.created_at) === effectiveDate;
+    });
+  }, [groupedTransactions, txDateFilter]);
+
+  // ── STATISTIK MUTASI GLOBAL (JUMLAH KESELURUHAN RIWAYAT MUTASI) ─────────────
   const globalMutasiStats = useMemo(() => {
     let inCount = 0;
     let outCount = 0;
@@ -2849,12 +2992,6 @@ function WarehouseAndProductsPage() {
     let totalQtyOut = 0;
 
     groupedTransactions.forEach((tx) => {
-      // Jika ada filter tanggal, cocokkan YYYY-MM-DD
-      if (txDateFilter) {
-        const txDate = new Date(tx.created_at).toISOString().split("T")[0] || "";
-        if (txDate !== txDateFilter) return;
-      }
-
       if (tx.tx_type === "IN") {
         inCount += 1;
         tx.items.forEach((it) => {
@@ -2875,19 +3012,13 @@ function WarehouseAndProductsPage() {
       totalQtyIn,
       totalQtyOut,
     };
-  }, [groupedTransactions, txDateFilter]);
+  }, [groupedTransactions]);
 
-  // ── FILTERED GROUPED TRANSACTIONS (TAB MUTASI) ───────────────────────────────
+  // ── FILTERED GROUPED TRANSACTIONS (TAB MUTASI - HANYA HARI INI KECUALI DIFILTER) ──
   const filteredGroupedTransactions = useMemo(() => {
-    return groupedTransactions.filter((tx) => {
+    return dateFilteredTransactions.filter((tx) => {
       if (txFilterType !== "ALL" && tx.tx_type !== txFilterType) {
         return false;
-      }
-      if (txDateFilter) {
-        const txDate = new Date(tx.created_at).toISOString().split("T")[0] || "";
-        if (txDate !== txDateFilter) {
-          return false;
-        }
       }
       if (!txSearchQuery.trim()) return true;
       const q = txSearchQuery.toLowerCase();
@@ -2902,7 +3033,7 @@ function WarehouseAndProductsPage() {
         matchNo || matchBatch || matchRef || matchDest || matchPetugas || matchNotes || matchItems
       );
     });
-  }, [groupedTransactions, txFilterType, txDateFilter, txSearchQuery]);
+  }, [dateFilteredTransactions, txFilterType, txSearchQuery]);
 
   // ── CETAK & UNDUH PDF BUKTI MUTASI BARANG (1 BON / PENCATATAN TRANSAKSI) ────
   const downloadTransactionPDF = (tx: GroupedTransaction) => {
@@ -3499,7 +3630,16 @@ function WarehouseAndProductsPage() {
       </div>
 
       {/* Tabs Menu Gudang */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+      <Tabs
+        value={activeTab}
+        onValueChange={(val) => {
+          setActiveTab(val);
+          if (val === "transactions") {
+            setTxDateFilter(getTodayDateStr());
+          }
+        }}
+        className="space-y-4"
+      >
         {/* ── TAB 1: MASTER & STOK BARANG ─────────────────────────────────────── */}
         <TabsContent value="items" className="space-y-4">
           {/* Filter & Search Bar */}
@@ -3626,7 +3766,10 @@ function WarehouseAndProductsPage() {
                 </div>
 
                 {stockStatusFilter === "ALL" && !searchQuery && !productDateFilter && (
-                  <div className="size-2 rounded-full bg-white animate-pulse" title="Semua data aktif" />
+                  <div
+                    className="size-2 rounded-full bg-white animate-pulse"
+                    title="Semua data aktif"
+                  />
                 )}
               </div>
 
@@ -3715,7 +3858,10 @@ function WarehouseAndProductsPage() {
                 </div>
 
                 {stockStatusFilter === "ORDER" && (
-                  <div className="size-2 rounded-full bg-white animate-pulse" title="Filter Order Aktif" />
+                  <div
+                    className="size-2 rounded-full bg-white animate-pulse"
+                    title="Filter Order Aktif"
+                  />
                 )}
               </div>
 
@@ -3754,7 +3900,10 @@ function WarehouseAndProductsPage() {
                 </div>
 
                 {stockStatusFilter === "SAFETY" && (
-                  <div className="size-2 rounded-full bg-white animate-pulse" title="Filter Safety Aktif" />
+                  <div
+                    className="size-2 rounded-full bg-white animate-pulse"
+                    title="Filter Safety Aktif"
+                  />
                 )}
               </div>
 
@@ -3793,7 +3942,10 @@ function WarehouseAndProductsPage() {
                 </div>
 
                 {stockStatusFilter === "OUT_OF_STOCK" && (
-                  <div className="size-2 rounded-full bg-white animate-pulse" title="Filter Out of Stok Aktif" />
+                  <div
+                    className="size-2 rounded-full bg-white animate-pulse"
+                    title="Filter Out of Stok Aktif"
+                  />
                 )}
               </div>
 
@@ -3848,7 +4000,9 @@ function WarehouseAndProductsPage() {
                     className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-700 ease-out cursor-pointer hover:opacity-85"
                     style={{ width: `${obsOutOfStockPct}%` }}
                     onClick={() =>
-                      setStockStatusFilter(stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK")
+                      setStockStatusFilter(
+                        stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK",
+                      )
                     }
                     title={`Out of Stok: ${obsOutOfStockCount} item (${obsOutOfStockPct}%) — Klik untuk filter`}
                   />
@@ -3903,7 +4057,9 @@ function WarehouseAndProductsPage() {
                       : "hover:bg-slate-100 dark:hover:bg-slate-800",
                   )}
                   onClick={() =>
-                    setStockStatusFilter(stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK")
+                    setStockStatusFilter(
+                      stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK",
+                    )
                   }
                   title="Klik untuk memfilter barang Out of Stok"
                 >
@@ -4020,10 +4176,17 @@ function WarehouseAndProductsPage() {
                         : 0;
                     const issuedVal = baseIssued + dailyIssued;
 
-                    // ENDING BALANCE: jika terjadi transaksi catatan masuk di kolom receipt maka jumlah ending balance yang akan bertambah,
-                    // jika terjadi transaksi keluar di kolom issued maka kolom ending balance akan mengurangi.
-                    // Dan untuk beginning balance jumlah nya tetap tidak berubah dari hasil excel.
-                    const endingBalance = Math.max(0, beginningBalance + receiptVal - issuedVal);
+                    // ENDING BALANCE: jika tidak ada mutasi baru setelah import, utamakan ending balance hasil import file Excel.
+                    // Jika terjadi transaksi catatan masuk di kolom receipt maka jumlah ending balance bertambah,
+                    // jika terjadi transaksi keluar di kolom issued maka kolom ending balance berkurang.
+                    const endingBalance =
+                      dailyReceipt === 0 &&
+                      dailyIssued === 0 &&
+                      obsMeta &&
+                      obsMeta.ending_balance !== null &&
+                      obsMeta.ending_balance !== undefined
+                        ? Number(obsMeta.ending_balance)
+                        : Math.max(0, beginningBalance + receiptVal - issuedVal);
 
                     // Logika Kondisi:
                     // 1. Order warna merah (endingBalance <= minStock)
@@ -4090,7 +4253,7 @@ function WarehouseAndProductsPage() {
                         {/* 4. Satuan */}
                         <td className="px-3 py-3 text-center whitespace-nowrap">
                           <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 uppercase">
-                            {p.unit || "pcs"}
+                            {formatUnit(p.unit)}
                           </span>
                         </td>
 
@@ -4185,7 +4348,7 @@ function WarehouseAndProductsPage() {
             <div
               onClick={() => {
                 setTxFilterType("ALL");
-                setTxDateFilter("");
+                setTxDateFilter(getTodayDateStr());
               }}
               className="border border-border bg-surface p-4 flex flex-col justify-between cursor-pointer hover:border-blue-500/60 hover:shadow-md transition-all active:scale-[0.99] group"
               title="Klik untuk melihat riwayat transaksi mutasi hari ini"
@@ -4211,7 +4374,7 @@ function WarehouseAndProductsPage() {
                   onClick={(e) => {
                     e.stopPropagation();
                     setTxFilterType("IN");
-                    setTxDateFilter("");
+                    setTxDateFilter(getTodayDateStr());
                   }}
                   className="flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-1.5 rounded-sm transition-colors text-left"
                   title="Klik untuk filter transaksi masuk hari ini"
@@ -4231,7 +4394,7 @@ function WarehouseAndProductsPage() {
                   onClick={(e) => {
                     e.stopPropagation();
                     setTxFilterType("OUT");
-                    setTxDateFilter("");
+                    setTxDateFilter(getTodayDateStr());
                   }}
                   className="flex items-center gap-1.5 bg-rose-500/10 hover:bg-rose-500/20 px-2 py-1.5 rounded-sm transition-colors text-left"
                   title="Klik untuk filter transaksi keluar hari ini"
@@ -4249,71 +4412,36 @@ function WarehouseAndProductsPage() {
               </div>
             </div>
 
-            {/* Card 2: Monitoring Mutasi Global & Tarik Data Kalender */}
-            <div className="border border-border bg-surface p-4 flex flex-col justify-between hover:border-indigo-500/60 hover:shadow-md transition-all">
+            {/* Card 2: Monitoring Mutasi Global (Jumlah Keseluruhan Riwayat Mutasi) */}
+            <div
+              onClick={() => {
+                setTxFilterType("ALL");
+                setTxDateFilter("ALL");
+              }}
+              className="border border-border bg-surface p-4 flex flex-col justify-between cursor-pointer hover:border-indigo-500/60 hover:shadow-md transition-all active:scale-[0.99] group"
+              title="Klik untuk melihat seluruh akumulasi riwayat mutasi di tabel"
+            >
               <div>
-                <div className="flex items-center justify-between text-muted-foreground">
+                <div className="flex items-center justify-between text-muted-foreground group-hover:text-indigo-600 transition-colors">
                   <span className="text-xs font-semibold uppercase tracking-wider text-foreground flex items-center gap-1.5">
-                    <CalendarIcon className="size-3.5 text-indigo-500" />
+                    <CalendarIcon className="size-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
                     Monitoring Mutasi Global
                   </span>
-                  {txDateFilter && (
-                    <Badge
-                      variant="secondary"
-                      className="text-[10px] px-1.5 py-0 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
-                    >
-                      Terfilter
-                    </Badge>
-                  )}
-                </div>
-
-                {/* Input Kalender untuk Tarik Data Tanggal Tertentu */}
-                <div className="mt-2.5 flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <input
-                      type="date"
-                      value={txDateFilter}
-                      onChange={(e) => {
-                        setTxDateFilter(e.target.value);
-                      }}
-                      className="w-full h-8 text-xs px-2.5 py-1 bg-surface-muted/60 border border-input rounded text-foreground focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                      title="Pilih tanggal untuk memonitor & menarik riwayat mutasi"
-                    />
-                  </div>
-                  {txDateFilter ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setTxDateFilter("")}
-                      className="h-8 px-2 text-[11px] text-muted-foreground hover:text-foreground border-dashed"
-                      title="Reset filter tanggal (kembali ke semua mutasi)"
-                    >
-                      <X className="size-3.5 mr-1" />
-                      Reset
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        const todayStr = new Date().toISOString().split("T")[0] || "";
-                        setTxDateFilter(todayStr);
-                      }}
-                      className="h-8 px-2.5 text-[11px] text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
-                      title="Tarik data hari ini"
-                    >
-                      Hari Ini
-                    </Button>
-                  )}
+                  <Badge
+                    variant="secondary"
+                    className="text-[10px] px-1.5 py-0 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
+                  >
+                    Akumulasi Keseluruhan
+                  </Badge>
                 </div>
 
                 <div className="mt-2 flex items-baseline justify-between">
                   <div className="flex items-baseline gap-1.5">
-                    <p className="text-2xl font-bold text-foreground">
+                    <p className="text-2xl font-bold text-foreground group-hover:text-indigo-600 transition-colors">
                       {globalMutasiStats.totalCount}
                     </p>
                     <span className="text-xs text-muted-foreground">
-                      {txDateFilter ? "transaksi pada tanggal ini" : "total akumulasi transaksi"}
+                      total akumulasi transaksi
                     </span>
                   </div>
                 </div>
@@ -4380,7 +4508,7 @@ function WarehouseAndProductsPage() {
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  Semua ({groupedTransactions.length})
+                  Semua ({dateFilteredTransactions.length})
                 </button>
                 <button
                   type="button"
@@ -4393,7 +4521,7 @@ function WarehouseAndProductsPage() {
                   )}
                 >
                   <ArrowDownLeft className="size-3 text-emerald-600" />
-                  Masuk ({groupedTransactions.filter((t) => t.tx_type === "IN").length})
+                  Masuk ({dateFilteredTransactions.filter((t) => t.tx_type === "IN").length})
                 </button>
                 <button
                   type="button"
@@ -4406,7 +4534,7 @@ function WarehouseAndProductsPage() {
                   )}
                 >
                   <ArrowUpRight className="size-3 text-rose-600" />
-                  Keluar ({groupedTransactions.filter((t) => t.tx_type === "OUT").length})
+                  Keluar ({dateFilteredTransactions.filter((t) => t.tx_type === "OUT").length})
                 </button>
               </div>
 
@@ -4415,20 +4543,33 @@ function WarehouseAndProductsPage() {
                 <CalendarIcon className="size-3.5 text-muted-foreground shrink-0" />
                 <input
                   type="date"
-                  value={txDateFilter}
+                  value={txDateFilter === "ALL" ? "" : (txDateFilter || getTodayDateStr())}
                   onChange={(e) => setTxDateFilter(e.target.value)}
                   className="bg-transparent text-xs text-foreground focus:outline-none cursor-pointer"
                   title="Filter riwayat mutasi berdasarkan tanggal"
                 />
-                {txDateFilter && (
+                {txDateFilter === "ALL" ? (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] px-1 py-0 cursor-pointer hover:bg-surface text-indigo-600 dark:text-indigo-400"
+                    onClick={() => setTxDateFilter(getTodayDateStr())}
+                    title="Klik untuk kembali ke filter hari ini"
+                  >
+                    Semua Tanggal
+                  </Badge>
+                ) : txDateFilter && txDateFilter !== getTodayDateStr() ? (
                   <button
                     type="button"
-                    onClick={() => setTxDateFilter("")}
+                    onClick={() => setTxDateFilter(getTodayDateStr())}
                     className="text-muted-foreground hover:text-foreground ml-1"
-                    title="Hapus filter tanggal"
+                    title="Kembali ke mutasi hari ini"
                   >
                     <X className="size-3.5" />
                   </button>
+                ) : (
+                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold px-1">
+                    Hari Ini
+                  </span>
                 )}
               </div>
             </div>
@@ -4444,26 +4585,33 @@ function WarehouseAndProductsPage() {
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <History className="mb-3 size-10 text-muted-foreground/40" />
                 <p className="text-sm font-semibold text-foreground">
-                  {txSearchQuery || txFilterType !== "ALL"
+                  {txSearchQuery ||
+                  txFilterType !== "ALL" ||
+                  (txDateFilter && txDateFilter !== getTodayDateStr())
                     ? "Tidak ada transaksi mutasi yang cocok"
-                    : "Belum ada riwayat transaksi mutasi"}
+                    : "Belum ada riwayat mutasi hari ini"}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground max-w-sm">
-                  {txSearchQuery || txFilterType !== "ALL"
+                  {txSearchQuery ||
+                  txFilterType !== "ALL" ||
+                  (txDateFilter && txDateFilter !== getTodayDateStr())
                     ? "Silakan coba kata kunci pencarian lain atau reset filter transaksi."
-                    : 'Gunakan tombol "Catat Masuk" atau "Catat Keluar" di atas untuk mencatat perpindahan stok.'}
+                    : 'Gunakan tombol "Catat Masuk" atau "Catat Keluar" di atas untuk mencatat perpindahan stok hari ini.'}
                 </p>
-                {(txSearchQuery || txFilterType !== "ALL") && (
+                {(txSearchQuery ||
+                  txFilterType !== "ALL" ||
+                  (txDateFilter && txDateFilter !== getTodayDateStr())) && (
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => {
                       setTxSearchQuery("");
                       setTxFilterType("ALL");
+                      setTxDateFilter(getTodayDateStr());
                     }}
                     className="mt-3 text-xs h-7"
                   >
-                    Reset Filter
+                    Reset Filter (Hari Ini)
                   </Button>
                 )}
               </div>
@@ -4695,6 +4843,17 @@ function WarehouseAndProductsPage() {
                               >
                                 <FileText className="size-3.5 text-blue-500" />
                               </a>
+                            )}
+                            {canDeleteMaster && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                onClick={() => setDeletingTx(tx)}
+                                title="Hapus Riwayat Transaksi Mutasi"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
                             )}
                           </div>
                         </td>
@@ -5094,7 +5253,10 @@ function WarehouseAndProductsPage() {
                       </div>
 
                       {bufferStatusFilter === "ALL" && !bufferSearchQuery && !bufferDateFilter && (
-                        <div className="size-2 rounded-full bg-white animate-pulse" title="Semua data aktif" />
+                        <div
+                          className="size-2 rounded-full bg-white animate-pulse"
+                          title="Semua data aktif"
+                        />
                       )}
                     </div>
 
@@ -5187,7 +5349,10 @@ function WarehouseAndProductsPage() {
                       </div>
 
                       {bufferStatusFilter === "ORDER" && (
-                        <div className="size-2 rounded-full bg-white animate-pulse" title="Filter Order Aktif" />
+                        <div
+                          className="size-2 rounded-full bg-white animate-pulse"
+                          title="Filter Order Aktif"
+                        />
                       )}
                     </div>
 
@@ -5226,7 +5391,10 @@ function WarehouseAndProductsPage() {
                       </div>
 
                       {bufferStatusFilter === "SAFETY" && (
-                        <div className="size-2 rounded-full bg-white animate-pulse" title="Filter Safety Aktif" />
+                        <div
+                          className="size-2 rounded-full bg-white animate-pulse"
+                          title="Filter Safety Aktif"
+                        />
                       )}
                     </div>
 
@@ -5267,7 +5435,10 @@ function WarehouseAndProductsPage() {
                       </div>
 
                       {bufferStatusFilter === "OUT_OF_STOCK" && (
-                        <div className="size-2 rounded-full bg-white animate-pulse" title="Filter Out of Stok Aktif" />
+                        <div
+                          className="size-2 rounded-full bg-white animate-pulse"
+                          title="Filter Out of Stok Aktif"
+                        />
                       )}
                     </div>
 
@@ -5700,7 +5871,7 @@ function WarehouseAndProductsPage() {
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold">Satuan (UoM)</Label>
                     <Select
-                      value={bufferFormData.unit}
+                      value={formatUnit(bufferFormData.unit)}
                       onValueChange={(v) => setBufferFormData({ ...bufferFormData, unit: v })}
                     >
                       <SelectTrigger className="h-9 text-xs">
@@ -5718,6 +5889,15 @@ function WarehouseAndProductsPage() {
                         </SelectItem>
                         <SelectItem value="PCS" className="text-xs">
                           PIECES
+                        </SelectItem>
+                        <SelectItem value="UNT" className="text-xs">
+                          UNIT
+                        </SelectItem>
+                        <SelectItem value="M" className="text-xs">
+                          M
+                        </SelectItem>
+                        <SelectItem value="SET" className="text-xs">
+                          SET
                         </SelectItem>
                       </SelectContent>
                     </Select>
@@ -6243,24 +6423,33 @@ function WarehouseAndProductsPage() {
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold">Satuan (UoM)</Label>
                   <Select
-                    value={editingBufferItem.unit || "Roll"}
+                    value={formatUnit(editingBufferItem.unit || "Roll")}
                     onValueChange={(v) => setEditingBufferItem({ ...editingBufferItem, unit: v })}
                   >
                     <SelectTrigger className="h-9 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Roll" className="text-xs">
-                        Roll
+                      <SelectItem value="RLL" className="text-xs">
+                        ROL
                       </SelectItem>
-                      <SelectItem value="Lmbr" className="text-xs">
-                        Lmbr
+                      <SelectItem value="LEMBAR" className="text-xs">
+                        LBR
                       </SelectItem>
                       <SelectItem value="CAN" className="text-xs">
                         CAN
                       </SelectItem>
                       <SelectItem value="PCS" className="text-xs">
                         PIECES
+                      </SelectItem>
+                      <SelectItem value="UNT" className="text-xs">
+                        UNIT
+                      </SelectItem>
+                      <SelectItem value="M" className="text-xs">
+                        M
+                      </SelectItem>
+                      <SelectItem value="SET" className="text-xs">
+                        SET
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -6505,7 +6694,7 @@ function WarehouseAndProductsPage() {
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold">Satuan (UoM)</Label>
                     <Select
-                      value={formData.unit}
+                      value={formatUnit(formData.unit)}
                       onValueChange={(v) => setFormData({ ...formData, unit: v })}
                     >
                       <SelectTrigger className="h-9 text-xs">
@@ -6513,13 +6702,25 @@ function WarehouseAndProductsPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Roll" className="text-xs">
-                          Roll
+                          ROLL
                         </SelectItem>
-                        <SelectItem value="Lmbr" className="text-xs">
-                          Lmbr
+                        <SelectItem value="Lembar" className="text-xs">
+                          LBR
                         </SelectItem>
                         <SelectItem value="CAN" className="text-xs">
                           CAN
+                        </SelectItem>
+                        <SelectItem value="PCS" className="text-xs">
+                          PIECES
+                        </SelectItem>
+                        <SelectItem value="UNT" className="text-xs">
+                          UNIT
+                        </SelectItem>
+                        <SelectItem value="M" className="text-xs">
+                          M
+                        </SelectItem>
+                        <SelectItem value="SET" className="text-xs">
+                          SET
                         </SelectItem>
                       </SelectContent>
                     </Select>
@@ -6559,24 +6760,70 @@ function WarehouseAndProductsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Batas Minimum Stok</Label>
+                    <div className="flex items-center justify-between">
+                      <Label
+                        className={cn(
+                          "text-xs font-semibold",
+                          !isAdmin && "text-muted-foreground",
+                        )}
+                      >
+                        Batas Minimum Stok{!isAdmin && " (Terkunci)"}
+                      </Label>
+                      {!isAdmin && (
+                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                          (Hanya Admin)
+                        </span>
+                      )}
+                    </div>
                     <Input
                       type="number"
                       value={formData.safe_stock}
                       onChange={(e) => setFormData({ ...formData, safe_stock: e.target.value })}
                       placeholder="1"
-                      className="h-9 text-xs font-mono"
+                      disabled={!isAdmin}
+                      className={cn(
+                        "h-9 text-xs font-mono",
+                        !isAdmin && "bg-muted/40 cursor-not-allowed opacity-80 text-muted-foreground",
+                      )}
+                      title={
+                        !isAdmin
+                          ? "Hanya Admin yang dapat mengubah batas minimum stok"
+                          : undefined
+                      }
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Minimal Stok</Label>
+                    <div className="flex items-center justify-between">
+                      <Label
+                        className={cn(
+                          "text-xs font-semibold",
+                          !isAdmin && "text-muted-foreground",
+                        )}
+                      >
+                        Minimal Stok{!isAdmin && " (Terkunci)"}
+                      </Label>
+                      {!isAdmin && (
+                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                          (Hanya Admin)
+                        </span>
+                      )}
+                    </div>
                     <Input
                       type="number"
                       value={formData.min_stock}
                       onChange={(e) => setFormData({ ...formData, min_stock: e.target.value })}
                       placeholder="10"
-                      className="h-9 text-xs font-mono"
+                      disabled={!isAdmin}
+                      className={cn(
+                        "h-9 text-xs font-mono",
+                        !isAdmin && "bg-muted/40 cursor-not-allowed opacity-80 text-muted-foreground",
+                      )}
+                      title={
+                        !isAdmin
+                          ? "Hanya Admin yang dapat mengubah minimal stok"
+                          : undefined
+                      }
                     />
                   </div>
 
@@ -7032,17 +7279,20 @@ function WarehouseAndProductsPage() {
               <div className="space-y-1.5 col-span-2 sm:col-span-1">
                 <Label>Satuan (UoM)</Label>
                 <Select
-                  value={editingItem.unit || "Roll"}
+                  value={formatUnit(editingItem.unit || "Roll")}
                   onValueChange={(v) => setEditingItem({ ...editingItem, unit: v })}
                 >
                   <SelectTrigger className="h-9">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Roll">Roll</SelectItem>
-                    <SelectItem value="Lmbr">Lmbr</SelectItem>
+                    <SelectItem value="Roll">ROL</SelectItem>
+                    <SelectItem value="Lmbr">LBR</SelectItem>
                     <SelectItem value="CAN">CAN</SelectItem>
-                    <SelectItem value="PCS">Pieces</SelectItem>
+                    <SelectItem value="PCS">PIECES</SelectItem>
+                    <SelectItem value="UNT">UNIT</SelectItem>
+                    <SelectItem value="M">M</SelectItem>
+                    <SelectItem value="SET">SET</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -7300,7 +7550,8 @@ function WarehouseAndProductsPage() {
                   <p className="text-[11px] font-medium text-rose-600 dark:text-rose-400 flex items-center gap-1 mt-1">
                     <CircleAlert className="size-3.5 shrink-0" />
                     <span>
-                      No. PO &ldquo;{txHeader.referenceNo.trim()}&rdquo; sudah ada di riwayat mutasi masuk ({duplicatePoTx.transaction_number}). No. PO tidak boleh sama!
+                      No. PO &ldquo;{txHeader.referenceNo.trim()}&rdquo; sudah ada di riwayat mutasi
+                      masuk ({duplicatePoTx.transaction_number}). No. PO tidak boleh sama!
                     </span>
                   </p>
                 )}
@@ -7376,6 +7627,39 @@ function WarehouseAndProductsPage() {
               onClick={() => deletingItem && deleteProduct.mutate(deletingItem)}
             >
               Ya, Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── MODAL DIALOG: HAPUS TRANSAKSI MUTASI ──────────────────────────────── */}
+      <AlertDialog open={!!deletingTx} onOpenChange={(open) => !open && setDeletingTx(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Riwayat Transaksi Mutasi?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Apakah Anda yakin ingin menghapus transaksi{" "}
+              <strong>&ldquo;{deletingTx?.transaction_number}&rdquo;</strong> (
+              {deletingTx?.tx_type === "IN" ? "Barang Masuk" : "Barang Keluar"})?
+              {deletingTx?.items && deletingTx.items.length > 0 && (
+                <span className="block mt-2 font-mono text-xs text-foreground bg-surface-muted/60 p-2 rounded border border-border">
+                  {deletingTx.items
+                    .map((it) => `${it.product_name} (${it.quantity} ${it.unit})`)
+                    .join(", ")}
+                </span>
+              )}
+              <span className="block mt-2 text-rose-600 dark:text-rose-400 font-medium text-xs">
+                Tindakan ini akan mengembalikan stok barang ke kondisi sebelum transaksi dicatat dan tidak dapat dibatalkan.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deletingTx && deleteTransaction.mutate(deletingTx)}
+            >
+              Ya, Hapus Transaksi
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -7639,14 +7923,14 @@ function WarehouseAndProductsPage() {
                           Min. Stok (Order)
                         </div>
                         <div className="font-mono font-bold text-sm text-rose-600 dark:text-rose-400 mt-0.5">
-                          {minStock} {selectedProduct.unit || "pcs"}
+                          {minStock} {formatUnit(selectedProduct.unit)}
                         </div>
                       </div>
                       <div className="p-2 rounded border border-border bg-surface">
                         <div className="text-[10px] text-muted-foreground">Maks. Stok</div>
                         <div className="font-mono font-bold text-sm text-foreground mt-0.5">
                           {maxStock !== null && !isNaN(maxStock)
-                            ? `${maxStock} ${selectedProduct.unit || "pcs"}`
+                            ? `${maxStock} ${formatUnit(selectedProduct.unit)}`
                             : "—"}
                         </div>
                       </div>
@@ -7658,7 +7942,7 @@ function WarehouseAndProductsPage() {
                       >
                         <div className="text-[10px] font-medium">Stok Saat Ini</div>
                         <div className="font-mono font-bold text-sm mt-0.5">
-                          {current} {selectedProduct.unit || "pcs"}
+                          {current} {formatUnit(selectedProduct.unit)}
                         </div>
                       </div>
                     </div>
