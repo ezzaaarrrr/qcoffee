@@ -20,6 +20,7 @@ export default defineConfig({
     watch: {
       ignored: ["**/.output/**", "**/.vinxi/**", "**/dist/**"],
     },
+    host: true,
   },
   resolve: {
     alias: {

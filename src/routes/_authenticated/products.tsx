@@ -1637,6 +1637,20 @@ function WarehouseAndProductsPage() {
     },
   });
 
+  // Deteksi No. PO Duplikat untuk transaksi masuk
+  const duplicatePoTx = useMemo(() => {
+    if (txType !== "IN" || !txHeader.referenceNo?.trim()) return null;
+    const targetPo = txHeader.referenceNo.trim().toLowerCase();
+    return (
+      transactions.find(
+        (tx) =>
+          tx.tx_type === "IN" &&
+          ((tx.reference_no && tx.reference_no.trim().toLowerCase() === targetPo) ||
+            (tx.batch_number && tx.batch_number.trim().toLowerCase() === targetPo)),
+      ) || null
+    );
+  }, [txType, txHeader.referenceNo, transactions]);
+
   // ── QUERY ACTIVITY LOG ─────────────────────────────────────────────────────────
   const { data: activityLogs = [], isLoading: loadingLogs } = useQuery({
     queryKey: ["warehouse_activity_logs"],
@@ -1989,6 +2003,36 @@ function WarehouseAndProductsPage() {
       const validItems = txItems.filter((it) => it.productId.trim() !== "");
       if (validItems.length === 0) {
         throw new Error("Silakan pilih minimal satu barang");
+      }
+
+      // Validasi No. PO untuk Catat Masuk: Tidak boleh sama/duplikat dengan riwayat masuk sebelumnya
+      if (txType === "IN" && txHeader.referenceNo?.trim()) {
+        const trimmedPo = txHeader.referenceNo.trim();
+        const existingTx = transactions.find(
+          (t) =>
+            t.tx_type === "IN" &&
+            ((t.reference_no && t.reference_no.trim().toLowerCase() === trimmedPo.toLowerCase()) ||
+              (t.batch_number && t.batch_number.trim().toLowerCase() === trimmedPo.toLowerCase())),
+        );
+        if (existingTx) {
+          throw new Error(
+            `No. PO "${trimmedPo}" sudah pernah dicatat sebelumnya (No. Transaksi: ${existingTx.transaction_number})! Transaksi/riwayat mutasi masuk tidak dapat diproses jika No. PO sama.`,
+          );
+        }
+
+        // Cek langsung ke database Supabase
+        const { data: dupData, error: dupErr } = await (supabase as any)
+          .from("warehouse_transactions")
+          .select("id, transaction_number, reference_no")
+          .eq("tx_type", "IN")
+          .ilike("reference_no", trimmedPo)
+          .limit(1);
+
+        if (!dupErr && dupData && dupData.length > 0) {
+          throw new Error(
+            `No. PO "${trimmedPo}" sudah pernah dicatat sebelumnya di database (No. Transaksi: ${dupData[0].transaction_number})! Transaksi/riwayat mutasi masuk tidak dapat diproses jika No. PO sama.`,
+          );
+        }
       }
 
       // Validasi tiap baris
@@ -7234,13 +7278,32 @@ function WarehouseAndProductsPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>{txType === "IN" ? "No. PO / Referensi" : "User"}</Label>
+                <Label className="flex items-center justify-between">
+                  <span>{txType === "IN" ? "No. PO / Referensi" : "User"}</span>
+                  {txType === "IN" && (
+                    <span className="text-[10px] text-muted-foreground font-normal">
+                      (Harus unik / tidak boleh sama)
+                    </span>
+                  )}
+                </Label>
                 <Input
                   value={txHeader.referenceNo}
                   onChange={(e) => setTxHeader({ ...txHeader, referenceNo: e.target.value })}
                   placeholder={txType === "IN" ? "cth. PO-99120" : "cth. Nama Pemohon / User"}
-                  className="h-9 text-xs"
+                  className={cn(
+                    "h-9 text-xs transition-colors",
+                    duplicatePoTx &&
+                      "border-rose-500 focus-visible:ring-rose-500 bg-rose-50/40 dark:bg-rose-950/20 text-rose-900 dark:text-rose-100",
+                  )}
                 />
+                {duplicatePoTx && (
+                  <p className="text-[11px] font-medium text-rose-600 dark:text-rose-400 flex items-center gap-1 mt-1">
+                    <CircleAlert className="size-3.5 shrink-0" />
+                    <span>
+                      No. PO &ldquo;{txHeader.referenceNo.trim()}&rdquo; sudah ada di riwayat mutasi masuk ({duplicatePoTx.transaction_number}). No. PO tidak boleh sama!
+                    </span>
+                  </p>
+                )}
               </div>
             </div>
 
@@ -7274,16 +7337,22 @@ function WarehouseAndProductsPage() {
             </Button>
             <Button
               onClick={() => createTransaction.mutate()}
-              disabled={createTransaction.isPending || txItems.every((it) => !it.productId)}
+              disabled={
+                createTransaction.isPending ||
+                txItems.every((it) => !it.productId) ||
+                Boolean(duplicatePoTx)
+              }
               className={
                 txType === "IN"
-                  ? "bg-emerald-600 hover:bg-emerald-700"
-                  : "bg-rose-600 hover:bg-rose-700"
+                  ? "bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60"
+                  : "bg-rose-600 hover:bg-rose-700 disabled:opacity-60"
               }
             >
               {createTransaction.isPending
                 ? "Menyimpan..."
-                : `Simpan ${txItems.filter((it) => it.productId).length || 1} Barang ${txType === "IN" ? "Masuk" : "Keluar"}`}
+                : Boolean(duplicatePoTx)
+                  ? "No. PO Duplikat (Tidak Dapat Disimpan)"
+                  : `Simpan ${txItems.filter((it) => it.productId).length || 1} Barang ${txType === "IN" ? "Masuk" : "Keluar"}`}
             </Button>
           </DialogFooter>
         </DialogContent>
