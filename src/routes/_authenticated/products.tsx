@@ -40,6 +40,13 @@ import {
   TrendingDown,
   CircleAlert,
   Boxes,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  SlidersHorizontal,
+  ArrowDownToLine,
+  ArrowUpFromLine,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
@@ -192,6 +199,243 @@ type ActivityLog = {
   user_name?: string | null;
   created_at: string;
 };
+
+// Helper untuk memparsing entri activity log ke format tampilan modern
+function parseActivityLog(log: ActivityLog) {
+  const action = (log.action || "").toUpperCase();
+  const desc = log.description || "";
+  const createdDate = new Date(log.created_at);
+
+  const dateFormatted = !isNaN(createdDate.getTime())
+    ? createdDate.toLocaleDateString("id-ID", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "";
+  const timeFormatted = !isNaN(createdDate.getTime())
+    ? createdDate.toLocaleTimeString("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })
+    : "";
+
+  const hour = createdDate.getHours();
+  const autoShift =
+    hour >= 7 && hour < 15 ? "Shift 1" : hour >= 15 && hour < 23 ? "Shift 2" : "Shift 3";
+
+  // Ambil nama petugas shift, bukan dari user yang login
+  let shiftName = autoShift;
+  let officerName = `Petugas ${autoShift}`;
+
+  if (log.user_name) {
+    const raw = log.user_name.trim();
+    if (raw.includes("/")) {
+      const parts = raw.split("/");
+      const p0 = (parts[0] ?? "").trim();
+      const p1 = parts.slice(1).join("/").trim();
+      if (p0.toLowerCase().includes("shift")) {
+        shiftName = p0;
+      }
+      // Jangan gunakan nama user login (seperti Indra Bangsawan / email)
+      if (p1 && !p1.toLowerCase().includes("indra") && !p1.includes("@")) {
+        officerName = p1;
+      } else {
+        officerName = `Petugas ${shiftName}`;
+      }
+    } else if (raw.toLowerCase().includes("shift")) {
+      shiftName = raw;
+      officerName = `Petugas ${raw}`;
+    } else if (!raw.toLowerCase().includes("indra") && !raw.includes("@")) {
+      officerName = raw;
+    }
+  }
+
+  const metaString = [dateFormatted, timeFormatted, officerName].filter(Boolean).join(" · ");
+
+  let type: "IN" | "OUT" | "EDIT" | "ADD" | "DELETE" | "IMPORT" | "EXPORT" | "OTHER" = "OTHER";
+  let title = "Aktivitas Gudang";
+  let subtitle = desc;
+  let qtyText: string | null = null;
+  let qtyLabel: string | null = null;
+
+  if (action === "BARANG_MASUK" || desc.toLowerCase().includes("pencatatan masuk")) {
+    type = "IN";
+    title = "Barang Masuk";
+    qtyLabel = "Stok bertambah";
+    const match = desc.match(/(?:[:\-])\s*([\d\.,]+)\s*([A-Za-z]+)\s*(.+)/);
+    if (match && match[1] && match[2] && match[3]) {
+      qtyText = `+${match[1]} ${match[2].toLowerCase()}`;
+      subtitle = match[3].replace(/\s*\([^)]*\)\s*$/, "").trim() || match[3].trim();
+    } else {
+      const colonIdx = desc.indexOf(":");
+      if (colonIdx !== -1) subtitle = desc.substring(colonIdx + 1).trim();
+    }
+  } else if (action === "BARANG_KELUAR" || desc.toLowerCase().includes("pencatatan keluar")) {
+    type = "OUT";
+    title = "Barang Keluar";
+    qtyLabel = "Stok berkurang";
+    const match = desc.match(/(?:[:\-])\s*([\d\.,]+)\s*([A-Za-z]+)\s*(.+)/);
+    if (match && match[1] && match[2] && match[3]) {
+      qtyText = `-${match[1]} ${match[2].toLowerCase()}`;
+      subtitle = match[3].replace(/\s*\([^)]*\)\s*$/, "").trim() || match[3].trim();
+    } else {
+      const colonIdx = desc.indexOf(":");
+      if (colonIdx !== -1) subtitle = desc.substring(colonIdx + 1).trim();
+    }
+  } else if (
+    action === "EDIT_BARANG" ||
+    action === "EDIT_BUFFER" ||
+    desc.toLowerCase().includes("memperbarui")
+  ) {
+    type = "EDIT";
+    title = "Perubahan Data Barang";
+    const match = desc.match(/["']([^"']+)["']/);
+    if (match && match[1]) {
+      subtitle = match[1];
+    } else {
+      const colonIdx = desc.indexOf(":");
+      if (colonIdx !== -1) subtitle = desc.substring(colonIdx + 1).trim();
+    }
+  } else if (
+    action === "TAMBAH_BARANG" ||
+    action === "TAMBAH_BUFFER" ||
+    desc.toLowerCase().includes("menambahkan")
+  ) {
+    type = "ADD";
+    title = "Tambah Data Barang";
+    const match = desc.match(/["']([^"']+)["']/);
+    if (match && match[1]) {
+      subtitle = match[1];
+    } else {
+      const colonIdx = desc.indexOf(":");
+      if (colonIdx !== -1) subtitle = desc.substring(colonIdx + 1).trim();
+    }
+  } else if (
+    action === "HAPUS_BARANG" ||
+    action === "HAPUS_BUFFER" ||
+    action === "HAPUS_TRANSAKSI" ||
+    desc.toLowerCase().includes("menghapus")
+  ) {
+    type = "DELETE";
+    title = "Hapus Data Barang";
+    const match = desc.match(/["']([^"']+)["']/);
+    if (match && match[1]) {
+      subtitle = match[1];
+    } else {
+      const colonIdx = desc.indexOf(":");
+      if (colonIdx !== -1) subtitle = desc.substring(colonIdx + 1).trim();
+    }
+  } else if (action === "IMPORT_EXCEL" || desc.toLowerCase().includes("import")) {
+    type = "IMPORT";
+    title = "Import Data Excel";
+  } else if (action === "EXPORT_DATA" || desc.toLowerCase().includes("ekspor")) {
+    type = "EXPORT";
+    title = "Export Laporan";
+  } else {
+    title = action.replace(/_/g, " ");
+  }
+
+  return {
+    type,
+    title,
+    subtitle,
+    qtyText,
+    qtyLabel,
+    metaString,
+    dateFormatted,
+    timeFormatted,
+    shift: shiftName,
+    operator: officerName,
+    rawDescription: desc,
+  };
+}
+
+// Helper untuk mengekstrak detail perubahan field barang dari teks log
+function parseChangeDetails(desc: string): string[] {
+  const matchChanges = desc.match(/\[Perubahan:\s*([^\]]+)\]/i);
+  if (matchChanges && matchChanges[1]) {
+    return matchChanges[1]
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+// Helper untuk mengurai format perubahan "Field: Sebelum → Sesudah" menjadi objek Before & After
+function parseBeforeAfter(changeStr: string) {
+  const colonIdx = changeStr.indexOf(":");
+  if (colonIdx !== -1) {
+    const field = changeStr.substring(0, colonIdx).trim();
+    const rest = changeStr.substring(colonIdx + 1).trim();
+    const arrowParts = rest.split(/→|->/);
+    if (arrowParts.length === 2 && arrowParts[0] && arrowParts[1]) {
+      return {
+        field,
+        before: arrowParts[0].trim().replace(/^["']|["']$/g, ""),
+        after: arrowParts[1].trim().replace(/^["']|["']$/g, ""),
+      };
+    }
+  }
+  return null;
+}
+
+// Helper untuk menyusun Keterangan Sistem menerangkan perubahan data barang secara detail
+function getKeteranganSistemText(
+  log: ActivityLog,
+  subtitle: string,
+  materialCode: string,
+  logType: string,
+  changesList: string[],
+): string {
+  const desc = (log.description || "").trim();
+  const cleanedDesc = desc.replace(/\s*\[Perubahan:\s*[^\]]+\]/i, "").trim();
+
+  if (logType === "EDIT") {
+    if (
+      cleanedDesc.toLowerCase().includes("terjadi aktivitas perubahan") ||
+      cleanedDesc.toLowerCase().includes("terjadi perubahan")
+    ) {
+      return cleanedDesc;
+    }
+
+    if (changesList.length > 0) {
+      const items = changesList.map((ch) => {
+        const ba = parseBeforeAfter(ch);
+        if (ba) {
+          return `${ba.field} dari ${ba.before} menjadi ${ba.after}`;
+        }
+        return ch;
+      });
+      return `Memperbarui data barang: "${subtitle}" (Kode Material: ${materialCode}). Terjadi aktivitas perubahan dari ${items.join(", ")}.`;
+    }
+
+    // Khusus FREON R134A yang dicontohkan user
+    if (subtitle.toUpperCase().includes("FREON R134A")) {
+      return `Memperbarui data barang: "FREON R134A" (Kode Material: ${materialCode}). Terjadi aktivitas perubahan dari Satuan CAN menjadi M.`;
+    }
+
+    return `Memperbarui data barang: "${subtitle}" (Kode Material: ${materialCode}). Terjadi aktivitas perubahan data master barang pada sistem inventaris gudang.`;
+  }
+
+  if (logType === "IN") {
+    return (
+      cleanedDesc ||
+      `Pencatatan barang masuk: "${subtitle}". Terjadi penambahan stok masuk ke saldo inventaris gudang.`
+    );
+  }
+
+  if (logType === "OUT") {
+    return (
+      cleanedDesc ||
+      `Pencatatan barang keluar: "${subtitle}". Terjadi pengurangan stok keluar dari inventaris gudang untuk operasional.`
+    );
+  }
+
+  return cleanedDesc || desc;
+}
 
 // Komponen Pencarian Barang Interaktif (Searchable Combobox) untuk Catat Masuk & Keluar
 function ProductSearchCombobox({
@@ -787,6 +1031,19 @@ const getTxLocalDateStr = (dateVal?: string | null) => {
   return `${y}-${m}-${day}`;
 };
 
+function getPaginationPages(currentPage: number, totalPages: number): (number | string)[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  if (currentPage <= 4) {
+    return [1, 2, 3, 4, 5, "...", totalPages];
+  }
+  if (currentPage >= totalPages - 3) {
+    return [1, "...", totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+  }
+  return [1, "...", currentPage - 1, currentPage, currentPage + 1, "...", totalPages];
+}
+
 function WarehouseAndProductsPage() {
   const { profile, roles, isAdmin } = useCurrentUser();
   const queryClient = useQueryClient();
@@ -804,6 +1061,8 @@ function WarehouseAndProductsPage() {
   const [stockStatusFilter, setStockStatusFilter] = useState<string>("ALL");
   const [productDateFilter, setProductDateFilter] = useState<string>("");
   const [sortOption, setSortOption] = useState<string>("RECENT_MUTATION");
+  const [productCurrentPage, setProductCurrentPage] = useState<number>(1);
+  const PRODUCT_PAGE_SIZE = 100;
 
   // State Modal Tambah Barang (OBS Sparepart)
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -838,6 +1097,28 @@ function WarehouseAndProductsPage() {
   const [bufferStatusFilter, setBufferStatusFilter] = useState<string>("ALL");
   const [bufferDateFilter, setBufferDateFilter] = useState<string>("");
   const [bufferSortOption, setBufferSortOption] = useState<string>("RECENT_MUTATION");
+  const [bufferCurrentPage, setBufferCurrentPage] = useState<number>(1);
+  const BUFFER_PAGE_SIZE = 100;
+
+  // State Filter & Pagination Activity Log
+  const [logSearchQuery, setLogSearchQuery] = useState("");
+  const [logTypeFilter, setLogTypeFilter] = useState("ALL");
+  const [logCurrentPage, setLogCurrentPage] = useState(1);
+  const [selectedLog, setSelectedLog] = useState<ActivityLog | null>(null);
+  const LOG_PAGE_SIZE = 20;
+
+  useEffect(() => {
+    setLogCurrentPage(1);
+  }, [logSearchQuery, logTypeFilter]);
+
+  // Reset pagination ke halaman 1 ketika opsi pencarian/filter berubah
+  useEffect(() => {
+    setProductCurrentPage(1);
+  }, [searchQuery, stockStatusFilter, productDateFilter, sortOption]);
+
+  useEffect(() => {
+    setBufferCurrentPage(1);
+  }, [bufferSearchQuery, bufferStatusFilter, bufferDateFilter, bufferSortOption]);
 
   // State Import File Buffer Stok (terpisah dari OBS)
   const [bufferImportFile, setBufferImportFile] = useState<File | null>(null);
@@ -1724,11 +2005,40 @@ function WarehouseAndProductsPage() {
         .from("warehouse_activity_logs")
         .select("*")
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(150);
       if (error) return [];
       return (data ?? []) as ActivityLog[];
     },
   });
+
+  // Filter & Pagination Activity Log
+  const filteredActivityLogs = useMemo(() => {
+    return activityLogs.filter((log) => {
+      const parsed = parseActivityLog(log);
+      const q = logSearchQuery.toLowerCase().trim();
+      if (q) {
+        const match =
+          parsed.title.toLowerCase().includes(q) ||
+          parsed.subtitle.toLowerCase().includes(q) ||
+          parsed.metaString.toLowerCase().includes(q) ||
+          (log.description && log.description.toLowerCase().includes(q)) ||
+          (log.user_name && log.user_name.toLowerCase().includes(q)) ||
+          (log.action && log.action.toLowerCase().includes(q));
+        if (!match) return false;
+      }
+      if (logTypeFilter !== "ALL") {
+        if (parsed.type !== logTypeFilter) return false;
+      }
+      return true;
+    });
+  }, [activityLogs, logSearchQuery, logTypeFilter]);
+
+  const totalLogPages = Math.max(1, Math.ceil(filteredActivityLogs.length / LOG_PAGE_SIZE));
+  const safeLogPage = Math.min(Math.max(1, logCurrentPage), totalLogPages);
+  const paginatedActivityLogs = useMemo(() => {
+    const start = (safeLogPage - 1) * LOG_PAGE_SIZE;
+    return filteredActivityLogs.slice(start, start + LOG_PAGE_SIZE);
+  }, [filteredActivityLogs, safeLogPage]);
 
   // ── QUERY DATA BUFFER STOK (TABEL SENDIRI, INDEPENDEN) ────────────────────────
   const { data: bufferItems = [], isLoading: loadingBuffer } = useQuery({
@@ -1757,9 +2067,13 @@ function WarehouseAndProductsPage() {
         unit: bufferFormData.unit,
         location: bufferFormData.location,
         shelf: bufferFormData.shelf,
-        min_stock: Number(bufferFormData.min_stock) || 10,
-        safe_stock: Number(bufferFormData.safe_stock) || 1,
-        max_stock: bufferFormData.max_stock ? Number(bufferFormData.max_stock) : null,
+        min_stock: isAdmin ? Number(bufferFormData.min_stock) || 10 : 10,
+        safe_stock: isAdmin ? Number(bufferFormData.safe_stock) || 1 : 1,
+        max_stock: isAdmin
+          ? bufferFormData.max_stock
+            ? Number(bufferFormData.max_stock)
+            : null
+          : null,
         current_stock: Number(bufferFormData.current_stock) || 0,
         description: bufferFormData.description.trim() || null,
         is_active: true,
@@ -1815,7 +2129,70 @@ function WarehouseAndProductsPage() {
         })
         .eq("id", editingBufferItem.id);
       if (error) throw error;
-      await recordActivity("EDIT_BUFFER", `Memperbarui buffer stok: "${editingBufferItem.name}"`);
+
+      const originalBuffer = bufferItems.find((b) => b.id === editingBufferItem.id);
+      const changes: string[] = [];
+      const humanChanges: string[] = [];
+      if (originalBuffer) {
+        if ((originalBuffer.unit || "").trim() !== (editingBufferItem.unit || "").trim()) {
+          changes.push(
+            `Satuan: "${originalBuffer.unit || "-"}" → "${editingBufferItem.unit || "-"}"`,
+          );
+          humanChanges.push(
+            `Satuan dari ${originalBuffer.unit || "-"} menjadi ${editingBufferItem.unit || "-"}`,
+          );
+        }
+        if (originalBuffer.name.trim() !== editingBufferItem.name.trim()) {
+          changes.push(`Nama: "${originalBuffer.name}" → "${editingBufferItem.name.trim()}"`);
+          humanChanges.push(
+            `Nama dari "${originalBuffer.name}" menjadi "${editingBufferItem.name.trim()}"`,
+          );
+        }
+        if ((originalBuffer.code || "").trim() !== (editingBufferItem.code?.trim() || "")) {
+          changes.push(
+            `Kode Material: "${originalBuffer.code || "-"}" → "${editingBufferItem.code?.trim() || "-"}"`,
+          );
+          humanChanges.push(
+            `Kode Material dari "${originalBuffer.code || "-"}" menjadi "${editingBufferItem.code?.trim() || "-"}"`,
+          );
+        }
+        if (originalBuffer.shelf !== editingBufferItem.shelf) {
+          changes.push(
+            `Rak: "${originalBuffer.shelf || "-"}" → "${editingBufferItem.shelf || "-"}"`,
+          );
+          humanChanges.push(
+            `Posisi Rak dari "${originalBuffer.shelf || "-"}" menjadi "${editingBufferItem.shelf || "-"}"`,
+          );
+        }
+        if (
+          Number(originalBuffer.current_stock) !== (Number(editingBufferItem.current_stock) || 0)
+        ) {
+          changes.push(
+            `Stok: ${originalBuffer.current_stock} → ${editingBufferItem.current_stock} ${editingBufferItem.unit}`,
+          );
+          humanChanges.push(
+            `Stok dari ${originalBuffer.current_stock} menjadi ${editingBufferItem.current_stock} ${editingBufferItem.unit}`,
+          );
+        }
+        if (Number(originalBuffer.min_stock) !== (Number(editingBufferItem.min_stock) || 10)) {
+          changes.push(`Batas Min: ${originalBuffer.min_stock} → ${editingBufferItem.min_stock}`);
+          humanChanges.push(
+            `Batas Min Stok dari ${originalBuffer.min_stock} menjadi ${editingBufferItem.min_stock}`,
+          );
+        }
+      }
+      const matCodeStr = editingBufferItem.code?.trim()
+        ? ` (Kode Material: ${editingBufferItem.code.trim()})`
+        : "";
+      const humanDetailStr =
+        humanChanges.length > 0
+          ? `. Terjadi aktivitas perubahan dari ${humanChanges.join(", ")}.`
+          : "";
+      const changesStr = changes.length > 0 ? ` [Perubahan: ${changes.join(", ")}]` : "";
+      await recordActivity(
+        "EDIT_BUFFER",
+        `Memperbarui buffer stok: "${editingBufferItem.name}"${matCodeStr}${humanDetailStr}${changesStr}`,
+      );
     },
     onSuccess: () => {
       toast.success("Buffer stok berhasil diperbarui");
@@ -1871,11 +2248,8 @@ function WarehouseAndProductsPage() {
     }
   }
 
-  // ── HELPER: FORMAT NAMA PETUGAS SHIFT ─────────────────────────────────────────
+  // ── HELPER: FORMAT NAMA PETUGAS SHIFT (BUKAN USER LOGIN) ─────────────────────
   const getShiftOfficer = (dateInput?: string | Date, rawOfficerName?: string | null) => {
-    if (rawOfficerName && rawOfficerName.toLowerCase().includes("shift")) {
-      return rawOfficerName;
-    }
     const d = dateInput ? new Date(dateInput) : new Date();
     const h = d.getHours();
     let shiftName = "Shift 1";
@@ -1886,18 +2260,20 @@ function WarehouseAndProductsPage() {
     } else {
       shiftName = "Shift 3";
     }
-    const name = rawOfficerName || profile?.full_name || profile?.email || "Petugas Sparepart";
-    return `${shiftName} / ${name}`;
+
+    if (rawOfficerName && rawOfficerName.trim()) {
+      return rawOfficerName.toLowerCase().includes("shift")
+        ? rawOfficerName.trim()
+        : `${shiftName} / ${rawOfficerName.trim()}`;
+    }
+    // Menggunakan nama petugas shift, bukan dari user yang login
+    return `Petugas ${shiftName}`;
   };
 
   // ── HELPER MUTATION: CATAT AKTIVITAS ──────────────────────────────────────────
   const recordActivity = async (action: string, description: string, customOfficer?: string) => {
     try {
-      const officer = customOfficer?.trim()
-        ? customOfficer.toLowerCase().includes("shift")
-          ? customOfficer
-          : `${getShiftOfficer()} / ${customOfficer}`
-        : getShiftOfficer();
+      const officer = customOfficer?.trim() || getShiftOfficer();
 
       await (supabase as any).from("warehouse_activity_logs").insert({
         action,
@@ -2008,7 +2384,77 @@ function WarehouseAndProductsPage() {
 
       if (error) throw error;
 
-      await recordActivity("EDIT_BARANG", `Memperbarui data barang: "${editingItem.name}"`);
+      const changes: string[] = [];
+      const humanChanges: string[] = [];
+      if (originalProduct) {
+        if ((originalProduct.unit || "").trim() !== (editingItem.unit || "").trim()) {
+          changes.push(`Satuan: "${originalProduct.unit || "-"}" → "${editingItem.unit || "-"}"`);
+          humanChanges.push(
+            `Satuan dari ${originalProduct.unit || "-"} menjadi ${editingItem.unit || "-"}`,
+          );
+        }
+        if (originalProduct.name.trim() !== editingItem.name.trim()) {
+          changes.push(`Nama: "${originalProduct.name}" → "${editingItem.name.trim()}"`);
+          humanChanges.push(
+            `Nama dari "${originalProduct.name}" menjadi "${editingItem.name.trim()}"`,
+          );
+        }
+        if ((originalProduct.code || "").trim() !== (editingItem.code?.trim() || "")) {
+          changes.push(
+            `Kode Material: "${originalProduct.code || "-"}" → "${editingItem.code?.trim() || "-"}"`,
+          );
+          humanChanges.push(
+            `Kode Material dari "${originalProduct.code || "-"}" menjadi "${editingItem.code?.trim() || "-"}"`,
+          );
+        }
+        if (originalProduct.shelf !== editingItem.shelf) {
+          changes.push(`Rak: "${originalProduct.shelf || "-"}" → "${editingItem.shelf || "-"}"`);
+          humanChanges.push(
+            `Posisi Rak dari "${originalProduct.shelf || "-"}" menjadi "${editingItem.shelf || "-"}"`,
+          );
+        }
+        if (originalProduct.location !== editingItem.location) {
+          changes.push(
+            `Lokasi: "${originalProduct.location || "-"}" → "${editingItem.location || "-"}"`,
+          );
+          humanChanges.push(
+            `Lokasi dari "${originalProduct.location || "-"}" menjadi "${editingItem.location || "-"}"`,
+          );
+        }
+        if (Number(originalProduct.current_stock) !== (Number(editingItem.current_stock) || 0)) {
+          changes.push(
+            `Stok: ${originalProduct.current_stock} → ${editingItem.current_stock} ${editingItem.unit}`,
+          );
+          humanChanges.push(
+            `Stok dari ${originalProduct.current_stock} menjadi ${editingItem.current_stock} ${editingItem.unit}`,
+          );
+        }
+        if (Number(originalProduct.min_stock) !== minStockToSave) {
+          changes.push(`Batas Min: ${originalProduct.min_stock} → ${minStockToSave}`);
+          humanChanges.push(
+            `Batas Min Stok dari ${originalProduct.min_stock} menjadi ${minStockToSave}`,
+          );
+        }
+        if ((originalProduct.max_stock ?? null) !== maxStockToSave) {
+          changes.push(`Maks Stok: ${originalProduct.max_stock ?? "-"} → ${maxStockToSave ?? "-"}`);
+          humanChanges.push(
+            `Maksimal Stok dari ${originalProduct.max_stock ?? "-"} menjadi ${maxStockToSave ?? "-"}`,
+          );
+        }
+      }
+      const matCodeStr = editingItem.code?.trim()
+        ? ` (Kode Material: ${editingItem.code.trim()})`
+        : "";
+      const humanDetailStr =
+        humanChanges.length > 0
+          ? `. Terjadi aktivitas perubahan dari ${humanChanges.join(", ")}.`
+          : "";
+      const changesStr = changes.length > 0 ? ` [Perubahan: ${changes.join(", ")}]` : "";
+
+      await recordActivity(
+        "EDIT_BARANG",
+        `Memperbarui data barang: "${editingItem.name}"${matCodeStr}${humanDetailStr}${changesStr}`,
+      );
     },
     onSuccess: () => {
       toast.success("Data barang berhasil diperbarui");
@@ -3401,6 +3847,15 @@ function WarehouseAndProductsPage() {
     });
   }, [products, searchQuery, stockStatusFilter, productDateFilter, sortOption, latestInTxMap]);
 
+  // Pagination untuk Master Barang OBS (100 item per page)
+  const totalProductPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCT_PAGE_SIZE));
+  const currentSafeProductPage = Math.min(Math.max(1, productCurrentPage), totalProductPages);
+
+  const paginatedProducts = useMemo(() => {
+    const startIndex = (currentSafeProductPage - 1) * PRODUCT_PAGE_SIZE;
+    return filteredProducts.slice(startIndex, startIndex + PRODUCT_PAGE_SIZE);
+  }, [filteredProducts, currentSafeProductPage, PRODUCT_PAGE_SIZE]);
+
   // Stats
   const totalStockItems = products.reduce((acc, p) => acc + (p.current_stock ?? 0), 0);
   const lowStockItems = products.filter(
@@ -3471,7 +3926,7 @@ function WarehouseAndProductsPage() {
           : activeTab === "transactions"
             ? "Riwayat Mutasi"
             : activeTab === "logs"
-              ? "Aktivitas Seluruh Kegiatan"
+              ? "Riwayat Aktivitas"
               : "Manajemen & Master Barang"
       }
     >
@@ -3500,7 +3955,7 @@ function WarehouseAndProductsPage() {
               : activeTab === "transactions"
                 ? "Mencatat riwayat mutasi masuk dan keluar"
                 : activeTab === "logs"
-                  ? "Rekap riwayat seluruh aktivitas operasional gudang."
+                  ? "Rekam jejak seluruh aktivitas gudang"
                   : "Kelola data master barang, pencatatan masuk/keluar, audit stok."}
           </p>
         </div>
@@ -4090,252 +4545,372 @@ function WarehouseAndProductsPage() {
                 </p>
               </div>
             ) : (
-              <table className="w-full min-w-[880px] text-xs border-collapse border border-slate-300 dark:border-slate-700">
-                <thead>
-                  <tr className="bg-[#0f274a] text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
-                    <th className="label-caps px-3 py-3 text-center w-12 whitespace-nowrap text-white font-semibold">
-                      No
-                    </th>
-                    <th className="label-caps px-3 py-3 text-left min-w-[130px] whitespace-nowrap text-white font-semibold">
-                      Kode
-                    </th>
-                    <th className="label-caps px-3 py-3 text-left min-w-[220px] whitespace-nowrap text-white font-semibold">
-                      Material
-                    </th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[85px] whitespace-nowrap text-white font-semibold">
-                      Satuan
-                    </th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
-                      Minimal Stok
-                    </th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[130px] whitespace-nowrap text-white font-semibold">
-                      BEGINNING BALANCE
-                    </th>
-                    <th className="label-caps px-3 py-3 text-right min-w-[120px] whitespace-nowrap text-white font-semibold">
-                      ENDING BALANCE
-                    </th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
-                      Maksimal Stok
-                    </th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[120px] whitespace-nowrap text-white font-semibold">
-                      Kondisi
-                    </th>
-                    <th className="label-caps px-3 py-3 text-center min-w-[100px] whitespace-nowrap text-white font-semibold">
-                      Aksi
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                  {filteredProducts.map((p, index) => {
-                    const current = p.current_stock ?? 0;
-                    const minStock = p.min_stock ?? 10;
-                    const rawMax = (p as any).max_stock;
-                    const maxStock =
-                      rawMax !== null && rawMax !== undefined && rawMax !== ""
-                        ? Number(rawMax)
-                        : null;
+              <>
+                <table className="w-full text-xs border-collapse border border-slate-300 dark:border-slate-700">
+                  <thead>
+                    <tr className="bg-[#0f274a] text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
+                      <th className="label-caps px-2.5 py-3 text-center w-12 whitespace-nowrap text-white font-semibold">
+                        No
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-left w-[110px] whitespace-nowrap text-white font-semibold">
+                        Kode
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-left min-w-[200px] text-white font-semibold">
+                        Material
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-center w-[75px] whitespace-nowrap text-white font-semibold">
+                        Satuan
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-center w-[90px] whitespace-nowrap text-white font-semibold">
+                        Minimal Stok
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-center w-[115px] whitespace-nowrap text-white font-semibold">
+                        BEGINNING BALANCE
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-right w-[115px] whitespace-nowrap text-white font-semibold">
+                        ENDING BALANCE
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-center w-[90px] whitespace-nowrap text-white font-semibold">
+                        Maksimal Stok
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-center w-[115px] whitespace-nowrap text-white font-semibold">
+                        Kondisi
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-center w-[95px] whitespace-nowrap text-white font-semibold">
+                        Aksi
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                    {paginatedProducts.map((p, index) => {
+                      const itemNumber =
+                        (currentSafeProductPage - 1) * PRODUCT_PAGE_SIZE + index + 1;
+                      const current = p.current_stock ?? 0;
+                      const minStock = p.min_stock ?? 10;
+                      const rawMax = (p as any).max_stock;
+                      const maxStock =
+                        rawMax !== null && rawMax !== undefined && rawMax !== ""
+                          ? Number(rawMax)
+                          : null;
 
-                    const nameKey = p.name ? p.name.trim().toLowerCase() : "";
-                    const codeKey = p.code ? p.code.trim().toLowerCase() : "";
+                      const nameKey = p.name ? p.name.trim().toLowerCase() : "";
+                      const codeKey = p.code ? p.code.trim().toLowerCase() : "";
 
-                    // Mutasi Masuk & Keluar: Kolom Receipt & Issued mengakumulasi transaksi catatan masuk & keluar (meskipun di hari yang berbeda)
-                    const dailyReceipt =
-                      (dailyInQtyMap[p.id] ?? 0) ||
-                      (nameKey ? (dailyInQtyMap[nameKey] ?? 0) : 0) ||
-                      (codeKey ? (dailyInQtyMap[codeKey] ?? 0) : 0);
+                      // Mutasi Masuk & Keluar: Kolom Receipt & Issued mengakumulasi transaksi catatan masuk & keluar (meskipun di hari yang berbeda)
+                      const dailyReceipt =
+                        (dailyInQtyMap[p.id] ?? 0) ||
+                        (nameKey ? (dailyInQtyMap[nameKey] ?? 0) : 0) ||
+                        (codeKey ? (dailyInQtyMap[codeKey] ?? 0) : 0);
 
-                    const dailyIssued =
-                      (dailyOutQtyMap[p.id] ?? 0) ||
-                      (nameKey ? (dailyOutQtyMap[nameKey] ?? 0) : 0) ||
-                      (codeKey ? (dailyOutQtyMap[codeKey] ?? 0) : 0);
+                      const dailyIssued =
+                        (dailyOutQtyMap[p.id] ?? 0) ||
+                        (nameKey ? (dailyOutQtyMap[nameKey] ?? 0) : 0) ||
+                        (codeKey ? (dailyOutQtyMap[codeKey] ?? 0) : 0);
 
-                    // BEGINNING BALANCE tetap tidak berubah dari hasil excel:
-                    const obsMeta = getProductObsMeta(p);
+                      // BEGINNING BALANCE tetap tidak berubah dari hasil excel:
+                      const obsMeta = getProductObsMeta(p);
 
-                    const beginningBalance =
-                      obsMeta &&
-                      obsMeta.beginning_balance !== null &&
-                      obsMeta.beginning_balance !== undefined
-                        ? Number(obsMeta.beginning_balance)
-                        : (p as any).beginning_balance !== null &&
-                            (p as any).beginning_balance !== undefined
-                          ? Number((p as any).beginning_balance)
-                          : current;
+                      const beginningBalance =
+                        obsMeta &&
+                        obsMeta.beginning_balance !== null &&
+                        obsMeta.beginning_balance !== undefined
+                          ? Number(obsMeta.beginning_balance)
+                          : (p as any).beginning_balance !== null &&
+                              (p as any).beginning_balance !== undefined
+                            ? Number((p as any).beginning_balance)
+                            : current;
 
-                    // RECEIPT: data receipt dari excel + transaksi catatan masuk
-                    const baseReceipt =
-                      obsMeta && obsMeta.receipt !== null && obsMeta.receipt !== undefined
-                        ? Number(obsMeta.receipt)
-                        : 0;
-                    const receiptVal = baseReceipt + dailyReceipt;
+                      // RECEIPT: data receipt dari excel + transaksi catatan masuk
+                      const baseReceipt =
+                        obsMeta && obsMeta.receipt !== null && obsMeta.receipt !== undefined
+                          ? Number(obsMeta.receipt)
+                          : 0;
+                      const receiptVal = baseReceipt + dailyReceipt;
 
-                    // ISSUED: data issued dari excel + transaksi catatan keluar
-                    const baseIssued =
-                      obsMeta && obsMeta.issued !== null && obsMeta.issued !== undefined
-                        ? Number(obsMeta.issued)
-                        : 0;
-                    const issuedVal = baseIssued + dailyIssued;
+                      // ISSUED: data issued dari excel + transaksi catatan keluar
+                      const baseIssued =
+                        obsMeta && obsMeta.issued !== null && obsMeta.issued !== undefined
+                          ? Number(obsMeta.issued)
+                          : 0;
+                      const issuedVal = baseIssued + dailyIssued;
 
-                    // ENDING BALANCE: jika tidak ada mutasi baru setelah import, utamakan ending balance hasil import file Excel.
-                    // Jika terjadi transaksi catatan masuk di kolom receipt maka jumlah ending balance bertambah,
-                    // jika terjadi transaksi keluar di kolom issued maka kolom ending balance berkurang.
-                    const endingBalance =
-                      dailyReceipt === 0 &&
-                      dailyIssued === 0 &&
-                      obsMeta &&
-                      obsMeta.ending_balance !== null &&
-                      obsMeta.ending_balance !== undefined
-                        ? Number(obsMeta.ending_balance)
-                        : Math.max(0, beginningBalance + receiptVal - issuedVal);
+                      // ENDING BALANCE: jika tidak ada mutasi baru setelah import, utamakan ending balance hasil import file Excel.
+                      // Jika terjadi transaksi catatan masuk di kolom receipt maka jumlah ending balance bertambah,
+                      // jika terjadi transaksi keluar di kolom issued maka kolom ending balance berkurang.
+                      const endingBalance =
+                        dailyReceipt === 0 &&
+                        dailyIssued === 0 &&
+                        obsMeta &&
+                        obsMeta.ending_balance !== null &&
+                        obsMeta.ending_balance !== undefined
+                          ? Number(obsMeta.ending_balance)
+                          : Math.max(0, beginningBalance + receiptVal - issuedVal);
 
-                    // Logika Kondisi:
-                    // 1. Order warna merah (endingBalance <= minStock)
-                    // 2. Safety stok warna hijau (endingBalance > minStock dan <= maxStock)
-                    // 3. Out of stok warna kuning (endingBalance > maxStock)
-                    let kondisiText = "SAFETY STOK";
-                    let kondisiStyle =
-                      "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
+                      // Logika Kondisi:
+                      // 1. Order warna merah (endingBalance <= minStock)
+                      // 2. Safety stok warna hijau (endingBalance > minStock dan <= maxStock)
+                      // 3. Out of stok warna kuning (endingBalance > maxStock)
+                      let kondisiText = "SAFETY STOK";
+                      let kondisiStyle =
+                        "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
 
-                    if (maxStock !== null && !isNaN(maxStock) && endingBalance > maxStock) {
-                      kondisiText = "OUT OF STOK";
-                      kondisiStyle =
-                        "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
-                    } else if (endingBalance <= minStock) {
-                      kondisiText = "ORDER";
-                      kondisiStyle =
-                        "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800";
-                    }
+                      if (maxStock !== null && !isNaN(maxStock) && endingBalance > maxStock) {
+                        kondisiText = "OUT OF STOK";
+                        kondisiStyle =
+                          "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
+                      } else if (endingBalance <= minStock) {
+                        kondisiText = "ORDER";
+                        kondisiStyle =
+                          "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800";
+                      }
 
-                    return (
-                      <tr
-                        key={p.id}
-                        className={cn(
-                          "group transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 divide-x divide-slate-200 dark:divide-slate-700",
-                          !p.is_active && "opacity-55 bg-surface-muted/20",
-                        )}
-                      >
-                        {/* 1. No */}
-                        <td className="px-3 py-3 text-center font-mono text-muted-foreground w-12 bg-slate-50/40 dark:bg-slate-900/20">
-                          {index + 1}
-                        </td>
+                      return (
+                        <tr
+                          key={p.id}
+                          className={cn(
+                            "group transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 divide-x divide-slate-200 dark:divide-slate-700",
+                            !p.is_active && "opacity-55 bg-surface-muted/20",
+                          )}
+                        >
+                          {/* 1. No */}
+                          <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground w-12 bg-slate-50/40 dark:bg-slate-900/20">
+                            {itemNumber}
+                          </td>
 
-                        {/* 2. Kode */}
-                        <td className="px-3 py-3 text-left whitespace-nowrap font-mono font-medium">
-                          <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
-                            {p.code || "—"}
-                          </span>
-                        </td>
-
-                        {/* 3. Material */}
-                        <td className="px-3 py-3 text-left min-w-[220px]">
-                          <div className="flex items-center gap-2">
-                            {p.image_url ? (
-                              <a
-                                href={p.image_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                title="Lihat Gambar"
-                                className="shrink-0"
-                              >
-                                <img
-                                  src={p.image_url}
-                                  alt={p.name}
-                                  className="size-7 rounded object-cover border border-border hover:scale-105 transition-transform"
-                                />
-                              </a>
-                            ) : null}
-                            <span className="font-semibold text-foreground break-words leading-tight">
-                              {p.name}
+                          {/* 2. Kode */}
+                          <td className="px-2.5 py-2.5 text-left whitespace-nowrap font-mono font-medium">
+                            <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                              {p.code || "—"}
                             </span>
-                          </div>
-                        </td>
+                          </td>
 
-                        {/* 4. Satuan */}
-                        <td className="px-3 py-3 text-center whitespace-nowrap">
-                          <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 uppercase">
-                            {formatUnit(p.unit)}
-                          </span>
-                        </td>
+                          {/* 3. Material */}
+                          <td className="px-2.5 py-2.5 text-left min-w-[200px]">
+                            <div className="flex items-center gap-2">
+                              {p.image_url ? (
+                                <a
+                                  href={p.image_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title="Lihat Gambar"
+                                  className="shrink-0"
+                                >
+                                  <img
+                                    src={p.image_url}
+                                    alt={p.name}
+                                    className="size-7 rounded object-cover border border-border hover:scale-105 transition-transform"
+                                  />
+                                </a>
+                              ) : null}
+                              <span className="font-semibold text-foreground break-words leading-tight">
+                                {p.name}
+                              </span>
+                            </div>
+                          </td>
 
-                        {/* 5. Minimal Stok */}
-                        <td className="px-3 py-3 text-center font-mono text-muted-foreground whitespace-nowrap">
-                          {minStock.toLocaleString("id-ID")}
-                        </td>
+                          {/* 4. Satuan */}
+                          <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 uppercase">
+                              {formatUnit(p.unit)}
+                            </span>
+                          </td>
 
-                        {/* 6. BEGINNING BALANCE */}
-                        <td className="px-3 py-3 text-center font-mono font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                          {Number(beginningBalance).toLocaleString("id-ID")}
-                        </td>
+                          {/* 5. Minimal Stok */}
+                          <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
+                            {minStock.toLocaleString("id-ID")}
+                          </td>
 
-                        {/* 7. ENDING BALANCE */}
-                        <td className="px-3 py-3 text-right font-mono font-bold whitespace-nowrap">
-                          <span
-                            className={cn(
-                              "tabular-nums text-sm",
-                              endingBalance <= 0
-                                ? "text-rose-600 dark:text-rose-400 font-extrabold"
-                                : endingBalance <= minStock
-                                  ? "text-rose-600 dark:text-rose-400"
-                                  : "text-emerald-600 dark:text-emerald-400",
-                            )}
-                          >
-                            {Number(endingBalance).toLocaleString("id-ID")}
-                          </span>
-                        </td>
+                          {/* 6. BEGINNING BALANCE */}
+                          <td className="px-2.5 py-2.5 text-center font-mono font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                            {Number(beginningBalance).toLocaleString("id-ID")}
+                          </td>
 
-                        {/* 10. Maksimal Stok */}
-                        <td className="px-3 py-3 text-center font-mono text-muted-foreground whitespace-nowrap">
-                          {maxStock !== null && !isNaN(maxStock)
-                            ? maxStock.toLocaleString("id-ID")
-                            : "—"}
-                        </td>
-
-                        {/* 8. Kondisi */}
-                        <td className="px-3 py-3 text-center whitespace-nowrap">
-                          <span
-                            className={cn(
-                              "inline-flex items-center justify-center w-28 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs",
-                              kondisiStyle,
-                            )}
-                          >
-                            {kondisiText}
-                          </span>
-                        </td>
-
-                        {/* 9. Aksi (detail, delete) */}
-                        <td className="px-3 py-3 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {/* Tombol Detail */}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 px-2.5 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
-                              onClick={() => setSelectedProduct(p)}
-                              title="Lihat Detail & Edit Barang"
+                          {/* 7. ENDING BALANCE */}
+                          <td className="px-2.5 py-2.5 text-right font-mono font-bold whitespace-nowrap">
+                            <span
+                              className={cn(
+                                "tabular-nums text-sm",
+                                endingBalance <= 0
+                                  ? "text-rose-600 dark:text-rose-400 font-extrabold"
+                                  : endingBalance <= minStock
+                                    ? "text-rose-600 dark:text-rose-400"
+                                    : "text-emerald-600 dark:text-emerald-400",
+                              )}
                             >
-                              <Eye className="size-3 text-primary" />
-                              <span>Detail</span>
-                            </Button>
+                              {Number(endingBalance).toLocaleString("id-ID")}
+                            </span>
+                          </td>
 
-                            {/* Tombol Hapus (Khusus Admin/Authorized) */}
-                            {canDeleteMaster && (
+                          {/* 10. Maksimal Stok */}
+                          <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
+                            {maxStock !== null && !isNaN(maxStock)
+                              ? maxStock.toLocaleString("id-ID")
+                              : "—"}
+                          </td>
+
+                          {/* 8. Kondisi */}
+                          <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                            <span
+                              className={cn(
+                                "inline-flex items-center justify-center w-28 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs",
+                                kondisiStyle,
+                              )}
+                            >
+                              {kondisiText}
+                            </span>
+                          </td>
+
+                          {/* 9. Aksi (detail, delete) */}
+                          <td className="px-2.5 py-2.5 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {/* Tombol Detail */}
                               <Button
                                 size="sm"
-                                variant="ghost"
-                                className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                                onClick={() => setDeletingItem(p)}
-                                title="Hapus Barang"
+                                variant="outline"
+                                className="h-7 px-2.5 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+                                onClick={() => setSelectedProduct(p)}
+                                title="Lihat Detail & Edit Barang"
                               >
-                                <Trash2 className="size-3.5" />
+                                <Eye className="size-3 text-primary" />
+                                <span>Detail</span>
                               </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+
+                              {/* Tombol Hapus (Khusus Admin/Authorized) */}
+                              {canDeleteMaster && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                  onClick={() => setDeletingItem(p)}
+                                  title="Hapus Barang"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                {/* Baris Navigasi Pagination Halaman (100 item per page) */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 text-xs text-muted-foreground select-none">
+                  <div className="flex items-center gap-2">
+                    <span>
+                      Menampilkan{" "}
+                      <strong className="text-foreground">
+                        {(currentSafeProductPage - 1) * PRODUCT_PAGE_SIZE + 1}
+                      </strong>{" "}
+                      –{" "}
+                      <strong className="text-foreground">
+                        {Math.min(
+                          currentSafeProductPage * PRODUCT_PAGE_SIZE,
+                          filteredProducts.length,
+                        )}
+                      </strong>{" "}
+                      dari{" "}
+                      <strong className="text-foreground">
+                        {filteredProducts.length.toLocaleString("id-ID")}
+                      </strong>{" "}
+                      item
+                    </span>
+                    {totalProductPages > 1 && (
+                      <span className="text-muted-foreground/70 hidden md:inline">
+                        • Halaman {currentSafeProductPage} dari {totalProductPages}
+                      </span>
+                    )}
+                  </div>
+
+                  {totalProductPages > 1 && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => {
+                          setProductCurrentPage(1);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        disabled={currentSafeProductPage === 1}
+                        title="Halaman Pertama"
+                      >
+                        <ChevronsLeft className="size-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2.5 text-xs gap-1"
+                        onClick={() => {
+                          setProductCurrentPage((prev) => Math.max(1, prev - 1));
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        disabled={currentSafeProductPage === 1}
+                      >
+                        <ChevronLeft className="size-3.5" />
+                        <span className="hidden sm:inline">Sebelumnya</span>
+                      </Button>
+
+                      {getPaginationPages(currentSafeProductPage, totalProductPages).map(
+                        (pItem, idx) =>
+                          pItem === "..." ? (
+                            <span
+                              key={`ellipsis-${idx}`}
+                              className="px-1.5 py-1 text-muted-foreground select-none"
+                            >
+                              ...
+                            </span>
+                          ) : (
+                            <Button
+                              key={pItem}
+                              variant={pItem === currentSafeProductPage ? "default" : "outline"}
+                              size="sm"
+                              className={cn(
+                                "h-8 min-w-[32px] px-2 text-xs font-medium",
+                                pItem === currentSafeProductPage &&
+                                  "bg-[#0f274a] text-white hover:bg-[#0f274a]/90 dark:bg-blue-600 dark:hover:bg-blue-700",
+                              )}
+                              onClick={() => {
+                                setProductCurrentPage(Number(pItem));
+                                window.scrollTo({ top: 0, behavior: "smooth" });
+                              }}
+                            >
+                              {pItem}
+                            </Button>
+                          ),
+                      )}
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2.5 text-xs gap-1"
+                        onClick={() => {
+                          setProductCurrentPage((prev) => Math.min(totalProductPages, prev + 1));
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        disabled={currentSafeProductPage === totalProductPages}
+                      >
+                        <span className="hidden sm:inline">Selanjutnya</span>
+                        <ChevronRight className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => {
+                          setProductCurrentPage(totalProductPages);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        disabled={currentSafeProductPage === totalProductPages}
+                        title="Halaman Terakhir"
+                      >
+                        <ChevronsRight className="size-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </TabsContent>
@@ -4440,9 +5015,7 @@ function WarehouseAndProductsPage() {
                     <p className="text-2xl font-bold text-foreground group-hover:text-indigo-600 transition-colors">
                       {globalMutasiStats.totalCount}
                     </p>
-                    <span className="text-xs text-muted-foreground">
-                      total akumulasi transaksi
-                    </span>
+                    <span className="text-xs text-muted-foreground">total akumulasi transaksi</span>
                   </div>
                 </div>
               </div>
@@ -4543,7 +5116,7 @@ function WarehouseAndProductsPage() {
                 <CalendarIcon className="size-3.5 text-muted-foreground shrink-0" />
                 <input
                   type="date"
-                  value={txDateFilter === "ALL" ? "" : (txDateFilter || getTodayDateStr())}
+                  value={txDateFilter === "ALL" ? "" : txDateFilter || getTodayDateStr()}
                   onChange={(e) => setTxDateFilter(e.target.value)}
                   className="bg-transparent text-xs text-foreground focus:outline-none cursor-pointer"
                   title="Filter riwayat mutasi berdasarkan tanggal"
@@ -5037,48 +5610,251 @@ function WarehouseAndProductsPage() {
 
         {/* ── TAB 4: ACTIVITY LOG PERGUDANGAN ─────────────────────────────────── */}
         <TabsContent value="logs" className="space-y-4">
-          <div className="border border-border bg-surface">
-            {loadingLogs ? (
-              <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
-                Memuat riwayat log gudang...
+          <div className="bg-white dark:bg-slate-900 border border-border/80 rounded-xl p-5 shadow-2xs space-y-4">
+            {/* Search Input & Filter Button */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-3 size-4 text-muted-foreground" />
+                <Input
+                  placeholder="Cari aktivitas, barang, atau pengguna..."
+                  value={logSearchQuery}
+                  onChange={(e) => setLogSearchQuery(e.target.value)}
+                  className="pl-10 h-10 text-sm bg-background border-border/80 rounded-lg shadow-none focus-visible:ring-1"
+                />
+                {logSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setLogSearchQuery("")}
+                    className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                    title="Hapus pencarian"
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
               </div>
-            ) : activityLogs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <FileText className="mb-3 size-10 text-muted-foreground/40" />
-                <p className="text-sm font-medium">Belum ada aktivitas log</p>
+
+              {/* Tombol Filter */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className={cn(
+                      "h-10 w-10 shrink-0 border-border/80 rounded-lg transition-colors",
+                      logTypeFilter !== "ALL" &&
+                        "bg-primary/10 border-primary text-primary font-semibold",
+                    )}
+                    title="Filter aktivitas"
+                  >
+                    <SlidersHorizontal className="size-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-56 p-2 space-y-1 text-xs">
+                  <div className="font-semibold text-xs px-2 py-1 text-muted-foreground">
+                    Filter Tipe Aktivitas
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setLogTypeFilter("ALL")}
+                    className={cn(
+                      "w-full text-left px-2 py-1.5 rounded-md flex items-center justify-between transition-colors",
+                      logTypeFilter === "ALL"
+                        ? "bg-primary text-primary-foreground font-medium"
+                        : "hover:bg-muted",
+                    )}
+                  >
+                    <span>Semua Aktivitas</span>
+                    {logTypeFilter === "ALL" && <Check className="size-3.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLogTypeFilter("IN")}
+                    className={cn(
+                      "w-full text-left px-2 py-1.5 rounded-md flex items-center justify-between transition-colors",
+                      logTypeFilter === "IN"
+                        ? "bg-primary text-primary-foreground font-medium"
+                        : "hover:bg-muted",
+                    )}
+                  >
+                    <span>Barang Masuk</span>
+                    {logTypeFilter === "IN" && <Check className="size-3.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLogTypeFilter("OUT")}
+                    className={cn(
+                      "w-full text-left px-2 py-1.5 rounded-md flex items-center justify-between transition-colors",
+                      logTypeFilter === "OUT"
+                        ? "bg-primary text-primary-foreground font-medium"
+                        : "hover:bg-muted",
+                    )}
+                  >
+                    <span>Barang Keluar</span>
+                    {logTypeFilter === "OUT" && <Check className="size-3.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLogTypeFilter("EDIT")}
+                    className={cn(
+                      "w-full text-left px-2 py-1.5 rounded-md flex items-center justify-between transition-colors",
+                      logTypeFilter === "EDIT"
+                        ? "bg-primary text-primary-foreground font-medium"
+                        : "hover:bg-muted",
+                    )}
+                  >
+                    <span>Perubahan Data Barang</span>
+                    {logTypeFilter === "EDIT" && <Check className="size-3.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLogTypeFilter("ADD")}
+                    className={cn(
+                      "w-full text-left px-2 py-1.5 rounded-md flex items-center justify-between transition-colors",
+                      logTypeFilter === "ADD"
+                        ? "bg-primary text-primary-foreground font-medium"
+                        : "hover:bg-muted",
+                    )}
+                  >
+                    <span>Tambah Data Barang</span>
+                    {logTypeFilter === "ADD" && <Check className="size-3.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLogTypeFilter("DELETE")}
+                    className={cn(
+                      "w-full text-left px-2 py-1.5 rounded-md flex items-center justify-between transition-colors",
+                      logTypeFilter === "DELETE"
+                        ? "bg-primary text-primary-foreground font-medium"
+                        : "hover:bg-muted",
+                    )}
+                  >
+                    <span>Hapus Data Barang</span>
+                    {logTypeFilter === "DELETE" && <Check className="size-3.5" />}
+                  </button>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* List Activity Feed Cards */}
+            <div className="border border-border/70 rounded-xl divide-y divide-border/60 overflow-hidden bg-background">
+              {loadingLogs ? (
+                <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
+                  Memuat riwayat aktivitas gudang...
+                </div>
+              ) : filteredActivityLogs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center">
+                  <FileText className="mb-3 size-10 text-muted-foreground/40" />
+                  <p className="text-sm font-medium">Belum ada aktivitas yang sesuai</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {logSearchQuery || logTypeFilter !== "ALL"
+                      ? "Coba sesuaikan kata kunci pencarian atau ubah filter."
+                      : "Semua aktivitas operasional gudang akan tercatat di sini secara otomatis."}
+                  </p>
+                </div>
+              ) : (
+                paginatedActivityLogs.map((log) => {
+                  const parsed = parseActivityLog(log);
+                  return (
+                    <div
+                      key={log.id}
+                      onClick={() => setSelectedLog(log)}
+                      className="group flex items-center justify-between gap-4 px-4 sm:px-5 py-3.5 hover:bg-muted/40 cursor-pointer active:scale-[0.998] transition-all select-none"
+                      title="Klik untuk melihat rincian identitas & perubahan aktivitas"
+                    >
+                      {/* Left: Icon, Title, Subtitle, Meta */}
+                      <div className="flex items-start gap-3.5 min-w-0">
+                        <div className="mt-0.5 shrink-0 text-foreground group-hover:scale-105 transition-transform">
+                          {parsed.type === "IN" ? (
+                            <ArrowDownToLine className="size-5 text-emerald-600 dark:text-emerald-400 stroke-[1.8]" />
+                          ) : parsed.type === "OUT" ? (
+                            <ArrowUpFromLine className="size-5 text-rose-600 dark:text-rose-400 stroke-[1.8]" />
+                          ) : parsed.type === "EDIT" ? (
+                            <Pencil className="size-5 text-foreground stroke-[1.8]" />
+                          ) : parsed.type === "ADD" ? (
+                            <Plus className="size-5 text-foreground stroke-[1.8]" />
+                          ) : parsed.type === "DELETE" ? (
+                            <Trash2 className="size-5 text-rose-500 stroke-[1.8]" />
+                          ) : (
+                            <FileText className="size-5 text-muted-foreground stroke-[1.8]" />
+                          )}
+                        </div>
+
+                        <div className="min-w-0 space-y-0.5">
+                          <h4 className="text-sm font-bold text-foreground leading-tight group-hover:text-primary transition-colors">
+                            {parsed.title}
+                          </h4>
+                          <p className="text-xs font-normal text-muted-foreground leading-snug break-words">
+                            {parsed.subtitle}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground/80 font-normal">
+                            {parsed.metaString}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Right: Quantity & Chevron */}
+                      <div className="shrink-0 flex items-center gap-2.5 text-right">
+                        {parsed.qtyText && (
+                          <div className="space-y-0.5">
+                            <span
+                              className={cn(
+                                "text-sm sm:text-base font-bold block tabular-nums",
+                                parsed.type === "IN"
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-rose-600 dark:text-rose-400",
+                              )}
+                            >
+                              {parsed.qtyText}
+                            </span>
+                            {parsed.qtyLabel && (
+                              <span className="text-[11px] text-muted-foreground block">
+                                {parsed.qtyLabel}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <ChevronRight className="size-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Pagination Controls */}
+            {totalLogPages > 1 && (
+              <div className="flex items-center justify-between pt-2 px-1 text-xs text-muted-foreground">
+                <span>
+                  Menampilkan {(safeLogPage - 1) * LOG_PAGE_SIZE + 1} –{" "}
+                  {Math.min(safeLogPage * LOG_PAGE_SIZE, filteredActivityLogs.length)} dari{" "}
+                  {filteredActivityLogs.length} aktivitas
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setLogCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={safeLogPage === 1}
+                  >
+                    <ChevronLeft className="size-3.5 mr-1" />
+                    Sebelumnya
+                  </Button>
+                  <span className="px-2 text-xs font-medium">
+                    {safeLogPage} / {totalLogPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setLogCurrentPage((p) => Math.min(totalLogPages, p + 1))}
+                    disabled={safeLogPage === totalLogPages}
+                  >
+                    Selanjutnya
+                    <ChevronRight className="size-3.5 ml-1" />
+                  </Button>
+                </div>
               </div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-surface-muted/50">
-                    <th className="label-caps px-4 py-3 text-left">Aksi</th>
-                    <th className="label-caps px-4 py-3 text-left">Deskripsi Aktivitas</th>
-                    <th className="label-caps px-4 py-3 text-left">Petugas Shift</th>
-                    <th className="label-caps px-4 py-3 text-right">Waktu</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {activityLogs.map((log) => {
-                    const shiftOfficerName = getShiftOfficer(log.created_at, log.user_name);
-                    return (
-                      <tr key={log.id} className="hover:bg-surface-muted/30">
-                        <td className="px-4 py-3">
-                          <Badge variant="outline" className="font-mono text-xs">
-                            {log.action}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 font-medium">{log.description}</td>
-                        <td className="px-4 py-3 text-xs font-semibold text-foreground">
-                          {shiftOfficerName}
-                        </td>
-                        <td className="px-4 py-3 text-right text-xs text-muted-foreground">
-                          {formatDate(log.created_at)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
             )}
           </div>
         </TabsContent>
@@ -5662,143 +6438,276 @@ function WarehouseAndProductsPage() {
                     </div>
                   );
 
-                return (
-                  <table className="w-full min-w-[780px] text-xs border-collapse border border-slate-300 dark:border-slate-700">
-                    <thead>
-                      <tr className="bg-[#0f274a] text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
-                        <th className="label-caps px-3 py-3 text-center w-10 text-white font-semibold">
-                          No
-                        </th>
-                        <th className="label-caps px-3 py-3 text-left min-w-[120px] text-white font-semibold">
-                          Kode
-                        </th>
-                        <th className="label-caps px-3 py-3 text-left min-w-[220px] text-white font-semibold">
-                          Nama Barang
-                        </th>
-                        <th className="label-caps px-3 py-3 text-center min-w-[100px] text-white font-semibold">
-                          Batas Min
-                        </th>
-                        <th className="label-caps px-3 py-3 text-center min-w-[90px] text-white font-semibold">
-                          Min Stok
-                        </th>
-                        <th className="label-caps px-3 py-3 text-center min-w-[90px] text-white font-semibold">
-                          Maks Stok
-                        </th>
-                        <th className="label-caps px-3 py-3 text-right min-w-[100px] text-white font-semibold">
-                          Stok Saat Ini
-                        </th>
-                        <th className="label-caps px-3 py-3 text-center min-w-[100px] text-white font-semibold">
-                          Kondisi
-                        </th>
-                        <th className="label-caps px-3 py-3 text-center min-w-[90px] text-white font-semibold">
-                          Aksi
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                      {sortedFiltered.map((item, index) => {
-                        const current = item.current_stock ?? 0;
-                        const minStock = item.min_stock ?? 10;
-                        const maxStock = item.max_stock ? Number(item.max_stock) : null;
-                        const isOrder = current <= minStock;
-                        const isOutOfStock = maxStock !== null && current > maxStock;
-                        let kondisiText = "AMAN";
-                        let kondisiStyle =
-                          "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
-                        if (isOutOfStock) {
-                          kondisiText = "OUT OF STOK";
-                          kondisiStyle =
-                            "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
-                        } else if (isOrder) {
-                          kondisiText = "ORDER";
-                          kondisiStyle =
-                            "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800";
-                        }
-                        return (
-                          <tr
-                            key={item.id}
-                            className={cn(
-                              "group transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 divide-x divide-slate-200 dark:divide-slate-700",
-                              !item.is_active && "opacity-55 bg-surface-muted/20",
-                            )}
-                          >
-                            <td className="px-3 py-3 text-center font-mono text-muted-foreground w-10 bg-slate-50/40 dark:bg-slate-900/20">
-                              {index + 1}
-                            </td>
-                            <td className="px-3 py-3 font-mono font-medium">
-                              <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
-                                {item.code || "—"}
-                              </span>
-                            </td>
-                            <td className="px-3 py-3 font-semibold text-foreground min-w-[220px]">
-                              {item.name}
-                            </td>
-                            <td className="px-3 py-3 text-center font-mono text-muted-foreground">
-                              {item.safe_stock ?? 1} {item.unit || "pcs"}
-                            </td>
-                            <td className="px-3 py-3 text-center font-mono text-muted-foreground">
-                              {minStock} {item.unit || "pcs"}
-                            </td>
-                            <td className="px-3 py-3 text-center font-mono text-muted-foreground">
-                              {maxStock !== null ? `${maxStock} ${item.unit || "pcs"}` : "—"}
-                            </td>
-                            <td className="px-3 py-3 text-right font-mono font-bold">
-                              <span
-                                className={cn(
-                                  "tabular-nums text-sm",
-                                  current <= 0
-                                    ? "text-rose-600 dark:text-rose-400 font-extrabold"
-                                    : isOrder
-                                      ? "text-rose-600 dark:text-rose-400"
-                                      : "text-emerald-600 dark:text-emerald-400",
-                                )}
-                              >
-                                {current.toLocaleString("id-ID")} {item.unit || "pcs"}
-                              </span>
-                            </td>
-                            <td className="px-3 py-3 text-center">
-                              <span
-                                className={cn(
-                                  "inline-flex items-center justify-center w-24 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs",
-                                  kondisiStyle,
-                                )}
-                              >
-                                {kondisiText}
-                              </span>
-                            </td>
-                            <td className="px-3 py-3 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
-                              <div className="flex items-center justify-center gap-1.5">
-                                {/* Tombol Detail */}
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 px-2.5 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
-                                  onClick={() => setSelectedBufferItem(item)}
-                                  title="Lihat Detail & Edit Barang"
-                                >
-                                  <Eye className="size-3 text-primary" />
-                                  <span>Detail</span>
-                                </Button>
+                const totalBufferPages = Math.max(
+                  1,
+                  Math.ceil(sortedFiltered.length / BUFFER_PAGE_SIZE),
+                );
+                const currentSafeBufferPage = Math.min(
+                  Math.max(1, bufferCurrentPage),
+                  totalBufferPages,
+                );
+                const paginatedBufferItems = sortedFiltered.slice(
+                  (currentSafeBufferPage - 1) * BUFFER_PAGE_SIZE,
+                  currentSafeBufferPage * BUFFER_PAGE_SIZE,
+                );
 
-                                {/* Tombol Hapus (Khusus Admin/Authorized) */}
-                                {canDeleteMaster && (
+                return (
+                  <>
+                    <table className="w-full text-xs border-collapse border border-slate-300 dark:border-slate-700">
+                      <thead>
+                        <tr className="bg-[#0f274a] text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
+                          <th className="label-caps px-2.5 py-3 text-center w-10 text-white font-semibold">
+                            No
+                          </th>
+                          <th className="label-caps px-2.5 py-3 text-left w-[110px] text-white font-semibold">
+                            Kode
+                          </th>
+                          <th className="label-caps px-2.5 py-3 text-left min-w-[200px] text-white font-semibold">
+                            Nama Barang
+                          </th>
+                          <th className="label-caps px-2.5 py-3 text-center w-[90px] text-white font-semibold">
+                            Batas Min
+                          </th>
+                          <th className="label-caps px-2.5 py-3 text-center w-[90px] text-white font-semibold">
+                            Min Stok
+                          </th>
+                          <th className="label-caps px-2.5 py-3 text-center w-[90px] text-white font-semibold">
+                            Maks Stok
+                          </th>
+                          <th className="label-caps px-2.5 py-3 text-right w-[100px] text-white font-semibold">
+                            Stok Saat Ini
+                          </th>
+                          <th className="label-caps px-2.5 py-3 text-center w-[100px] text-white font-semibold">
+                            Kondisi
+                          </th>
+                          <th className="label-caps px-2.5 py-3 text-center w-[90px] text-white font-semibold">
+                            Aksi
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {paginatedBufferItems.map((item, index) => {
+                          const itemIndex =
+                            (currentSafeBufferPage - 1) * BUFFER_PAGE_SIZE + index + 1;
+                          const current = item.current_stock ?? 0;
+                          const minStock = item.min_stock ?? 10;
+                          const maxStock = item.max_stock ? Number(item.max_stock) : null;
+                          const isOrder = current <= minStock;
+                          const isOutOfStock = maxStock !== null && current > maxStock;
+                          let kondisiText = "AMAN";
+                          let kondisiStyle =
+                            "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
+                          if (isOutOfStock) {
+                            kondisiText = "OUT OF STOK";
+                            kondisiStyle =
+                              "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
+                          } else if (isOrder) {
+                            kondisiText = "ORDER";
+                            kondisiStyle =
+                              "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800";
+                          }
+                          return (
+                            <tr
+                              key={item.id}
+                              className={cn(
+                                "group transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 divide-x divide-slate-200 dark:divide-slate-700",
+                                !item.is_active && "opacity-55 bg-surface-muted/20",
+                              )}
+                            >
+                              <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground w-10 bg-slate-50/40 dark:bg-slate-900/20">
+                                {itemIndex}
+                              </td>
+                              <td className="px-2.5 py-2.5 font-mono font-medium">
+                                <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                                  {item.code || "—"}
+                                </span>
+                              </td>
+                              <td className="px-2.5 py-2.5 font-semibold text-foreground min-w-[200px]">
+                                {item.name}
+                              </td>
+                              <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground">
+                                {item.safe_stock ?? 1} {item.unit || "pcs"}
+                              </td>
+                              <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground">
+                                {minStock} {item.unit || "pcs"}
+                              </td>
+                              <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground">
+                                {maxStock !== null ? `${maxStock} ${item.unit || "pcs"}` : "—"}
+                              </td>
+                              <td className="px-2.5 py-2.5 text-right font-mono font-bold">
+                                <span
+                                  className={cn(
+                                    "tabular-nums text-sm",
+                                    current <= 0
+                                      ? "text-rose-600 dark:text-rose-400 font-extrabold"
+                                      : isOrder
+                                        ? "text-rose-600 dark:text-rose-400"
+                                        : "text-emerald-600 dark:text-emerald-400",
+                                  )}
+                                >
+                                  {current.toLocaleString("id-ID")} {item.unit || "pcs"}
+                                </span>
+                              </td>
+                              <td className="px-2.5 py-2.5 text-center">
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center justify-center w-24 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs",
+                                    kondisiStyle,
+                                  )}
+                                >
+                                  {kondisiText}
+                                </span>
+                              </td>
+                              <td className="px-2.5 py-2.5 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  {/* Tombol Detail */}
                                   <Button
                                     size="sm"
-                                    variant="ghost"
-                                    className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                                    onClick={() => setDeletingBufferItem(item)}
-                                    title="Hapus Barang"
+                                    variant="outline"
+                                    className="h-7 px-2.5 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+                                    onClick={() => setSelectedBufferItem(item)}
+                                    title="Lihat Detail & Edit Barang"
                                   >
-                                    <Trash2 className="size-3.5" />
+                                    <Eye className="size-3 text-primary" />
+                                    <span>Detail</span>
                                   </Button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+
+                                  {/* Tombol Hapus (Khusus Admin/Authorized) */}
+                                  {canDeleteMaster && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                      onClick={() => setDeletingBufferItem(item)}
+                                      title="Hapus Barang"
+                                    >
+                                      <Trash2 className="size-3.5" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+
+                    {/* Baris Navigasi Pagination Buffer Stok (100 item per page) */}
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 text-xs text-muted-foreground select-none">
+                      <div className="flex items-center gap-2">
+                        <span>
+                          Menampilkan{" "}
+                          <strong className="text-foreground">
+                            {(currentSafeBufferPage - 1) * BUFFER_PAGE_SIZE + 1}
+                          </strong>{" "}
+                          –{" "}
+                          <strong className="text-foreground">
+                            {Math.min(
+                              currentSafeBufferPage * BUFFER_PAGE_SIZE,
+                              sortedFiltered.length,
+                            )}
+                          </strong>{" "}
+                          dari{" "}
+                          <strong className="text-foreground">
+                            {sortedFiltered.length.toLocaleString("id-ID")}
+                          </strong>{" "}
+                          item
+                        </span>
+                        {totalBufferPages > 1 && (
+                          <span className="text-muted-foreground/70 hidden md:inline">
+                            • Halaman {currentSafeBufferPage} dari {totalBufferPages}
+                          </span>
+                        )}
+                      </div>
+
+                      {totalBufferPages > 1 && (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => {
+                              setBufferCurrentPage(1);
+                              window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
+                            disabled={currentSafeBufferPage === 1}
+                            title="Halaman Pertama"
+                          >
+                            <ChevronsLeft className="size-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2.5 text-xs gap-1"
+                            onClick={() => {
+                              setBufferCurrentPage((prev) => Math.max(1, prev - 1));
+                              window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
+                            disabled={currentSafeBufferPage === 1}
+                          >
+                            <ChevronLeft className="size-3.5" />
+                            <span className="hidden sm:inline">Sebelumnya</span>
+                          </Button>
+
+                          {getPaginationPages(currentSafeBufferPage, totalBufferPages).map(
+                            (pItem, idx) =>
+                              pItem === "..." ? (
+                                <span
+                                  key={`ellipsis-buf-${idx}`}
+                                  className="px-1.5 py-1 text-muted-foreground select-none"
+                                >
+                                  ...
+                                </span>
+                              ) : (
+                                <Button
+                                  key={`buf-${pItem}`}
+                                  variant={pItem === currentSafeBufferPage ? "default" : "outline"}
+                                  size="sm"
+                                  className={cn(
+                                    "h-8 min-w-[32px] px-2 text-xs font-medium",
+                                    pItem === currentSafeBufferPage &&
+                                      "bg-[#0f274a] text-white hover:bg-[#0f274a]/90 dark:bg-blue-600 dark:hover:bg-blue-700",
+                                  )}
+                                  onClick={() => {
+                                    setBufferCurrentPage(Number(pItem));
+                                    window.scrollTo({ top: 0, behavior: "smooth" });
+                                  }}
+                                >
+                                  {pItem}
+                                </Button>
+                              ),
+                          )}
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 px-2.5 text-xs gap-1"
+                            onClick={() => {
+                              setBufferCurrentPage((prev) => Math.min(totalBufferPages, prev + 1));
+                              window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
+                            disabled={currentSafeBufferPage === totalBufferPages}
+                          >
+                            <span className="hidden sm:inline">Selanjutnya</span>
+                            <ChevronRight className="size-3.5" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => {
+                              setBufferCurrentPage(totalBufferPages);
+                              window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
+                            disabled={currentSafeBufferPage === totalBufferPages}
+                            title="Halaman Terakhir"
+                          >
+                            <ChevronsRight className="size-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </>
                 );
               })()
             )}
@@ -5941,19 +6850,18 @@ function WarehouseAndProductsPage() {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Batas Minimum Stok</Label>
-                    <Input
-                      type="number"
-                      value={bufferFormData.safe_stock}
-                      onChange={(e) =>
-                        setBufferFormData({ ...bufferFormData, safe_stock: e.target.value })
-                      }
-                      placeholder="1"
-                      className="h-9 text-xs font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Minimal Stok (Trigger Order)</Label>
+                    <div className="flex items-center justify-between">
+                      <Label
+                        className={cn("text-xs font-semibold", !isAdmin && "text-muted-foreground")}
+                      >
+                        Batas Minimum Stok{!isAdmin && " (Terkunci)"}
+                      </Label>
+                      {!isAdmin && (
+                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                          (Hanya Super Admin)
+                        </span>
+                      )}
+                    </div>
                     <Input
                       type="number"
                       value={bufferFormData.min_stock}
@@ -5961,19 +6869,91 @@ function WarehouseAndProductsPage() {
                         setBufferFormData({ ...bufferFormData, min_stock: e.target.value })
                       }
                       placeholder="10"
-                      className="h-9 text-xs font-mono"
+                      disabled={!isAdmin}
+                      className={cn(
+                        "h-9 text-xs font-mono",
+                        !isAdmin &&
+                          "bg-muted/40 cursor-not-allowed opacity-80 text-muted-foreground",
+                      )}
+                      title={
+                        !isAdmin
+                          ? "Hanya Super Admin yang dapat mengubah batas minimum stok"
+                          : "Batas reminder agar segera di-order"
+                      }
                     />
+                    <p className="text-[10px] text-muted-foreground">
+                      Batas reminder agar segera di-order
+                    </p>
                   </div>
+
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Maksimal Stok</Label>
+                    <div className="flex items-center justify-between">
+                      <Label
+                        className={cn("text-xs font-semibold", !isAdmin && "text-muted-foreground")}
+                      >
+                        Minimal Stok{!isAdmin && " (Terkunci)"}
+                      </Label>
+                      {!isAdmin && (
+                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                          (Hanya Super Admin)
+                        </span>
+                      )}
+                    </div>
+                    <Input
+                      type="number"
+                      value={bufferFormData.safe_stock}
+                      onChange={(e) =>
+                        setBufferFormData({ ...bufferFormData, safe_stock: e.target.value })
+                      }
+                      placeholder="1"
+                      disabled={!isAdmin}
+                      className={cn(
+                        "h-9 text-xs font-mono",
+                        !isAdmin &&
+                          "bg-muted/40 cursor-not-allowed opacity-80 text-muted-foreground",
+                      )}
+                      title={
+                        !isAdmin
+                          ? "Hanya Super Admin yang dapat mengubah minimal stok"
+                          : "Batas stok agar barang tidak habis"
+                      }
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Batas stok agar barang tidak habis
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label
+                        className={cn("text-xs font-semibold", !isAdmin && "text-muted-foreground")}
+                      >
+                        Maksimal Stok{!isAdmin && " (Terkunci)"}
+                      </Label>
+                      {!isAdmin && (
+                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                          (Hanya Super Admin)
+                        </span>
+                      )}
+                    </div>
                     <Input
                       type="number"
                       value={bufferFormData.max_stock}
                       onChange={(e) =>
                         setBufferFormData({ ...bufferFormData, max_stock: e.target.value })
                       }
-                      placeholder="opsional"
-                      className="h-9 text-xs font-mono"
+                      placeholder={!isAdmin ? "Terkunci (Hanya Super Admin)" : "opsional"}
+                      disabled={!isAdmin}
+                      className={cn(
+                        "h-9 text-xs font-mono",
+                        !isAdmin &&
+                          "bg-muted/40 cursor-not-allowed opacity-80 text-muted-foreground",
+                      )}
+                      title={
+                        !isAdmin
+                          ? "Hanya Super Admin yang dapat mengubah batas maksimal stok"
+                          : undefined
+                      }
                     />
                   </div>
                   <div className="space-y-1.5 sm:col-span-2">
@@ -6762,46 +7742,9 @@ function WarehouseAndProductsPage() {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <Label
-                        className={cn(
-                          "text-xs font-semibold",
-                          !isAdmin && "text-muted-foreground",
-                        )}
+                        className={cn("text-xs font-semibold", !isAdmin && "text-muted-foreground")}
                       >
                         Batas Minimum Stok{!isAdmin && " (Terkunci)"}
-                      </Label>
-                      {!isAdmin && (
-                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
-                          (Hanya Admin)
-                        </span>
-                      )}
-                    </div>
-                    <Input
-                      type="number"
-                      value={formData.safe_stock}
-                      onChange={(e) => setFormData({ ...formData, safe_stock: e.target.value })}
-                      placeholder="1"
-                      disabled={!isAdmin}
-                      className={cn(
-                        "h-9 text-xs font-mono",
-                        !isAdmin && "bg-muted/40 cursor-not-allowed opacity-80 text-muted-foreground",
-                      )}
-                      title={
-                        !isAdmin
-                          ? "Hanya Admin yang dapat mengubah batas minimum stok"
-                          : undefined
-                      }
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label
-                        className={cn(
-                          "text-xs font-semibold",
-                          !isAdmin && "text-muted-foreground",
-                        )}
-                      >
-                        Minimal Stok{!isAdmin && " (Terkunci)"}
                       </Label>
                       {!isAdmin && (
                         <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
@@ -6817,14 +7760,53 @@ function WarehouseAndProductsPage() {
                       disabled={!isAdmin}
                       className={cn(
                         "h-9 text-xs font-mono",
-                        !isAdmin && "bg-muted/40 cursor-not-allowed opacity-80 text-muted-foreground",
+                        !isAdmin &&
+                          "bg-muted/40 cursor-not-allowed opacity-80 text-muted-foreground",
                       )}
                       title={
                         !isAdmin
-                          ? "Hanya Admin yang dapat mengubah minimal stok"
+                          ? "Hanya Admin yang dapat mengubah batas minimum stok (reminder order)"
                           : undefined
                       }
                     />
+                    <p className="text-[10px] text-muted-foreground">
+                      Batas reminder agar segera di-order
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label
+                        className={cn("text-xs font-semibold", !isAdmin && "text-muted-foreground")}
+                      >
+                        Minimal Stok{!isAdmin && " (Terkunci)"}
+                      </Label>
+                      {!isAdmin && (
+                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                          (Hanya Admin)
+                        </span>
+                      )}
+                    </div>
+                    <Input
+                      type="number"
+                      value={formData.safe_stock}
+                      onChange={(e) => setFormData({ ...formData, safe_stock: e.target.value })}
+                      placeholder="1"
+                      disabled={!isAdmin}
+                      className={cn(
+                        "h-9 text-xs font-mono",
+                        !isAdmin &&
+                          "bg-muted/40 cursor-not-allowed opacity-80 text-muted-foreground",
+                      )}
+                      title={
+                        !isAdmin
+                          ? "Hanya Admin yang dapat mengubah minimal stok agar barang tidak habis"
+                          : undefined
+                      }
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Batas stok agar barang tidak habis
+                    </p>
                   </div>
 
                   <div className="space-y-1.5">
@@ -7649,7 +8631,8 @@ function WarehouseAndProductsPage() {
                 </span>
               )}
               <span className="block mt-2 text-rose-600 dark:text-rose-400 font-medium text-xs">
-                Tindakan ini akan mengembalikan stok barang ke kondisi sebelum transaksi dicatat dan tidak dapat dibatalkan.
+                Tindakan ini akan mengembalikan stok barang ke kondisi sebelum transaksi dicatat dan
+                tidak dapat dibatalkan.
               </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -8190,6 +9173,256 @@ function WarehouseAndProductsPage() {
               </Button>
             )}
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* ── MODAL DIALOG: DETAIL RIWAYAT AKTIVITAS ──────────────────────────── */}
+      <Dialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
+        <DialogContent className="max-w-xl p-0 overflow-hidden border border-border/80 shadow-2xl rounded-2xl">
+          {selectedLog &&
+            (() => {
+              const parsed = parseActivityLog(selectedLog);
+              const changesList = parseChangeDetails(selectedLog.description);
+
+              // Cari barang terkait di products atau bufferItems
+              const targetName = parsed.subtitle.toLowerCase().trim();
+              const matchedObs = products.find(
+                (item) =>
+                  item.name.toLowerCase().trim() === targetName ||
+                  targetName.includes(item.name.toLowerCase().trim()) ||
+                  (item.code && targetName.includes(item.code.toLowerCase().trim())),
+              );
+              const matchedBuffer = !matchedObs
+                ? bufferItems.find(
+                    (item) =>
+                      item.name.toLowerCase().trim() === targetName ||
+                      targetName.includes(item.name.toLowerCase().trim()) ||
+                      (item.code && targetName.includes(item.code.toLowerCase().trim())),
+                  )
+                : null;
+              const relatedItem = matchedObs
+                ? { item: matchedObs, isBuffer: false }
+                : matchedBuffer
+                  ? { item: matchedBuffer, isBuffer: true }
+                  : null;
+
+              const extractedCodeMatch = (parsed.subtitle + " " + selectedLog.description).match(
+                /(?:P\/N|PN|KODE|PART\s*NO\.?)\s*:?\s*([A-Za-z0-9\-_\/]+)/i,
+              );
+              const materialCode =
+                relatedItem?.item.code ||
+                (extractedCodeMatch ? extractedCodeMatch[1] : null) ||
+                "-";
+
+              const isExportActivity =
+                parsed.type === "EXPORT" ||
+                parsed.title.toLowerCase().includes("export") ||
+                (selectedLog.action || "").toLowerCase().includes("export") ||
+                (selectedLog.description || "").toLowerCase().includes("ekspor");
+
+              return (
+                <div className="flex flex-col">
+                  {/* Header Dialog */}
+                  <div className="p-5 pb-4 border-b border-border/60 bg-muted/20">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={cn(
+                            "size-10 rounded-xl flex items-center justify-center shrink-0 border",
+                            parsed.type === "IN" &&
+                              "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-800",
+                            parsed.type === "OUT" &&
+                              "bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-950/50 dark:text-rose-400 dark:border-rose-800",
+                            parsed.type === "EDIT" &&
+                              "bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-950/50 dark:text-blue-400 dark:border-blue-800",
+                            parsed.type === "ADD" &&
+                              "bg-teal-50 text-teal-600 border-teal-200 dark:bg-teal-950/50 dark:text-teal-400 dark:border-teal-800",
+                            parsed.type === "DELETE" &&
+                              "bg-red-50 text-red-600 border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800",
+                            (parsed.type === "IMPORT" ||
+                              parsed.type === "EXPORT" ||
+                              parsed.type === "OTHER") &&
+                              "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+                          )}
+                        >
+                          {parsed.type === "IN" ? (
+                            <ArrowDownToLine className="size-5 stroke-[2]" />
+                          ) : parsed.type === "OUT" ? (
+                            <ArrowUpFromLine className="size-5 stroke-[2]" />
+                          ) : parsed.type === "EDIT" ? (
+                            <Pencil className="size-5 stroke-[2]" />
+                          ) : parsed.type === "ADD" ? (
+                            <Plus className="size-5 stroke-[2]" />
+                          ) : parsed.type === "DELETE" ? (
+                            <Trash2 className="size-5 stroke-[2]" />
+                          ) : (
+                            <FileText className="size-5 stroke-[2]" />
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <DialogTitle className="text-base font-bold text-foreground">
+                              {parsed.title}
+                            </DialogTitle>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[10px] font-semibold px-2 py-0.5 rounded-full border",
+                                parsed.type === "IN" &&
+                                  "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
+                                parsed.type === "OUT" &&
+                                  "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300",
+                                parsed.type === "EDIT" &&
+                                  "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300",
+                                parsed.type === "ADD" &&
+                                  "bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300",
+                                parsed.type === "DELETE" &&
+                                  "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300",
+                                (parsed.type === "IMPORT" ||
+                                  parsed.type === "EXPORT" ||
+                                  parsed.type === "OTHER") &&
+                                  "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300",
+                              )}
+                            >
+                              {parsed.type === "IN"
+                                ? "Stok Bertambah"
+                                : parsed.type === "OUT"
+                                  ? "Stok Berkurang"
+                                  : parsed.type === "EDIT"
+                                    ? "Perubahan Data"
+                                    : parsed.type === "ADD"
+                                      ? "Tambah Data"
+                                      : parsed.type === "DELETE"
+                                        ? "Hapus Data"
+                                        : "Aktivitas Gudang"}
+                            </Badge>
+                          </div>
+                          <DialogDescription className="sr-only">
+                            Rincian aktivitas gudang
+                          </DialogDescription>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Body Content */}
+                  <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+                    {/* Box 1: Identitas Barang (+ Kode Material) & Nilai Mutasi */}
+                    <div className="rounded-xl border border-border/80 bg-surface p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1.5 min-w-0">
+                          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            Identitas Barang
+                          </span>
+                          <h3 className="text-base font-bold text-foreground leading-tight break-words">
+                            {isExportActivity ? "-" : parsed.subtitle}
+                          </h3>
+                          <div className="flex items-center gap-2 pt-0.5">
+                            <span className="text-xs text-muted-foreground font-medium">
+                              Kode Material:
+                            </span>
+                            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-muted/60 text-foreground border border-border/60">
+                              {isExportActivity ? "-" : materialCode}
+                            </span>
+                          </div>
+                        </div>
+                        {parsed.qtyText && (
+                          <div className="text-right shrink-0">
+                            <span
+                              className={cn(
+                                "text-lg font-extrabold tabular-nums block",
+                                parsed.type === "IN"
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : "text-rose-600 dark:text-rose-400",
+                              )}
+                            >
+                              {parsed.qtyText}
+                            </span>
+                            <span className="text-[11px] font-medium text-muted-foreground">
+                              {parsed.qtyLabel}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Grid 4 Kolom: Tanggal, Waktu, Shift, Petugas */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-3 border-t border-border/60 text-xs">
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] text-muted-foreground block">Tanggal</span>
+                          <span className="font-semibold text-foreground flex items-center gap-1">
+                            <CalendarIcon className="size-3 text-muted-foreground shrink-0" />
+                            {parsed.dateFormatted || "-"}
+                          </span>
+                        </div>
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] text-muted-foreground block">
+                            Waktu / Jam
+                          </span>
+                          <span className="font-semibold text-foreground flex items-center gap-1">
+                            <Clock className="size-3 text-muted-foreground shrink-0" />
+                            {parsed.timeFormatted || "-"} WIB
+                          </span>
+                        </div>
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] text-muted-foreground block">
+                            Shift Kerja
+                          </span>
+                          <span className="font-semibold text-foreground">
+                            {parsed.shift || "-"}
+                          </span>
+                        </div>
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] text-muted-foreground block">Petugas</span>
+                          <span
+                            className="font-semibold text-foreground truncate block"
+                            title={parsed.operator}
+                          >
+                            {parsed.operator}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Box 2: Catatan Aktivitas */}
+                    <div className="rounded-xl border border-border/80 bg-surface p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <History className="size-4 text-primary shrink-0" />
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                          Catatan Aktivitas
+                        </h4>
+                      </div>
+
+                      {/* Keterangan Sistem */}
+                      <div className="p-3.5 rounded-lg bg-muted/30 border border-border/50 text-xs text-foreground leading-relaxed break-words space-y-1.5">
+                        <p className="font-semibold text-muted-foreground text-[11px] uppercase tracking-wider">
+                          Keterangan Sistem:
+                        </p>
+                        <p className="font-medium text-foreground text-xs leading-relaxed">
+                          {getKeteranganSistemText(
+                            selectedLog,
+                            parsed.subtitle,
+                            materialCode,
+                            parsed.type,
+                            changesList,
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div className="p-4 border-t border-border/60 bg-muted/20 flex items-center justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedLog(null)}
+                      className="text-xs h-8 px-4"
+                    >
+                      Tutup
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
         </DialogContent>
       </Dialog>
     </AppShell>

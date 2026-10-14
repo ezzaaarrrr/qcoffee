@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { AlertCircle, ShieldAlert, Lock, UserCheck, Eye, EyeOff, Mail } from "lucide-react";
+import { AlertCircle, ShieldAlert, Lock, UserCheck, Eye, EyeOff, Mail, KeyRound, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ROLE_LABELS, type AppRole } from "@/lib/domain";
 
 export const Route = createFileRoute("/auth/login")({
@@ -148,6 +156,12 @@ function LoginPage() {
     type: "credentials" | "role";
   } | null>(null);
 
+  // State untuk Lupa Kata Sandi Dialog
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) navigate({ to: "/dashboard", replace: true });
@@ -157,6 +171,46 @@ function LoginPage() {
   const handleRoleChange = (newRole: AppRole) => {
     setRole(newRole);
     setErrorMessage(null);
+  };
+
+  const handleOpenForgotPassword = () => {
+    const candidates = getCandidateEmailsForRole(role);
+    setResetEmail(candidates[0] ?? "");
+    setResetSent(false);
+    setForgotPasswordOpen(true);
+  };
+
+  const handleSendResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail || !resetEmail.includes("@")) {
+      toast.error("Format Email Tidak Valid", {
+        description: "Silakan masukkan alamat email yang valid.",
+      });
+      return;
+    }
+    setResetLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
+        redirectTo: `${window.location.origin}/auth/login`,
+      });
+
+      if (error) {
+        toast.error("Gagal Mengirim Email", {
+          description: error.message || "Pastikan email terdaftar di sistem.",
+        });
+      } else {
+        setResetSent(true);
+        toast.success("Tautan Terkirim", {
+          description: `Tautan pemulihan kata sandi telah dikirim ke ${resetEmail}.`,
+        });
+      }
+    } catch (err: any) {
+      toast.error("Terjadi Kesalahan", {
+        description: err.message || "Gagal memproses pemulihan kata sandi.",
+      });
+    } finally {
+      setResetLoading(false);
+    }
   };
 
   async function handleSignIn(e: React.FormEvent) {
@@ -340,9 +394,11 @@ function LoginPage() {
               className="size-11 object-contain rounded-lg border border-blue-500/20 bg-[#041129] p-1 md:hidden shadow-md"
             />
             <div>
-              <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white"></h1>
-              <p className="text-xs text-blue-200/70 mt-1 font-medium">
-                GUDANG SPAREPART M2 — Sparepart Management System
+              <h1 className="text-3xl sm:text-4xl font-bold font-Poppins,sans-serif tracking-tight text-white">
+                Selamat Datang
+              </h1>
+              <p className="text-xs sm:text-sm text-gray-300 mt-1">
+                Silahkan masuk untuk melanjutkan
               </p>
             </div>
           </div>
@@ -376,7 +432,7 @@ function LoginPage() {
                 className="flex items-center gap-1.5 text-xs text-blue-100"
               >
                 <UserCheck className="size-3.5 text-cyan-400" />
-                <span> User & Role</span>
+                <span>User</span>
               </Label>
               <Select value={role} onValueChange={(v) => handleRoleChange(v as AppRole)}>
                 <SelectTrigger
@@ -392,39 +448,6 @@ function LoginPage() {
                   <SelectItem value="admin">{ROLE_LABELS["admin"]}</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-
-            {/* Opsi Email Spesifik / Manual (Opsional) */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => setShowCustomEmail(!showCustomEmail)}
-                  className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors focus:outline-none cursor-pointer flex items-center gap-1"
-                >
-                  <Mail className="size-3" />
-                  <span>
-                    {showCustomEmail
-                      ? "Sembunyikan email khusus"
-                      : "Ingin pakai email terdaftar tertentu?"}
-                  </span>
-                </button>
-                {showCustomEmail && <span className="text-blue-300/50 text-[10px]">Opsional</span>}
-              </div>
-              {showCustomEmail && (
-                <Input
-                  id="custom-email"
-                  type="email"
-                  autoComplete="email"
-                  value={customEmail}
-                  onChange={(e) => {
-                    setCustomEmail(e.target.value);
-                    setErrorMessage(null);
-                  }}
-                  placeholder="Contoh: ground2@gmail.com"
-                  className="h-10 text-xs bg-[#05132d] border-blue-900/60 text-white placeholder:text-blue-300/40 focus:border-cyan-500"
-                />
-              )}
             </div>
 
             {/* Input 2: Kata Sandi */}
@@ -480,6 +503,17 @@ function LoginPage() {
                   {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
               </div>
+
+              {/* Lupa Kata Sandi Trigger */}
+              <div className="flex justify-end pt-0.5">
+                <button
+                  type="button"
+                  onClick={handleOpenForgotPassword}
+                  className="text-xs text-cyan-400 hover:text-cyan-300 hover:underline transition-colors focus:outline-none cursor-pointer font-medium"
+                >
+                  Lupa kata sandi?
+                </button>
+              </div>
             </div>
 
             <Button
@@ -501,6 +535,105 @@ function LoginPage() {
               Daftar sekarang
             </Link>
           </p>
+
+          {/* Modal Dialog: Lupa Kata Sandi */}
+          <Dialog open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
+            <DialogContent className="sm:max-w-md bg-[#071633] border border-blue-900/60 text-white shadow-[0_20px_50px_rgba(2,13,38,0.95)]">
+              <DialogHeader>
+                <div className="flex items-center gap-2.5 mb-1.5">
+                  <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                    <KeyRound className="size-5" />
+                  </div>
+                  <DialogTitle className="text-lg font-bold text-white tracking-tight">
+                    Lupa Kata Sandi
+                  </DialogTitle>
+                </div>
+                <DialogDescription className="text-xs text-blue-200/70">
+                  Masukkan email akun yang terdaftar untuk menerima tautan pemulihan kata sandi akun Anda.
+                </DialogDescription>
+              </DialogHeader>
+
+              {resetSent ? (
+                <div className="space-y-4 py-2">
+                  <div className="p-4 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-200 text-xs space-y-2">
+                    <p className="font-semibold text-white flex items-center gap-2 text-sm">
+                      <CheckCircle2 className="size-4 text-emerald-400 shrink-0" />
+                      Tautan Reset Terkirim!
+                    </p>
+                    <p className="text-blue-100/80 leading-relaxed">
+                      Instruksi pemulihan kata sandi telah dikirim ke{" "}
+                      <span className="font-semibold text-white underline underline-offset-2">
+                        {resetEmail}
+                      </span>
+                      . Silakan periksa kotak masuk atau folder spam email Anda.
+                    </p>
+                  </div>
+                  <DialogFooter className="sm:justify-end">
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        setForgotPasswordOpen(false);
+                        setResetSent(false);
+                      }}
+                      className="h-9 px-4 text-xs bg-cyan-600 hover:bg-cyan-500 text-white font-medium cursor-pointer"
+                    >
+                      Selesai
+                    </Button>
+                  </DialogFooter>
+                </div>
+              ) : (
+                <form onSubmit={handleSendResetPassword} className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label
+                      htmlFor="reset-email"
+                      className="text-xs text-blue-100 flex items-center gap-1.5"
+                    >
+                      <Mail className="size-3.5 text-cyan-400" />
+                      <span>Email Akun Terdaftar</span>
+                    </Label>
+                    <Input
+                      id="reset-email"
+                      type="email"
+                      required
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      placeholder="contoh: user@gmail.com"
+                      className="h-10 text-xs bg-[#05132d] border-blue-900/60 text-white placeholder:text-blue-300/40 focus:border-cyan-500"
+                    />
+                  </div>
+
+                  {/* Informasi Bantuan Internal Super Admin */}
+                  <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-900/50 text-[11px] text-blue-200/80 space-y-1">
+                    <p className="font-medium text-cyan-300 flex items-center gap-1.5">
+                      <ShieldAlert className="size-3.5 shrink-0 text-cyan-400" />
+                      Bantuan Langsung Super Admin
+                    </p>
+                    <p className="leading-relaxed">
+                      Untuk akun operator/divisi gudang internal, Anda juga dapat meminta Super Admin untuk mengatur ulang kata sandi secara langsung melalui menu Pengaturan Pengguna.
+                    </p>
+                  </div>
+
+                  <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setForgotPasswordOpen(false)}
+                      className="h-9 text-xs text-blue-300 hover:text-white hover:bg-blue-950/50 cursor-pointer"
+                    >
+                      Batal
+                    </Button>
+                    <Button
+                      type="submit"
+                      disabled={resetLoading}
+                      className="h-9 text-xs bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-semibold cursor-pointer shadow-md shadow-blue-600/30"
+                    >
+                      {resetLoading ? "Mengirim Tautan..." : "Kirim Tautan Reset"}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              )}
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
     </div>
