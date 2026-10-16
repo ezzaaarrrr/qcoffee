@@ -460,31 +460,23 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
       // Ekstrak metadata saldo OBS asli dari file Excel jika tersedia
       const obsMeta = getProductObsMeta(p);
 
-      // 1. Data Riwayat Keluar (ISSUED): dasar dari Excel + mutasi keluar
+      // 1. Data Riwayat Keluar (ISSUED): dasar dari Excel / metadata OBS
       const baseOut =
         obsMeta && obsMeta.issued !== null && obsMeta.issued !== undefined
           ? Number(obsMeta.issued)
           : 0;
-      const additionalOut =
-        (totalOutQtyMap[p.id] ?? 0) ||
-        (nameKey ? totalOutQtyMap[nameKey] ?? 0 : 0) ||
-        (codeKey ? totalOutQtyMap[codeKey] ?? 0 : 0);
-      const totalOut = baseOut + additionalOut;
+      const totalOut = baseOut;
       totalPengeluaranAll += totalOut;
 
-      // 2. Data Riwayat Masuk (RECEIPT): dasar dari Excel + mutasi masuk
+      // 2. Data Riwayat Masuk (RECEIPT): dasar dari Excel / metadata OBS
       const baseIn =
         obsMeta && obsMeta.receipt !== null && obsMeta.receipt !== undefined
           ? Number(obsMeta.receipt)
           : 0;
-      const additionalIn =
-        (totalInQtyMap[p.id] ?? 0) ||
-        (nameKey ? totalInQtyMap[nameKey] ?? 0 : 0) ||
-        (codeKey ? totalInQtyMap[codeKey] ?? 0 : 0);
-      const totalIn = baseIn + additionalIn;
+      const totalIn = baseIn;
       totalMasukAll += totalIn;
 
-      // 3. BEGINNING BALANCE — nilainya tetap dari hasil Excel
+      // 3. BEGINNING BALANCE — nilainya tetap dari hasil Excel / metadata OBS
       const rawBeg =
         obsMeta && obsMeta.beginning_balance !== null && obsMeta.beginning_balance !== undefined
           ? Number(obsMeta.beginning_balance)
@@ -494,17 +486,14 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
       const beginningBalance = rawBeg !== null && !isNaN(rawBeg) ? rawBeg : 0;
       totalBeginningAll += beginningBalance;
 
-      // 4. ENDING BALANCE — mengikuti stok saat ini / metadata OBS + mutasi transaksi:
+      // 4. ENDING BALANCE — mengikuti stok saat ini / metadata OBS dari import/input baru (tidak dipengaruhi mutasi):
       const baseEnding =
         obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
           ? Number(obsMeta.ending_balance)
           : endingStock;
       const effectiveBaseEnding = endingStock !== baseEnding ? endingStock : baseEnding;
 
-      const finalEndingStock =
-        totalIn === 0 && totalOut === 0
-          ? effectiveBaseEnding
-          : Math.max(0, effectiveBaseEnding + totalIn - totalOut);
+      const finalEndingStock = effectiveBaseEnding;
       totalEndingStock += finalEndingStock;
 
       // 5. STATUS STOCK (AMAN jika di atas minStock, LIMIT / KRITIS jika <= minStock)
