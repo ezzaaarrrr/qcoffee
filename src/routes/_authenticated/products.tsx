@@ -333,12 +333,15 @@ function parseActivityLog(log: ActivityLog) {
   } else if (action === "EXPORT_DATA" || desc.toLowerCase().includes("ekspor")) {
     type = "EXPORT";
     title = "Export Laporan";
+    officerName = "Administrator";
+    shiftName = "-";
   } else {
     title = action.replace(/_/g, " ");
   }
 
-  const finalOfficer = type === "EDIT" ? "Administrator" : officerName;
-  const finalShift = type === "EDIT" ? "-" : shiftName;
+  const finalOfficer =
+    type === "EDIT" || type === "EXPORT" ? "Administrator" : officerName;
+  const finalShift = type === "EDIT" || type === "EXPORT" ? "-" : shiftName;
   const metaString = [dateFormatted, timeFormatted, finalOfficer].filter(Boolean).join(" · ");
 
   return {
@@ -2921,7 +2924,11 @@ function WarehouseAndProductsPage() {
     });
 
     toast.success("Laporan inventaris sparepart berhasil diekspor (.xls)");
-    recordActivity("EXPORT_DATA", "Mengekspor laporan inventaris & stok sparepart ke Excel");
+    recordActivity(
+      "EXPORT_DATA",
+      "Mengekspor laporan inventaris & stok sparepart ke Excel",
+      "Administrator",
+    );
   };
 
   // ── EXPORT DATA LAPORAN INVENTARIS SPAREPART RESMI (.CSV) ──────────────────────
@@ -3069,7 +3076,11 @@ function WarehouseAndProductsPage() {
     URL.revokeObjectURL(url);
 
     toast.success("Laporan inventaris sparepart berhasil diekspor (.csv)");
-    recordActivity("EXPORT_DATA", "Mengekspor laporan inventaris & stok gudang ke CSV Resmi");
+    recordActivity(
+      "EXPORT_DATA",
+      "Mengekspor laporan inventaris & stok gudang ke CSV Resmi",
+      "Administrator",
+    );
   };
 
   // ── CETAK / UNDUH PDF KARTU MASTER & STOK BARANG ─────────────────────────────
@@ -9358,11 +9369,11 @@ function WarehouseAndProductsPage() {
                         )}
                       </div>
 
-                      {/* Grid Kolom: Tanggal, Waktu, Shift (jika bukan EDIT), Petugas */}
+                      {/* Grid Kolom: Tanggal, Waktu, Shift (jika bukan EDIT atau EXPORT), Petugas */}
                       <div
                         className={cn(
                           "grid gap-2.5 pt-3 border-t border-border/60 text-xs",
-                          parsed.type === "EDIT"
+                          parsed.type === "EDIT" || isExportActivity
                             ? "grid-cols-2 sm:grid-cols-3"
                             : "grid-cols-2 sm:grid-cols-4",
                         )}
@@ -9383,7 +9394,7 @@ function WarehouseAndProductsPage() {
                             {parsed.timeFormatted || "-"} WIB
                           </span>
                         </div>
-                        {parsed.type !== "EDIT" && (
+                        {parsed.type !== "EDIT" && !isExportActivity && (
                           <div className="space-y-0.5">
                             <span className="text-[10px] text-muted-foreground block">
                               Shift Kerja
@@ -9397,9 +9408,15 @@ function WarehouseAndProductsPage() {
                           <span className="text-[10px] text-muted-foreground block">Petugas</span>
                           <span
                             className="font-semibold text-foreground truncate block"
-                            title={parsed.type === "EDIT" ? "Administrator" : parsed.operator}
+                            title={
+                              parsed.type === "EDIT" || isExportActivity
+                                ? "Administrator"
+                                : parsed.operator
+                            }
                           >
-                            {parsed.type === "EDIT" ? "Administrator" : parsed.operator}
+                            {parsed.type === "EDIT" || isExportActivity
+                              ? "Administrator"
+                              : parsed.operator}
                           </span>
                         </div>
                       </div>
