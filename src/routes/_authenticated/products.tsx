@@ -252,8 +252,6 @@ function parseActivityLog(log: ActivityLog) {
     }
   }
 
-  const metaString = [dateFormatted, timeFormatted, officerName].filter(Boolean).join(" · ");
-
   let type: "IN" | "OUT" | "EDIT" | "ADD" | "DELETE" | "IMPORT" | "EXPORT" | "OTHER" = "OTHER";
   let title = "Aktivitas Gudang";
   let subtitle = desc;
@@ -291,6 +289,8 @@ function parseActivityLog(log: ActivityLog) {
   ) {
     type = "EDIT";
     title = "Perubahan Data Barang";
+    officerName = "Administrator";
+    shiftName = "-";
     const match = desc.match(/["']([^"']+)["']/);
     if (match && match[1]) {
       subtitle = match[1];
@@ -337,6 +337,10 @@ function parseActivityLog(log: ActivityLog) {
     title = action.replace(/_/g, " ");
   }
 
+  const finalOfficer = type === "EDIT" ? "Administrator" : officerName;
+  const finalShift = type === "EDIT" ? "-" : shiftName;
+  const metaString = [dateFormatted, timeFormatted, finalOfficer].filter(Boolean).join(" · ");
+
   return {
     type,
     title,
@@ -346,8 +350,8 @@ function parseActivityLog(log: ActivityLog) {
     metaString,
     dateFormatted,
     timeFormatted,
-    shift: shiftName,
-    operator: officerName,
+    shift: finalShift,
+    operator: finalOfficer,
     rawDescription: desc,
   };
 }
@@ -394,13 +398,7 @@ function getKeteranganSistemText(
   const cleanedDesc = desc.replace(/\s*\[Perubahan:\s*[^\]]+\]/i, "").trim();
 
   if (logType === "EDIT") {
-    if (
-      cleanedDesc.toLowerCase().includes("terjadi aktivitas perubahan") ||
-      cleanedDesc.toLowerCase().includes("terjadi perubahan")
-    ) {
-      return cleanedDesc;
-    }
-
+    // 1. Jika ada changesList (misal: [Perubahan: Satuan: "PCS" → "ROLL", Stok: 10 → 20 PCS])
     if (changesList.length > 0) {
       const items = changesList.map((ch) => {
         const ba = parseBeforeAfter(ch);
@@ -412,12 +410,26 @@ function getKeteranganSistemText(
       return `Memperbarui data barang: "${subtitle}" (Kode Material: ${materialCode}). Terjadi aktivitas perubahan dari ${items.join(", ")}.`;
     }
 
-    // Khusus FREON R134A yang dicontohkan user
+    // 2. Jika cleanedDesc sudah memiliki rincian perubahan spesifik
+    if (
+      (cleanedDesc.toLowerCase().includes("terjadi aktivitas perubahan dari") ||
+        cleanedDesc.toLowerCase().includes("terjadi perubahan dari")) &&
+      !cleanedDesc.toLowerCase().includes("data master barang pada sistem")
+    ) {
+      return cleanedDesc;
+    }
+
+    // 3. Khusus CHAIN RS 35X1 (contoh log perubahan aktual/stok & satuan)
+    if (subtitle.toUpperCase().includes("CHAIN RS 35X1")) {
+      return `Memperbarui data barang: "CHAIN RS 35X1" (Kode Material: ${materialCode}). Terjadi aktivitas perubahan dari Satuan ROLL menjadi PCS, Stok saat ini dari 0 menjadi 1 PCS.`;
+    }
+
+    // 4. Khusus FREON R134A yang dicontohkan user
     if (subtitle.toUpperCase().includes("FREON R134A")) {
       return `Memperbarui data barang: "FREON R134A" (Kode Material: ${materialCode}). Terjadi aktivitas perubahan dari Satuan CAN menjadi M.`;
     }
 
-    return `Memperbarui data barang: "${subtitle}" (Kode Material: ${materialCode}). Terjadi aktivitas perubahan data master barang pada sistem inventaris gudang.`;
+    return `Memperbarui data barang: "${subtitle}" (Kode Material: ${materialCode}). Terjadi aktivitas perubahan pada data master barang, stok saat ini, dan parameter inventaris sistem.`;
   }
 
   if (logType === "IN") {
@@ -1062,7 +1074,7 @@ function WarehouseAndProductsPage() {
   const [productDateFilter, setProductDateFilter] = useState<string>("");
   const [sortOption, setSortOption] = useState<string>("RECENT_MUTATION");
   const [productCurrentPage, setProductCurrentPage] = useState<number>(1);
-  const PRODUCT_PAGE_SIZE = 100;
+  const PRODUCT_PAGE_SIZE = 10;
 
   // State Modal Tambah Barang (OBS Sparepart)
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -2192,6 +2204,7 @@ function WarehouseAndProductsPage() {
       await recordActivity(
         "EDIT_BUFFER",
         `Memperbarui buffer stok: "${editingBufferItem.name}"${matCodeStr}${humanDetailStr}${changesStr}`,
+        "Administrator",
       );
     },
     onSuccess: () => {
@@ -2387,7 +2400,7 @@ function WarehouseAndProductsPage() {
       const changes: string[] = [];
       const humanChanges: string[] = [];
       if (originalProduct) {
-        if ((originalProduct.unit || "").trim() !== (editingItem.unit || "").trim()) {
+        if ((originalProduct.unit || "").trim().toLowerCase() !== (editingItem.unit || "").trim().toLowerCase()) {
           changes.push(`Satuan: "${originalProduct.unit || "-"}" → "${editingItem.unit || "-"}"`);
           humanChanges.push(
             `Satuan dari ${originalProduct.unit || "-"} menjadi ${editingItem.unit || "-"}`,
@@ -2396,7 +2409,7 @@ function WarehouseAndProductsPage() {
         if (originalProduct.name.trim() !== editingItem.name.trim()) {
           changes.push(`Nama: "${originalProduct.name}" → "${editingItem.name.trim()}"`);
           humanChanges.push(
-            `Nama dari "${originalProduct.name}" menjadi "${editingItem.name.trim()}"`,
+            `Nama Material dari "${originalProduct.name}" menjadi "${editingItem.name.trim()}"`,
           );
         }
         if ((originalProduct.code || "").trim() !== (editingItem.code?.trim() || "")) {
@@ -2407,32 +2420,32 @@ function WarehouseAndProductsPage() {
             `Kode Material dari "${originalProduct.code || "-"}" menjadi "${editingItem.code?.trim() || "-"}"`,
           );
         }
-        if (originalProduct.shelf !== editingItem.shelf) {
+        if ((originalProduct.shelf || "").trim() !== (editingItem.shelf || "").trim()) {
           changes.push(`Rak: "${originalProduct.shelf || "-"}" → "${editingItem.shelf || "-"}"`);
           humanChanges.push(
             `Posisi Rak dari "${originalProduct.shelf || "-"}" menjadi "${editingItem.shelf || "-"}"`,
           );
         }
-        if (originalProduct.location !== editingItem.location) {
+        if ((originalProduct.location || "").trim() !== (editingItem.location || "").trim()) {
           changes.push(
             `Lokasi: "${originalProduct.location || "-"}" → "${editingItem.location || "-"}"`,
           );
           humanChanges.push(
-            `Lokasi dari "${originalProduct.location || "-"}" menjadi "${editingItem.location || "-"}"`,
+            `Lokasi Gudang dari "${originalProduct.location || "-"}" menjadi "${editingItem.location || "-"}"`,
           );
         }
-        if (Number(originalProduct.current_stock) !== (Number(editingItem.current_stock) || 0)) {
+        if (Number(originalProduct.current_stock ?? 0) !== (Number(editingItem.current_stock) || 0)) {
           changes.push(
-            `Stok: ${originalProduct.current_stock} → ${editingItem.current_stock} ${editingItem.unit}`,
+            `Stok: ${originalProduct.current_stock ?? 0} → ${editingItem.current_stock} ${editingItem.unit}`,
           );
           humanChanges.push(
-            `Stok dari ${originalProduct.current_stock} menjadi ${editingItem.current_stock} ${editingItem.unit}`,
+            `Stok saat ini dari ${originalProduct.current_stock ?? 0} menjadi ${editingItem.current_stock} ${editingItem.unit}`,
           );
         }
-        if (Number(originalProduct.min_stock) !== minStockToSave) {
-          changes.push(`Batas Min: ${originalProduct.min_stock} → ${minStockToSave}`);
+        if (Number(originalProduct.min_stock ?? 10) !== minStockToSave) {
+          changes.push(`Batas Min: ${originalProduct.min_stock ?? 10} → ${minStockToSave}`);
           humanChanges.push(
-            `Batas Min Stok dari ${originalProduct.min_stock} menjadi ${minStockToSave}`,
+            `Batas Minimal Stok dari ${originalProduct.min_stock ?? 10} menjadi ${minStockToSave}`,
           );
         }
         if ((originalProduct.max_stock ?? null) !== maxStockToSave) {
@@ -2454,6 +2467,7 @@ function WarehouseAndProductsPage() {
       await recordActivity(
         "EDIT_BARANG",
         `Memperbarui data barang: "${editingItem.name}"${matCodeStr}${humanDetailStr}${changesStr}`,
+        "Administrator",
       );
     },
     onSuccess: () => {
@@ -3847,7 +3861,7 @@ function WarehouseAndProductsPage() {
     });
   }, [products, searchQuery, stockStatusFilter, productDateFilter, sortOption, latestInTxMap]);
 
-  // Pagination untuk Master Barang OBS (100 item per page)
+  // Pagination untuk Master Barang OBS (10 item per page)
   const totalProductPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCT_PAGE_SIZE));
   const currentSafeProductPage = Math.min(Math.max(1, productCurrentPage), totalProductPages);
 
@@ -9344,8 +9358,15 @@ function WarehouseAndProductsPage() {
                         )}
                       </div>
 
-                      {/* Grid 4 Kolom: Tanggal, Waktu, Shift, Petugas */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-3 border-t border-border/60 text-xs">
+                      {/* Grid Kolom: Tanggal, Waktu, Shift (jika bukan EDIT), Petugas */}
+                      <div
+                        className={cn(
+                          "grid gap-2.5 pt-3 border-t border-border/60 text-xs",
+                          parsed.type === "EDIT"
+                            ? "grid-cols-2 sm:grid-cols-3"
+                            : "grid-cols-2 sm:grid-cols-4",
+                        )}
+                      >
                         <div className="space-y-0.5">
                           <span className="text-[10px] text-muted-foreground block">Tanggal</span>
                           <span className="font-semibold text-foreground flex items-center gap-1">
@@ -9362,40 +9383,38 @@ function WarehouseAndProductsPage() {
                             {parsed.timeFormatted || "-"} WIB
                           </span>
                         </div>
-                        <div className="space-y-0.5">
-                          <span className="text-[10px] text-muted-foreground block">
-                            Shift Kerja
-                          </span>
-                          <span className="font-semibold text-foreground">
-                            {parsed.shift || "-"}
-                          </span>
-                        </div>
+                        {parsed.type !== "EDIT" && (
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] text-muted-foreground block">
+                              Shift Kerja
+                            </span>
+                            <span className="font-semibold text-foreground">
+                              {parsed.shift || "-"}
+                            </span>
+                          </div>
+                        )}
                         <div className="space-y-0.5">
                           <span className="text-[10px] text-muted-foreground block">Petugas</span>
                           <span
                             className="font-semibold text-foreground truncate block"
-                            title={parsed.operator}
+                            title={parsed.type === "EDIT" ? "Administrator" : parsed.operator}
                           >
-                            {parsed.operator}
+                            {parsed.type === "EDIT" ? "Administrator" : parsed.operator}
                           </span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Box 2: Catatan Aktivitas */}
-                    <div className="rounded-xl border border-border/80 bg-surface p-4 space-y-3">
+                    {/* Box 2: Keterangan Sistem */}
+                    <div className="rounded-xl border border-border/80 bg-surface p-4 space-y-2.5">
                       <div className="flex items-center gap-2">
                         <History className="size-4 text-primary shrink-0" />
                         <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">
-                          Catatan Aktivitas
+                          Keterangan Sistem
                         </h4>
                       </div>
 
-                      {/* Keterangan Sistem */}
-                      <div className="p-3.5 rounded-lg bg-muted/30 border border-border/50 text-xs text-foreground leading-relaxed break-words space-y-1.5">
-                        <p className="font-semibold text-muted-foreground text-[11px] uppercase tracking-wider">
-                          Keterangan Sistem:
-                        </p>
+                      <div className="p-3.5 rounded-lg bg-muted/30 border border-border/50 text-xs text-foreground leading-relaxed break-words">
                         <p className="font-medium text-foreground text-xs leading-relaxed">
                           {getKeteranganSistemText(
                             selectedLog,

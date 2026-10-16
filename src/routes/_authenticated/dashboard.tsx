@@ -1607,7 +1607,7 @@ function DashboardPage() {
     return (
       <div className="rise-in border border-border bg-surface rounded-xl p-4 flex flex-col space-y-3 shadow-xs h-full">
         {/* Header Bagan */}
-        <div className="flex items-center justify-between border-b border-border/80 pb-2">
+        <div className="flex items-center justify-center border-b border-border/80 pb-2">
           <div className="flex items-center gap-1.5">
             <Wrench className="size-3.5 text-primary shrink-0" />
             <span className="text-xs font-bold uppercase tracking-wider text-foreground">
