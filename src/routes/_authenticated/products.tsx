@@ -2380,6 +2380,77 @@ function WarehouseAndProductsPage() {
           : null
         : (originalProduct?.max_stock ?? null);
 
+      const newStock = Number(editingItem.current_stock) || 0;
+
+      // Sinkronisasi metadata OBS (ending_balance) agar deskripsi dan tabel ending balance selalu selaras dengan perubahan stok saat ini
+      let updatedDescription = editingItem.description?.trim() || null;
+      let parsedObs: any = null;
+
+      if (updatedDescription) {
+        try {
+          const parsed = JSON.parse(updatedDescription);
+          if (parsed && typeof parsed === "object") {
+            parsedObs = parsed;
+          }
+        } catch {}
+      }
+
+      if (!parsedObs && originalProduct?.description) {
+        try {
+          const parsed = JSON.parse(originalProduct.description);
+          if (parsed && typeof parsed === "object") {
+            parsedObs = parsed;
+          }
+        } catch {}
+      }
+
+      if (!parsedObs) {
+        const fallbackObs = getProductObsMeta(originalProduct || editingItem);
+        if (fallbackObs) {
+          parsedObs = { ...fallbackObs };
+        }
+      }
+
+      if (parsedObs) {
+        parsedObs.ending_balance = newStock;
+        updatedDescription = JSON.stringify(parsedObs);
+      }
+
+      // Perbarui juga cache localStorage obs_stock_balances_map
+      if (typeof window !== "undefined" && window.localStorage) {
+        try {
+          const rawMap = window.localStorage.getItem("obs_stock_balances_map");
+          const map = rawMap ? JSON.parse(rawMap) : {};
+          const codeKey = editingItem.code ? String(editingItem.code).trim().toLowerCase() : "";
+          const nameKey = editingItem.name ? String(editingItem.name).trim().toLowerCase() : "";
+          const idKey = editingItem.id ? String(editingItem.id).trim() : "";
+
+          const prevMeta =
+            (codeKey && map[codeKey]) ||
+            (nameKey && map[nameKey]) ||
+            (idKey && map[idKey]) ||
+            parsedObs ||
+            {};
+
+          const newMeta = {
+            ...prevMeta,
+            ending_balance: newStock,
+          };
+
+          if (codeKey) map[codeKey] = newMeta;
+          if (nameKey) map[nameKey] = newMeta;
+          if (idKey) map[idKey] = newMeta;
+
+          window.localStorage.setItem("obs_stock_balances_map", JSON.stringify(map));
+
+          if (!updatedDescription && (prevMeta.beginning_balance !== undefined || prevMeta.receipt !== undefined || prevMeta.issued !== undefined)) {
+            updatedDescription = JSON.stringify(newMeta);
+          }
+        } catch (e) {
+          console.warn("Gagal memperbarui obs_stock_balances_map di localStorage:", e);
+        }
+      }
+
       const { error } = await supabase
         .from("products")
         .update({
@@ -2391,8 +2462,8 @@ function WarehouseAndProductsPage() {
           shelf: editingItem.shelf,
           min_stock: minStockToSave,
           max_stock: maxStockToSave,
-          current_stock: Number(editingItem.current_stock) || 0,
-          description: editingItem.description?.trim() || null,
+          current_stock: newStock,
+          description: updatedDescription,
           image_url: editingItem.image_url || null,
           doc_url: editingItem.doc_url || null,
         } as any)
@@ -2994,15 +3065,17 @@ function WarehouseAndProductsPage() {
             : endingStock;
       const beginningBalance = rawBeg !== null && !isNaN(rawBeg) ? rawBeg : 0;
 
-      // Ending Balance = Beginning Balance + Receipt - Issued
-      const finalEndingStock =
-        additionalIn === 0 &&
-        additionalOut === 0 &&
-        obsMeta &&
-        obsMeta.ending_balance !== null &&
-        obsMeta.ending_balance !== undefined
+      // Ending Balance = Mengikuti stok saat ini atau metadata OBS + Mutasi
+      const baseEnding =
+        obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
           ? Number(obsMeta.ending_balance)
-          : Math.max(0, beginningBalance + totalReceipt - totalIssued);
+          : endingStock;
+      const effectiveBaseEnding = endingStock !== baseEnding ? endingStock : baseEnding;
+
+      const finalEndingStock =
+        additionalIn === 0 && additionalOut === 0
+          ? effectiveBaseEnding
+          : Math.max(0, effectiveBaseEnding + additionalIn - additionalOut);
 
       totalBeginningAll += beginningBalance;
       totalReceiptAll += totalReceipt;
@@ -4659,17 +4732,18 @@ function WarehouseAndProductsPage() {
                           : 0;
                       const issuedVal = baseIssued + dailyIssued;
 
-                      // ENDING BALANCE: jika tidak ada mutasi baru setelah import, utamakan ending balance hasil import file Excel.
-                      // Jika terjadi transaksi catatan masuk di kolom receipt maka jumlah ending balance bertambah,
-                      // jika terjadi transaksi keluar di kolom issued maka kolom ending balance berkurang.
-                      const endingBalance =
-                        dailyReceipt === 0 &&
-                        dailyIssued === 0 &&
-                        obsMeta &&
-                        obsMeta.ending_balance !== null &&
-                        obsMeta.ending_balance !== undefined
+                      // ENDING BALANCE: mengikuti stok saat ini (current stock) dari master barang atau metadata OBS
+                      const baseEnding =
+                        obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
                           ? Number(obsMeta.ending_balance)
-                          : Math.max(0, beginningBalance + receiptVal - issuedVal);
+                          : current;
+                      // Jika stok saat ini di master barang berbeda dari metadata OBS (karena diedit user), utamakan stok saat ini
+                      const effectiveBaseEnding = current !== baseEnding ? current : baseEnding;
+
+                      const endingBalance =
+                        dailyReceipt === 0 && dailyIssued === 0
+                          ? effectiveBaseEnding
+                          : Math.max(0, effectiveBaseEnding + dailyReceipt - dailyIssued);
 
                       // Logika Kondisi:
                       // 1. Order warna merah (endingBalance <= minStock)

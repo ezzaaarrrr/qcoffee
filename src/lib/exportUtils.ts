@@ -494,9 +494,17 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
       const beginningBalance = rawBeg !== null && !isNaN(rawBeg) ? rawBeg : 0;
       totalBeginningAll += beginningBalance;
 
-      // 4. ENDING BALANCE — bertambah jika receipt bertambah, berkurang jika issued bertambah:
-      // Ending Balance = Beginning Balance + Receipt - Issued
-      const finalEndingStock = Math.max(0, beginningBalance + totalIn - totalOut);
+      // 4. ENDING BALANCE — mengikuti stok saat ini / metadata OBS + mutasi transaksi:
+      const baseEnding =
+        obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
+          ? Number(obsMeta.ending_balance)
+          : endingStock;
+      const effectiveBaseEnding = endingStock !== baseEnding ? endingStock : baseEnding;
+
+      const finalEndingStock =
+        totalIn === 0 && totalOut === 0
+          ? effectiveBaseEnding
+          : Math.max(0, effectiveBaseEnding + totalIn - totalOut);
       totalEndingStock += finalEndingStock;
 
       // 5. STATUS STOCK (AMAN jika di atas minStock, LIMIT / KRITIS jika <= minStock)
