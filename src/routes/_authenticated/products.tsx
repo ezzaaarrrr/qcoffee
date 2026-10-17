@@ -119,16 +119,36 @@ export const Route = createFileRoute("/_authenticated/products")({
           : undefined,
     };
   },
-  head: () => ({
-    meta: [
-      { title: "Buffer Stok" },
-      {
-        name: "description",
-        content:
-          "Memantau stok cadangan untuk menjaga ketersediaan barang dan mengantisipasi kebutuhan yang tidak terduga.",
-      },
-    ],
-  }),
+  head: ({ match }: any) => {
+    const tab = match?.search?.tab;
+    const title =
+      tab === "buffer_stock"
+        ? "Buffer Stok"
+        : tab === "transactions"
+          ? "Riwayat Mutasi"
+          : tab === "logs"
+            ? "Activity Log"
+            : "OBS Sparepart";
+
+    const description =
+      tab === "buffer_stock"
+        ? "Memantau stok cadangan untuk menjaga ketersediaan barang dan mengantisipasi kebutuhan yang tidak terduga."
+        : tab === "transactions"
+          ? "Riwayat mutasi keluar dan masuk inventaris sparepart."
+          : tab === "logs"
+            ? "Rekam jejak seluruh aktivitas gudang sparepart."
+            : "Kelola data master barang dan inventaris OBS Sparepart.";
+
+    return {
+      meta: [
+        { title },
+        {
+          name: "description",
+          content: description,
+        },
+      ],
+    };
+  },
   component: WarehouseAndProductsPage,
 });
 
@@ -1864,14 +1884,24 @@ function WarehouseAndProductsPage() {
       setTxType(search.type);
       setIsTxOpen(true);
     }
-    if (search.tab) {
-      // buffer_stock sekarang adalah tab tersendiri, tidak perlu redirect ke "items"
-      setActiveTab(search.tab);
-      if (search.tab === "transactions") {
-        setTxDateFilter(getTodayDateStr());
-      }
+    const targetTab = search.tab || "items";
+    setActiveTab(targetTab);
+    if (targetTab === "transactions") {
+      setTxDateFilter(getTodayDateStr());
     }
   }, [search.action, search.type, search.tab]);
+
+  // Sinkronisasi judul tab browser sesuai menu/tab yang aktif
+  useEffect(() => {
+    const tabTitleMap: Record<string, string> = {
+      items: "OBS Sparepart",
+      buffer_stock: "Buffer Stok",
+      transactions: "Riwayat Mutasi",
+      logs: "Activity Log",
+    };
+    const title = tabTitleMap[activeTab] || "OBS Sparepart";
+    document.title = title;
+  }, [activeTab]);
   const [txItems, setTxItems] = useState<
     Array<{ productId: string; quantity: string; unit: string }>
   >([{ productId: "", quantity: "1", unit: "kg" }]);
@@ -4013,7 +4043,7 @@ function WarehouseAndProductsPage() {
             ? "Riwayat Mutasi"
             : activeTab === "logs"
               ? "Riwayat Aktivitas"
-              : "Manajemen & Master Barang"
+              : "Manajemen Master Barang"
       }
     >
       {/* Header Halaman */}
@@ -4033,7 +4063,7 @@ function WarehouseAndProductsPage() {
                 ? "Riwayat Mutasi"
                 : activeTab === "logs"
                   ? "Aktivitas Seluruh Kegiatan"
-                  : "Manajemen & Master Barang"}
+                  : "Manajemen Master Barang"}
           </h1>
           {activeTab !== "transactions" && (
             <p className="mt-1 text-sm text-black/80" style={{ fontFamily: "'Inter', sans-serif" }}>
