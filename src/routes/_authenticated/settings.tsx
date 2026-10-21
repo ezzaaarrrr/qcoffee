@@ -312,13 +312,31 @@ function UserManagementPage() {
         throw new Error("Kata sandi baru minimal 8 karakter");
       }
 
+      // Jika user yang diubah adalah akun admin yang sedang login saat ini
+      if (currentProfile?.id && passwordUser.id === currentProfile.id) {
+        const { error: selfErr } = await supabase.auth.updateUser({ password: pwd });
+        if (selfErr) throw selfErr;
+        return;
+      }
+
       // Panggil fungsi RPC update_user_password_by_admin
       const { error } = await (supabase as any).rpc("update_user_password_by_admin", {
         target_user_id: passwordUser.id,
         new_password: pwd,
       });
 
-      if (error) throw error;
+      if (error) {
+        if (
+          error.message?.includes("Could not find the function") ||
+          error.code === "PGRST202" ||
+          error.message?.includes("schema cache")
+        ) {
+          throw new Error(
+            "Fungsi update_user_password_by_admin belum dijalankan di Supabase. Silakan jalankan script SQL migrasi di Supabase SQL Editor.",
+          );
+        }
+        throw error;
+      }
     },
     onSuccess: () => {
       toast.success(

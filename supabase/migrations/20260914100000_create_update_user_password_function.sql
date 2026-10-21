@@ -4,7 +4,7 @@
 -- ==============================================================================
 
 -- Pastikan ekstensi pgcrypto tersedia untuk fungsi hashing crypt() & gen_salt()
-CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Buat fungsi SECURITY DEFINER agar admin dapat mengubah password pengguna
 CREATE OR REPLACE FUNCTION public.update_user_password_by_admin(
@@ -18,7 +18,13 @@ SET search_path = public, auth, extensions
 AS $$
 BEGIN
   -- 1. Validasi: Pastikan pemanggil adalah Super Admin (role admin)
-  IF NOT public.has_role(auth.uid(), 'admin') THEN
+  IF NOT (
+    public.has_role(auth.uid(), 'admin'::public.app_role)
+    OR EXISTS (
+      SELECT 1 FROM public.user_roles 
+      WHERE user_id = auth.uid() AND role = 'admin'
+    )
+  ) THEN
     RAISE EXCEPTION 'Akses ditolak: Hanya Super Admin yang memiliki wewenang untuk mengubah kata sandi pengguna.';
   END IF;
 
@@ -29,16 +35,24 @@ BEGIN
 
   -- 3. Update kata sandi terenkripsi pada auth.users
   UPDATE auth.users
-  SET encrypted_password = extensions.crypt(new_password, extensions.gen_salt('bf')),
+  SET encrypted_password = crypt(new_password, gen_salt('bf', 10)),
       updated_at = now()
   WHERE id = target_user_id;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Pengguna dengan ID tersebut tidak ditemukan dalam sistem autentikasi.';
   END IF;
+
+  -- 4. Perbarui timestamp profiles jika ada
+  UPDATE public.profiles
+  SET updated_at = now()
+  WHERE id = target_user_id;
 END;
 $$;
 
 -- Berikan izin eksekusi ke authenticated user (proteksi has_role admin sudah ada di dalam fungsi)
 GRANT EXECUTE ON FUNCTION public.update_user_password_by_admin(uuid, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.update_user_password_by_admin(uuid, text) TO service_role;
+
+-- Reload schema cache PostgREST agar fungsi langsung terbaca tanpa restart server
+NOTIFY pgrst, 'reload schema';
