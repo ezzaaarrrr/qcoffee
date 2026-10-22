@@ -689,12 +689,40 @@ function UserManagementPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Departemen / Divisi</Label>
+              <div className="flex items-center justify-between">
+                <Label>Departemen / Divisi</Label>
+                <span className="text-[11px] text-muted-foreground">Pilih atau ketik</span>
+              </div>
               <Input
                 value={newDept}
                 onChange={(e) => setNewDept(e.target.value)}
                 placeholder={ROLE_LABELS[newRole]}
+                list="dept-suggestions-list"
               />
+              <datalist id="dept-suggestions-list">
+                <option value="TEKNIK" />
+                <option value="GDSP1201" />
+                <option value="CI1201" />
+                <option value="CK1201" />
+                <option value="Super Admin" />
+              </datalist>
+              <div className="flex flex-wrap gap-1 pt-1">
+                {["TEKNIK", "GDSP1201", "CI1201", "CK1201", "Super Admin"].map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setNewDept(d)}
+                    className={cn(
+                      "text-[10px] px-2 py-0.5 rounded border transition-colors cursor-pointer",
+                      newDept === d
+                        ? "bg-primary text-primary-foreground border-primary font-medium"
+                        : "bg-surface-muted hover:bg-surface-muted/80 text-muted-foreground border-border",
+                    )}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-1.5">
@@ -886,12 +914,40 @@ function UserManagementPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label>Departemen</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Departemen / Divisi</Label>
+                  <span className="text-[11px] text-muted-foreground">Pilih atau ketik</span>
+                </div>
                 <Input
                   value={editDept}
                   onChange={(e) => setEditDept(e.target.value)}
                   placeholder="Departemen"
+                  list="dept-edit-suggestions"
                 />
+                <datalist id="dept-edit-suggestions">
+                  <option value="TEKNIK" />
+                  <option value="GDSP1201" />
+                  <option value="CI1201" />
+                  <option value="CK1201" />
+                  <option value="Super Admin" />
+                </datalist>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {["TEKNIK", "GDSP1201", "CI1201", "CK1201", "Super Admin"].map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setEditDept(d)}
+                      className={cn(
+                        "text-[10px] px-2 py-0.5 rounded border transition-colors cursor-pointer",
+                        editDept === d
+                          ? "bg-primary text-primary-foreground border-primary font-medium"
+                          : "bg-surface-muted hover:bg-surface-muted/80 text-muted-foreground border-border",
+                      )}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="space-y-1.5">

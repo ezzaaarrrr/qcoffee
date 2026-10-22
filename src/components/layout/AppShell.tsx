@@ -23,6 +23,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/useAuth";
 import { ROLE_LABELS, type AppRole } from "@/lib/domain";
+import { isRouteAllowedForDept, getStoredDeptPermissions } from "@/lib/departmentPermissions";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -122,49 +123,43 @@ export function AppShell({
     navigate({ to: "/auth/login", replace: true });
   }
 
-  const permissionsQuery = useQuery({
-    queryKey: ["role_permissions"],
+  const deptPermissionsQuery = useQuery({
+    queryKey: ["department_permissions"],
     queryFn: async () => {
-      const { data, error } = await (supabase as any).from("role_permissions").select("*");
-      if (error) {
-        const defaults: Record<string, boolean> = {};
-        (Object.keys(ROLE_LABELS) as AppRole[]).forEach((role) => {
-          [...OPERASIONAL, ...MANAJEMEN].forEach((route) => {
-            if (role === "admin" || role === "qc_field") {
-              defaults[`${role}:${route.to}`] = true;
-            } else {
-              defaults[`${role}:${route.to}`] = route.to === "/approvals";
-            }
+      try {
+        const { data, error } = await (supabase as any)
+          .from("department_permissions")
+          .select("*");
+        if (error) throw error;
+        const map: Record<string, boolean> = {};
+        (data ?? []).forEach((item: any) => {
+          map[`${item.department.toLowerCase()}:${item.route_path}`] = item.can_access;
+        });
+        return map;
+      } catch {
+        const stored = getStoredDeptPermissions();
+        const map: Record<string, boolean> = {};
+        Object.entries(stored).forEach(([dept, routes]) => {
+          Object.entries(routes).forEach(([rPath, val]) => {
+            map[`${dept.toLowerCase()}:${rPath}`] = val;
           });
         });
-        return defaults;
+        return map;
       }
-      const map: Record<string, boolean> = {};
-      (data ?? []).forEach((item: any) => {
-        map[`${item.role}:${item.route_path}`] = item.can_access;
-      });
-      return map;
     },
   });
 
   const isNavAllowed = (path: string) => {
     if (isAdmin) return true;
-    if (!roles || roles.length === 0) return false;
-    return roles.some((r) => {
-      const key = `${r}:${path}`;
-      if (permissionsQuery.data && key in permissionsQuery.data) {
-        return permissionsQuery.data[key];
-      }
-      if (r === "qc_field") return true;
-      return path === "/approvals";
-    });
+    const userDept = profile?.department?.trim();
+    return isRouteAllowedForDept(path, userDept, isAdmin, deptPermissionsQuery.data);
   };
 
   const visibleOperasional = OPERASIONAL.filter(
-    (item) => (!item.adminOnly || isAdmin) && isNavAllowed(item.to)
+    (item) => (!item.adminOnly || isAdmin) && isNavAllowed(item.to),
   );
   const visibleManajemen = MANAJEMEN.filter(
-    (item) => (!item.adminOnly || isAdmin) && isNavAllowed(item.to)
+    (item) => (!item.adminOnly || isAdmin) && isNavAllowed(item.to),
   );
 
   const renderNav = (items: NavItem[]) =>
