@@ -40,13 +40,61 @@ export const Route = createFileRoute("/auth/login")({
 function getCandidateEmailsForRole(targetRole: AppRole): string[] {
   const candidates: string[] = [];
 
-  // 1. Ambil akun yang tersimpan secara lokal khusus role ini
+  // 1. Pola email bawaan/standar sistem sesuai masing-masing role & departemen (Prioritas Utama)
+  const roleSpecificEmails: Record<AppRole, string[]> = {
+    prod_process_uh: [
+      "gdsp1201@gmail.com",
+      "ground@gmail.com",
+      "sultanhp91@gmail.com",
+      "prod_process_uh@gmail.com",
+      "sparepart@gmail.com",
+      "warehouse@gmail.com",
+      "gudang@gmail.com",
+      "prod_process_uh@qcoffee.com",
+      "prod_process_uh@coffee.m2",
+      "unit_head@gmail.com",
+    ],
+    qc_field: [
+      "ci1201@gmail.com",
+      "goldasharon@gmail.com",
+      "ezzaaarrrr@gmail.com",
+      "qc_field@gmail.com",
+      "qc@gmail.com",
+      "ci@gmail.com",
+      "qc_field@qcoffee.com",
+      "qc_field@coffee.m2",
+      "quality@gmail.com",
+      "continuous_improvement@gmail.com",
+    ],
+    admin_process: [
+      "ck1201@gmail.com",
+      "admin_process@gmail.com",
+      "produksi@gmail.com",
+      "produksi_cheking@gmail.com",
+      "cheking@gmail.com",
+      "admin_process@qcoffee.com",
+      "admin_process@coffee.m2",
+      "operator@gmail.com",
+    ],
+    admin: [
+      "superadmin@gmail.com",
+      "admin@gmail.com",
+      "ezzaaarrrr@gmail.com",
+      "admin@qcoffee.com",
+      "admin@coffee.m2",
+    ],
+  };
+
+  const defaults = roleSpecificEmails[targetRole] || [];
+  defaults.forEach((em) => candidates.push(em.toLowerCase()));
+
+  // 2. Ambil akun yang tersimpan secara lokal khusus role ini (jika ada akun custom di browser ini)
   const cachedRoleEmail = localStorage.getItem(`role_auth_email_${targetRole}`);
   if (cachedRoleEmail?.trim()) {
     candidates.push(cachedRoleEmail.trim().toLowerCase());
   }
 
-  // 2. Ambil dari mapping multi-akun role yang pernah terdaftar di browser ini
+  // 3. Ambil dari mapping multi-akun role yang pernah terdaftar di browser ini
   try {
     const rawMap = localStorage.getItem("role_accounts_map");
     if (rawMap) {
@@ -66,13 +114,13 @@ function getCandidateEmailsForRole(targetRole: AppRole): string[] {
     }
   } catch {}
 
-  // 3. Akun aktif terakhir di perangkat ini
+  // 4. Akun aktif terakhir di perangkat ini
   const lastActive = localStorage.getItem("last_active_account_email");
   if (lastActive?.trim()) {
     candidates.push(lastActive.trim().toLowerCase());
   }
 
-  // 4. Riwayat seluruh email yang pernah diketahui di browser
+  // 5. Riwayat seluruh email yang pernah diketahui di browser
   try {
     const rawAll = localStorage.getItem("all_known_account_emails");
     if (rawAll) {
@@ -85,57 +133,9 @@ function getCandidateEmailsForRole(targetRole: AppRole): string[] {
     }
   } catch {}
 
-  // 5. Pola email bawaan/standar sistem sesuai masing-masing role & departemen
-  const roleSpecificEmails: Record<AppRole, string[]> = {
-    prod_process_uh: [
-      "ground2@gmail.com",
-      "gdsp1201@gmail.com",
-      "prod_process_uh@gmail.com",
-      "sparepart@gmail.com",
-      "warehouse@gmail.com",
-      "gudang@gmail.com",
-      "prod_process_uh@qcoffee.com",
-      "prod_process_uh@coffee.m2",
-      "unit_head@gmail.com",
-    ],
-    qc_field: [
-      "goldasharon@gmail.com",
-      "ezzaaarrrr@gmail.com",
-      "ci1201@gmail.com",
-      "qc_field@gmail.com",
-      "qc@gmail.com",
-      "ci@gmail.com",
-      "qc_field@qcoffee.com",
-      "qc_field@coffee.m2",
-      "quality@gmail.com",
-      "continuous_improvement@gmail.com",
-    ],
-    admin_process: [
-      "ezzaaarrrr@gmail.com",
-      "ck1201@gmail.com",
-      "admin_process@gmail.com",
-      "produksi@gmail.com",
-      "produksi_cheking@gmail.com",
-      "cheking@gmail.com",
-      "admin_process@qcoffee.com",
-      "admin_process@coffee.m2",
-      "operator@gmail.com",
-    ],
-    admin: [
-      "admin@gmail.com",
-      "superadmin@gmail.com",
-      "admin@qcoffee.com",
-      "admin@coffee.m2",
-      "ezzaaarrrr@gmail.com",
-    ],
-  };
-
-  const defaults = roleSpecificEmails[targetRole] || [];
-  defaults.forEach((em) => candidates.push(em.toLowerCase()));
-
   // 6. Akun Super Admin bawaan sebagai fallback akses universal
-  candidates.push("admin@gmail.com");
   candidates.push("superadmin@gmail.com");
+  candidates.push("admin@gmail.com");
 
   return Array.from(new Set(candidates.filter((e) => Boolean(e) && e.includes("@"))));
 }
