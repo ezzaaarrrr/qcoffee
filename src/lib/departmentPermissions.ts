@@ -150,12 +150,12 @@ export function isRouteAllowedForDept(
   // 4. Periksa data dari Supabase (remote) jika tersedia
   if (remotePermissions) {
     const remoteKey = `${deptKey.toLowerCase()}:${routePath}`;
-    if (remoteKey in remotePermissions) {
-      return remotePermissions[remoteKey];
+    if (remoteKey in remotePermissions && remotePermissions[remoteKey] !== undefined) {
+      return Boolean(remotePermissions[remoteKey]);
     }
     // Coba dengan key case-insensitive
     for (const [k, v] of Object.entries(remotePermissions)) {
-      if (k.toLowerCase() === remoteKey) return v;
+      if (k.toLowerCase() === remoteKey) return Boolean(v);
     }
   }
 
@@ -166,8 +166,9 @@ export function isRouteAllowedForDept(
     (k) => k.toLowerCase() === deptKey.toLowerCase(),
   );
 
-  if (matchedDeptKey && routePath in stored[matchedDeptKey]) {
-    return stored[matchedDeptKey][routePath];
+  const matchedDeptMap = matchedDeptKey ? stored[matchedDeptKey] : undefined;
+  if (matchedDeptMap && routePath in matchedDeptMap) {
+    return Boolean(matchedDeptMap[routePath]);
   }
 
   // 6. Default fallback berdasarkan DEFAULT_DEPARTMENT_PERMISSIONS
@@ -175,8 +176,9 @@ export function isRouteAllowedForDept(
     (k) => k.toLowerCase() === deptKey.toLowerCase(),
   );
 
-  if (defaultKey && routePath in DEFAULT_DEPARTMENT_PERMISSIONS[defaultKey]) {
-    return DEFAULT_DEPARTMENT_PERMISSIONS[defaultKey][routePath];
+  const defaultDeptMap = defaultKey ? DEFAULT_DEPARTMENT_PERMISSIONS[defaultKey] : undefined;
+  if (defaultDeptMap && routePath in defaultDeptMap) {
+    return Boolean(defaultDeptMap[routePath]);
   }
 
   // Fallback umum departemen baru: izinkan halaman dashboard & approval, sisanya default false

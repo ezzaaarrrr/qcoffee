@@ -103,7 +103,10 @@ function RolesAndDepartmentsPage() {
       // Pastikan DEPARTEMEN TEKNIK selalu tersedia di daftar departemen
       const list = [...data] as DepartmentRow[];
       if (!list.some((d) => d.name.toUpperCase() === "TEKNIK")) {
-        list.unshift(DEFAULT_DEPARTMENTS[0]);
+        const defaultTeknik = DEFAULT_DEPARTMENTS[0];
+        if (defaultTeknik) {
+          list.unshift(defaultTeknik);
+        }
       }
       return list;
     },
