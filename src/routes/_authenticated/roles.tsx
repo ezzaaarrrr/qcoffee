@@ -159,24 +159,27 @@ function RolesAndDepartmentsPage() {
       }
 
       // 3. Simpan juga ke tabel Supabase role_permissions untuk role yang bersangkutan
+      // PENTING: Jangan overwrite role_permissions untuk Teknik karena Teknik berbagi role sistem prod_process_uh dengan GDSP1201
       const normDept = normalizeDepartmentKey(department).toLowerCase();
-      const mappedRole = DEPT_TO_ROLE[normDept] || DEPT_TO_ROLE[department.toLowerCase()];
-      if (mappedRole) {
-        try {
-          const { error: roleErr } = await (supabase as any).from("role_permissions").upsert(
-            {
-              role: mappedRole,
-              route_path: routePath,
-              can_access: canAccess,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "role,route_path" },
-          );
-          if (roleErr) {
-            console.warn("Supabase role_permissions upsert notice:", roleErr);
+      if (normDept !== "teknik") {
+        const mappedRole = DEPT_TO_ROLE[normDept] || DEPT_TO_ROLE[department.toLowerCase()];
+        if (mappedRole) {
+          try {
+            const { error: roleErr } = await (supabase as any).from("role_permissions").upsert(
+              {
+                role: mappedRole,
+                route_path: routePath,
+                can_access: canAccess,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "role,route_path" },
+            );
+            if (roleErr) {
+              console.warn("Supabase role_permissions upsert notice:", roleErr);
+            }
+          } catch (err) {
+            console.warn("Supabase role_permissions caught:", err);
           }
-        } catch (err) {
-          console.warn("Supabase role_permissions caught:", err);
         }
       }
     },

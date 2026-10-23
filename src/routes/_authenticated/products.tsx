@@ -101,6 +101,7 @@ import { useCurrentUser } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { formatDate, formatUnit } from "@/lib/domain";
 import { exportSparepartInventoryExcel, getProductObsMeta } from "@/lib/exportUtils";
+import { normalizeDepartmentKey } from "@/lib/departmentPermissions";
 
 type ProductsSearch = {
   tab?: string | undefined;
@@ -1083,11 +1084,25 @@ function WarehouseAndProductsPage() {
   const queryClient = useQueryClient();
   const search = Route.useSearch();
 
+  // Identifikasi peran Departemen Teknik / Administrator Teknik
+  const userDept = normalizeDepartmentKey(profile?.department, roles);
+  const fullNameLower = profile?.full_name?.toLowerCase() || "";
+  const deptLower = profile?.department?.toLowerCase() || "";
+  const emailLower = profile?.email?.toLowerCase() || "";
+
+  const isTeknikUser =
+    !isAdmin &&
+    (userDept === "TEKNIK" ||
+      deptLower.includes("teknik") ||
+      fullNameLower.includes("teknik") ||
+      fullNameLower.includes("administrator teknik") ||
+      emailLower.includes("teknik"));
+
   // Hak akses Departemen Warehouse Sparepart & Continuous Improvement
   const isWarehouseAdmin =
-    isAdmin || roles.includes("prod_process_uh") || roles.includes("admin_process");
-  const canManageWarehouse = isWarehouseAdmin || roles.includes("qc_field");
-  const canDeleteMaster = isAdmin || roles.includes("prod_process_uh");
+    isAdmin || (!isTeknikUser && (roles.includes("prod_process_uh") || roles.includes("admin_process")));
+  const canManageWarehouse = isWarehouseAdmin || (!isTeknikUser && roles.includes("qc_field"));
+  const canDeleteMaster = isAdmin || (!isTeknikUser && roles.includes("prod_process_uh"));
 
   // Tab State
   const [activeTab, setActiveTab] = useState<string>(search.tab || "items");
@@ -1880,7 +1895,11 @@ function WarehouseAndProductsPage() {
 
   // Auto-open modal jika diarahkan dari dashboard dengan search parameter
   useEffect(() => {
-    if (search.action === "tx" && (search.type === "IN" || search.type === "OUT")) {
+    if (
+      search.action === "tx" &&
+      (search.type === "IN" || search.type === "OUT") &&
+      !isTeknikUser
+    ) {
       setTxType(search.type);
       setIsTxOpen(true);
     }
@@ -4077,7 +4096,7 @@ function WarehouseAndProductsPage() {
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
-          {activeTab === "logs" ? null : activeTab === "transactions" ||
+          {activeTab === "logs" || isTeknikUser ? null : activeTab === "transactions" ||
             search.tab === "transactions" ? (
             /* Layout Sejajar Horizontal 1 Baris khusus Riwayat Mutasi */
             <div className="flex items-center gap-2">
@@ -4312,7 +4331,9 @@ function WarehouseAndProductsPage() {
           </div>
 
           {/* ── MONITORING INFO CARDS OBS SPAREPART ────────────────────────── */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {!isTeknikUser && (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {/* Card 1: Total Item OBS */}
             <div
               className={cn(
@@ -4645,6 +4666,8 @@ function WarehouseAndProductsPage() {
               </div>
             </div>
           )}
+        </>
+      )}
 
           {/* Tabel Barang */}
           <div className="border border-border bg-surface overflow-x-auto rounded-lg shadow-2xs">
@@ -6118,6 +6141,8 @@ function WarehouseAndProductsPage() {
             const bufOutOfStockPct =
               totalBufferItems > 0 ? Math.max(0, 100 - bufOrderPct - bufSafetyPct) : 0;
 
+            if (isTeknikUser) return null;
+
             return (
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -6832,7 +6857,7 @@ function WarehouseAndProductsPage() {
       </Tabs>
 
       {/* ── MODAL DIALOG: TAMBAH BARANG BUFFER STOK (INDEPENDEN) ─────────────── */}
-      <Dialog open={isBufferAddOpen} onOpenChange={setIsBufferAddOpen}>
+      <Dialog open={isBufferAddOpen && !isTeknikUser} onOpenChange={setIsBufferAddOpen}>
         <DialogContent className="sm:max-w-4xl w-full max-h-[90vh] flex flex-col p-6 overflow-hidden">
           <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
             <DialogTitle className="text-lg font-bold">Tambah Data Barang Buffer Stok</DialogTitle>
@@ -7726,7 +7751,7 @@ function WarehouseAndProductsPage() {
       </AlertDialog>
 
       {/* ── MODAL DIALOG: TAMBAH BARANG OBS SPAREPART ────────────────────────── */}
-      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+      <Dialog open={isAddOpen && !isTeknikUser} onOpenChange={setIsAddOpen}>
         <DialogContent className="sm:max-w-4xl w-full max-h-[90vh] flex flex-col p-6 overflow-hidden">
           <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
             <DialogTitle className="text-lg font-bold">
@@ -8479,7 +8504,7 @@ function WarehouseAndProductsPage() {
       </Dialog>
 
       {/* ── MODAL DIALOG: PENCATATAN TRANSAKSI MASUK / KELUAR ─────────────────── */}
-      <Dialog open={isTxOpen} onOpenChange={setIsTxOpen}>
+      <Dialog open={isTxOpen && !isTeknikUser} onOpenChange={setIsTxOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>

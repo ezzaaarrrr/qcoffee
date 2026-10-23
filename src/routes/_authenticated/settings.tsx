@@ -139,6 +139,16 @@ function UserManagementPage() {
               map[userRole] = list;
               localStorage.setItem(`role_auth_email_${userRole}`, em);
             }
+            if (p.department && p.department.trim()) {
+              const deptKey = p.department.trim();
+              const deptList = Array.isArray(map[deptKey]) ? map[deptKey] : [];
+              if (!deptList.includes(em)) {
+                deptList.push(em);
+              }
+              map[deptKey] = deptList;
+              localStorage.setItem(`role_auth_email_${deptKey}`, em);
+              localStorage.setItem(`role_auth_email_${deptKey.toLowerCase()}`, em);
+            }
           }
         });
 
@@ -230,16 +240,27 @@ function UserManagementPage() {
       }
     },
     onSuccess: () => {
-      // Simpan cache email untuk role ini agar login langsung mengenali akun baru
+      // Simpan cache email untuk role & departemen ini agar login langsung mengenali akun baru
       if (newEmail.trim()) {
         const em = newEmail.trim().toLowerCase();
         localStorage.setItem(`role_auth_email_${newRole}`, em);
+        const deptKey = newDept.trim() || ROLE_LABELS[newRole];
+        if (deptKey) {
+          localStorage.setItem(`role_auth_email_${deptKey}`, em);
+          localStorage.setItem(`role_auth_email_${deptKey.toLowerCase()}`, em);
+        }
         try {
           const rawMap = localStorage.getItem("role_accounts_map");
           const map = rawMap ? JSON.parse(rawMap) : {};
           const list = Array.isArray(map[newRole]) ? map[newRole] : [];
           if (!list.includes(em)) list.push(em);
           map[newRole] = list;
+
+          if (deptKey) {
+            const dList = Array.isArray(map[deptKey]) ? map[deptKey] : [];
+            if (!dList.includes(em)) dList.push(em);
+            map[deptKey] = dList;
+          }
           localStorage.setItem("role_accounts_map", JSON.stringify(map));
 
           const rawKnown = localStorage.getItem("all_known_account_emails");

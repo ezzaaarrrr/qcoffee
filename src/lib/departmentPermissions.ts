@@ -45,6 +45,22 @@ export const DEPT_TO_ROLE: Record<string, AppRole> = {
   "tkn": "prod_process_uh",
 };
 
+export type LoginAccessTarget = "CK1201" | "CI1201" | "GDSP1201" | "TEKNIK" | "Super Admin";
+
+export const LOGIN_ACCESS_TARGETS: {
+  id: LoginAccessTarget;
+  label: string;
+  role: AppRole;
+  department: string;
+  description: string;
+}[] = [
+  { id: "CK1201", label: "CK1201", role: "admin_process", department: "CK1201", description: "Operator Admin Ceklis" },
+  { id: "CI1201", label: "CI1201", role: "qc_field", department: "CI1201", description: "Departemen Continuous Improvement" },
+  { id: "GDSP1201", label: "GDSP1201", role: "prod_process_uh", department: "GDSP1201", description: "Admin Gudang & Operasional Sparepart" },
+  { id: "TEKNIK", label: "TEKNIK", role: "prod_process_uh", department: "TEKNIK", description: "Departemen Teknik & Maintenance" },
+  { id: "Super Admin", label: "Super Admin", role: "admin", department: "Super Admin", description: "Super Admin System" },
+];
+
 /** Standar izin bawaan berdasarkan departemen pengguna */
 export const DEFAULT_DEPARTMENT_PERMISSIONS: Record<string, Record<string, boolean>> = {
   TEKNIK: {
@@ -195,7 +211,7 @@ export async function fetchRemoteDeptPermissions(
       });
     }
 
-    // 2. Ambil dari tabel role_permissions di Supabase (sebagai sinkronisasi role & fallback)
+    // 2. Ambil dari tabel role_permissions di Supabase (hanya untuk mapping role murni)
     const { data: roleData, error: roleErr } = await supabaseClient
       .from("role_permissions")
       .select("*");
@@ -205,15 +221,6 @@ export async function fetchRemoteDeptPermissions(
         if (item.role && item.route_path) {
           const roleStr = String(item.role).toLowerCase().trim();
           map[`${roleStr}:${item.route_path}`] = Boolean(item.can_access);
-
-          // Terjemahkan role ke departemen terkait jika belum ada pengaturan spesifik di map
-          const mappedDept = ROLE_TO_DEFAULT_DEPT[item.role as AppRole];
-          if (mappedDept) {
-            const deptKey = `${mappedDept.toLowerCase()}:${item.route_path}`;
-            if (!(deptKey in map)) {
-              map[deptKey] = Boolean(item.can_access);
-            }
-          }
         }
       });
     }
@@ -262,24 +269,14 @@ export function isRouteAllowedForDept(
 
   const deptKey = normalizeDepartmentKey(department, userRoles);
 
-  // 4. Periksa data dari Supabase (remote) jika tersedia
+  // 4. Periksa data spesifik departemen dari Supabase (remote) jika tersedia
   if (remotePermissions) {
     const remoteKey = `${deptKey.toLowerCase()}:${routePath}`;
     if (remoteKey in remotePermissions && remotePermissions[remoteKey] !== undefined) {
       return Boolean(remotePermissions[remoteKey]);
     }
 
-    // Periksa juga berdasarkan user roles (misal: "admin_process:/roasting")
-    if (userRoles && userRoles.length > 0) {
-      for (const r of userRoles) {
-        const roleKey = `${String(r).toLowerCase()}:${routePath}`;
-        if (roleKey in remotePermissions && remotePermissions[roleKey] !== undefined) {
-          return Boolean(remotePermissions[roleKey]);
-        }
-      }
-    }
-
-    // Cocokkan secara case-insensitive
+    // Cocokkan secara case-insensitive untuk departemen
     for (const [k, v] of Object.entries(remotePermissions)) {
       if (k.toLowerCase() === remoteKey) return Boolean(v);
     }

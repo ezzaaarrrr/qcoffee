@@ -22,6 +22,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ROLE_LABELS, type AppRole } from "@/lib/domain";
+import {
+  LOGIN_ACCESS_TARGETS,
+  type LoginAccessTarget,
+  normalizeDepartmentKey,
+} from "@/lib/departmentPermissions";
 
 export const Route = createFileRoute("/auth/login")({
   head: () => ({
@@ -36,13 +41,25 @@ export const Route = createFileRoute("/auth/login")({
   component: LoginPage,
 });
 
-/** Helper untuk mengumpulkan seluruh calon email akun berdasarkan role yang dipilih */
-function getCandidateEmailsForRole(targetRole: AppRole): string[] {
+/** Helper untuk mengumpulkan seluruh calon email akun berdasarkan opsi User / Departemen yang dipilih */
+function getCandidateEmailsForAccess(target: LoginAccessTarget): string[] {
   const candidates: string[] = [];
 
-  // 1. Pola email bawaan/standar sistem sesuai masing-masing role & departemen (Prioritas Utama)
-  const roleSpecificEmails: Record<AppRole, string[]> = {
-    prod_process_uh: [
+  // 1. Pola email bawaan/standar sistem sesuai masing-masing User / Departemen
+  const defaultEmailsMap: Record<LoginAccessTarget, string[]> = {
+    TEKNIK: [
+      "teknik@gmail.com",
+      "teknik@qcoffee.com",
+      "teknik@coffee.m2",
+      "tkn@gmail.com",
+      "maintenance@gmail.com",
+      "prod_process_uh@gmail.com",
+      "warehouse@gmail.com",
+      "sparepart@gmail.com",
+      "gudang@gmail.com",
+      "unit_head@gmail.com",
+    ],
+    GDSP1201: [
       "gdsp1201@gmail.com",
       "ground@gmail.com",
       "sultanhp91@gmail.com",
@@ -54,7 +71,7 @@ function getCandidateEmailsForRole(targetRole: AppRole): string[] {
       "prod_process_uh@coffee.m2",
       "unit_head@gmail.com",
     ],
-    qc_field: [
+    CI1201: [
       "ci1201@gmail.com",
       "goldasharon@gmail.com",
       "ezzaaarrrr@gmail.com",
@@ -66,7 +83,7 @@ function getCandidateEmailsForRole(targetRole: AppRole): string[] {
       "quality@gmail.com",
       "continuous_improvement@gmail.com",
     ],
-    admin_process: [
+    CK1201: [
       "ck1201@gmail.com",
       "admin_process@gmail.com",
       "produksi@gmail.com",
@@ -76,7 +93,7 @@ function getCandidateEmailsForRole(targetRole: AppRole): string[] {
       "admin_process@coffee.m2",
       "operator@gmail.com",
     ],
-    admin: [
+    "Super Admin": [
       "superadmin@gmail.com",
       "admin@gmail.com",
       "ezzaaarrrr@gmail.com",
@@ -85,21 +102,34 @@ function getCandidateEmailsForRole(targetRole: AppRole): string[] {
     ],
   };
 
-  const defaults = roleSpecificEmails[targetRole] || [];
+  const defaults = defaultEmailsMap[target] || [];
   defaults.forEach((em) => candidates.push(em.toLowerCase()));
 
-  // 2. Ambil akun yang tersimpan secara lokal khusus role ini (jika ada akun custom di browser ini)
-  const cachedRoleEmail = localStorage.getItem(`role_auth_email_${targetRole}`);
-  if (cachedRoleEmail?.trim()) {
-    candidates.push(cachedRoleEmail.trim().toLowerCase());
+  // 2. Ambil akun yang tersimpan secara lokal khusus target ini di browser ini
+  const cachedDirect = localStorage.getItem(`role_auth_email_${target}`);
+  if (cachedDirect?.trim()) {
+    candidates.push(cachedDirect.trim().toLowerCase());
   }
 
-  // 3. Ambil dari mapping multi-akun role yang pernah terdaftar di browser ini
+  const cachedLower = localStorage.getItem(`role_auth_email_${target.toLowerCase()}`);
+  if (cachedLower?.trim()) {
+    candidates.push(cachedLower.trim().toLowerCase());
+  }
+
+  const targetItem = LOGIN_ACCESS_TARGETS.find((i) => i.id === target);
+  if (targetItem) {
+    const cachedRole = localStorage.getItem(`role_auth_email_${targetItem.role}`);
+    if (cachedRole?.trim()) {
+      candidates.push(cachedRole.trim().toLowerCase());
+    }
+  }
+
+  // 3. Ambil dari mapping multi-akun role/departemen yang pernah terdaftar di browser ini
   try {
     const rawMap = localStorage.getItem("role_accounts_map");
     if (rawMap) {
       const map = JSON.parse(rawMap);
-      const list = map[targetRole];
+      const list = map[target] || (targetItem ? map[targetItem.role] : []);
       if (Array.isArray(list)) {
         list.forEach((em) => {
           if (typeof em === "string" && em.trim()) candidates.push(em.trim().toLowerCase());
@@ -143,8 +173,14 @@ function getCandidateEmailsForRole(targetRole: AppRole): string[] {
 function LoginPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [role, setRole] = useState<AppRole>(() => {
-    return (localStorage.getItem("last_active_role") as AppRole) || "prod_process_uh";
+  const [selectedAccess, setSelectedAccess] = useState<LoginAccessTarget>(() => {
+    const cachedAccess = localStorage.getItem("last_active_access") as LoginAccessTarget;
+    if (cachedAccess && LOGIN_ACCESS_TARGETS.some((t) => t.id === cachedAccess)) {
+      return cachedAccess;
+    }
+    const cachedDept = localStorage.getItem("last_active_dept");
+    if (cachedDept && cachedDept.toUpperCase() === "TEKNIK") return "TEKNIK";
+    return "GDSP1201";
   });
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -168,13 +204,13 @@ function LoginPage() {
     });
   }, [navigate]);
 
-  const handleRoleChange = (newRole: AppRole) => {
-    setRole(newRole);
+  const handleAccessChange = (newTarget: LoginAccessTarget) => {
+    setSelectedAccess(newTarget);
     setErrorMessage(null);
   };
 
   const handleOpenForgotPassword = () => {
-    const candidates = getCandidateEmailsForRole(role);
+    const candidates = getCandidateEmailsForAccess(selectedAccess);
     setResetEmail(candidates[0] ?? "");
     setResetSent(false);
     setForgotPasswordOpen(true);
@@ -230,8 +266,10 @@ function LoginPage() {
     setLoading(true);
 
     try {
-      // 1. Kumpulkan seluruh kandidat email akun untuk role yang dipilih
-      const candidateEmails = getCandidateEmailsForRole(role);
+      const targetOption = LOGIN_ACCESS_TARGETS.find((i) => i.id === selectedAccess)!;
+
+      // 1. Kumpulkan seluruh kandidat email akun untuk akses yang dipilih
+      const candidateEmails = getCandidateEmailsForAccess(selectedAccess);
 
       // Jika user menginput email spesifik, prioritaskan di urutan paling awal
       if (customEmail.trim() && customEmail.includes("@")) {
@@ -243,7 +281,7 @@ function LoginPage() {
         const { data: rpcEmails, error: rpcError } = await (supabase as any).rpc(
           "get_auth_emails_by_role",
           {
-            p_role: role,
+            p_role: targetOption.role,
           },
         );
 
@@ -256,7 +294,7 @@ function LoginPage() {
           });
         }
       } catch (err) {
-        console.warn("RPC get_auth_emails_by_role check:", err);
+        console.warn("RPC get_auth_emails_by_role check notice:", err);
       }
 
       const uniqueEmails = Array.from(new Set(candidateEmails.filter(Boolean)));
@@ -264,7 +302,7 @@ function LoginPage() {
       if (uniqueEmails.length === 0) {
         setLoading(false);
         const title = "Akun Tidak Ditemukan";
-        const desc = `Belum ada akun yang terdaftar untuk ${ROLE_LABELS[role]}. Silakan hubungi Super Admin atau daftar akun baru.`;
+        const desc = `Belum ada akun yang terdaftar untuk ${selectedAccess}. Silakan hubungi Super Admin atau daftar akun baru.`;
         setErrorMessage({ title, desc, type: "credentials" });
         toast.error(title, { description: desc });
         return;
@@ -295,7 +333,7 @@ function LoginPage() {
       if (!authenticatedUser) {
         setLoading(false);
         let title = "Kata Sandi Salah";
-        let desc = `Kata sandi yang Anda masukkan tidak cocok untuk ${ROLE_LABELS[role]}. Silakan periksa kembali kata sandi Anda.`;
+        let desc = `Kata sandi yang Anda masukkan tidak cocok untuk ${selectedAccess}. Silakan periksa kembali kata sandi Anda.`;
 
         if (lastError?.message?.toLowerCase().includes("too many requests")) {
           title = "Terlalu Banyak Percobaan";
@@ -307,27 +345,53 @@ function LoginPage() {
         return;
       }
 
-      // 3. Validasi Hak Akses / Role Akun
-      const { data: userRoles, error: rolesError } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", authenticatedUser.id);
+      // 3. Validasi Hak Akses & Departemen Akun Pengguna
+      const [rolesRes, profileRes] = await Promise.all([
+        supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", authenticatedUser.id),
+        supabase
+          .from("profiles")
+          .select("department, full_name")
+          .eq("id", authenticatedUser.id)
+          .maybeSingle(),
+      ]);
 
-      if (!rolesError && userRoles && userRoles.length > 0) {
-        const registeredRoles = userRoles.map((r) => r.role as AppRole);
-        const hasSelectedRole = registeredRoles.includes(role);
-        const isSuperAdmin = registeredRoles.includes("admin");
+      const registeredRoles = (rolesRes.data ?? []).map((r: any) => r.role as AppRole);
+      const isSuperAdmin = registeredRoles.includes("admin");
 
-        // Jika role yang dipilih tidak sesuai dan user bukan Super Admin
-        if (!hasSelectedRole && !isSuperAdmin) {
+      // Super Admin selalu memiliki izin masuk di semua pilihan akses
+      if (!isSuperAdmin) {
+        const userDept = normalizeDepartmentKey(profileRes.data?.department, registeredRoles);
+        let isMatch = false;
+
+        if (selectedAccess === "TEKNIK") {
+          isMatch =
+            userDept === "TEKNIK" ||
+            (registeredRoles.includes("prod_process_uh") &&
+              (!profileRes.data?.department ||
+                profileRes.data.department.toLowerCase().includes("teknik")));
+        } else if (selectedAccess === "GDSP1201") {
+          isMatch =
+            userDept === "GDSP1201" ||
+            (registeredRoles.includes("prod_process_uh") &&
+              !profileRes.data?.department?.toLowerCase().includes("teknik"));
+        } else if (selectedAccess === "CI1201") {
+          isMatch = userDept === "CI1201" || registeredRoles.includes("qc_field");
+        } else if (selectedAccess === "CK1201") {
+          isMatch = userDept === "CK1201" || registeredRoles.includes("admin_process");
+        } else if (selectedAccess === "Super Admin") {
+          isMatch = isSuperAdmin;
+        }
+
+        if (!isMatch) {
           await supabase.auth.signOut();
           setLoading(false);
 
-          const actualRoleNames = registeredRoles.map((r) => ROLE_LABELS[r] || r).join(", ");
-
           const errorDetail = {
-            title: "Hak Akses (Role) Tidak Sesuai",
-            desc: `Akun ini terdaftar sebagai "${actualRoleNames}", bukan sebagai "${ROLE_LABELS[role]}". Silakan pilih role yang sesuai pada dropdown di atas.`,
+            title: "Hak Akses / Departemen Tidak Sesuai",
+            desc: `Akun ini terdaftar pada departemen "${userDept || registeredRoles.map((r) => ROLE_LABELS[r] || r).join(', ')}", bukan sebagai "${selectedAccess}". Silakan pilih opsi yang sesuai pada dropdown User.`,
             type: "role" as const,
           };
 
@@ -340,27 +404,47 @@ function LoginPage() {
         }
       }
 
-      // 4. Simpan riwayat login role yang berhasil ke localStorage
+      // 4. Pastikan departemen di profiles disinkronkan jika user memilih TEKNIK
+      if (
+        selectedAccess === "TEKNIK" &&
+        (!profileRes.data?.department || profileRes.data.department !== "TEKNIK")
+      ) {
+        await supabase
+          .from("profiles")
+          .update({ department: "TEKNIK" })
+          .eq("id", authenticatedUser.id);
+      }
+
+      // 5. Simpan riwayat login yang berhasil ke localStorage
       if (authenticatedEmail) {
-        localStorage.setItem(`role_auth_email_${role}`, authenticatedEmail);
+        localStorage.setItem(`role_auth_email_${selectedAccess}`, authenticatedEmail);
+        localStorage.setItem(`role_auth_email_${selectedAccess.toLowerCase()}`, authenticatedEmail);
+        localStorage.setItem(`role_auth_email_${targetOption.role}`, authenticatedEmail);
         localStorage.setItem("last_active_account_email", authenticatedEmail);
-        localStorage.setItem("last_active_role", role);
+        localStorage.setItem("last_active_role", targetOption.role);
+        localStorage.setItem("last_active_dept", targetOption.department);
+        localStorage.setItem("last_active_access", selectedAccess);
 
         try {
           const rawMap = localStorage.getItem("role_accounts_map");
           const map = rawMap ? JSON.parse(rawMap) : {};
-          const list = Array.isArray(map[role]) ? map[role] : [];
+          const list = Array.isArray(map[selectedAccess]) ? map[selectedAccess] : [];
           if (!list.includes(authenticatedEmail)) {
             list.push(authenticatedEmail);
           }
-          map[role] = list;
+          map[selectedAccess] = list;
+          if (targetOption.role) {
+            const roleList = Array.isArray(map[targetOption.role]) ? map[targetOption.role] : [];
+            if (!roleList.includes(authenticatedEmail)) roleList.push(authenticatedEmail);
+            map[targetOption.role] = roleList;
+          }
           localStorage.setItem("role_accounts_map", JSON.stringify(map));
         } catch {}
       }
 
       setLoading(false);
       toast.success("Berhasil masuk", {
-        description: `Selamat datang! Masuk sebagai ${ROLE_LABELS[role]}`,
+        description: `Selamat datang! Masuk sebagai ${selectedAccess}`,
       });
       navigate({ to: "/dashboard", replace: true });
     } catch (err: any) {
@@ -434,18 +518,22 @@ function LoginPage() {
                 <UserCheck className="size-3.5 text-cyan-400" />
                 <span>User</span>
               </Label>
-              <Select value={role} onValueChange={(v) => handleRoleChange(v as AppRole)}>
+              <Select
+                value={selectedAccess}
+                onValueChange={(v) => handleAccessChange(v as LoginAccessTarget)}
+              >
                 <SelectTrigger
                   id="role-select"
                   className="w-full h-10 text-xs bg-[#05132d] border-blue-900/60 text-white focus:ring-cyan-500 cursor-pointer"
                 >
-                  <SelectValue placeholder="Pilih Peran / Hak Akses" />
+                  <SelectValue placeholder="Pilih User / Hak Akses" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#081b3d] border-blue-900 text-white">
-                  <SelectItem value="admin_process">{ROLE_LABELS["admin_process"]}</SelectItem>
-                  <SelectItem value="qc_field">{ROLE_LABELS["qc_field"]}</SelectItem>
-                  <SelectItem value="prod_process_uh">{ROLE_LABELS["prod_process_uh"]}</SelectItem>
-                  <SelectItem value="admin">{ROLE_LABELS["admin"]}</SelectItem>
+                  {LOGIN_ACCESS_TARGETS.map((target) => (
+                    <SelectItem key={target.id} value={target.id}>
+                      {target.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

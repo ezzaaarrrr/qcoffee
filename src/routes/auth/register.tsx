@@ -33,7 +33,7 @@ function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [role, setRole] = useState<AppRole>("admin_process");
+  const [deptChoice, setDeptChoice] = useState<string>("CK1201");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -52,12 +52,21 @@ function RegisterPage() {
       return;
     }
     setLoading(true);
+
+    const roleForDept: Record<string, AppRole> = {
+      CK1201: "admin_process",
+      CI1201: "qc_field",
+      GDSP1201: "prod_process_uh",
+      TEKNIK: "prod_process_uh",
+    };
+    const chosenRole = roleForDept[deptChoice] || "admin_process";
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         // Tidak ada emailRedirectTo — konfirmasi email dinonaktifkan
-        data: { full_name: fullName, role, department: ROLE_LABELS[role] },
+        data: { full_name: fullName, role: chosenRole, department: deptChoice },
       },
     });
     setLoading(false);
@@ -71,18 +80,27 @@ function RegisterPage() {
     // Sign out terlebih dahulu agar user wajib login secara eksplisit.
     await supabase.auth.signOut();
 
-    // Simpan email terdaftar untuk role ini agar bisa langsung diautentikasi dengan role & password
+    // Simpan email terdaftar untuk role & departemen ini agar bisa langsung diautentikasi dengan user & password
     const regEmail = email.trim().toLowerCase();
-    localStorage.setItem(`role_auth_email_${role}`, regEmail);
+    localStorage.setItem(`role_auth_email_${deptChoice}`, regEmail);
+    localStorage.setItem(`role_auth_email_${deptChoice.toLowerCase()}`, regEmail);
+    localStorage.setItem(`role_auth_email_${chosenRole}`, regEmail);
     localStorage.setItem("last_active_account_email", regEmail);
-    localStorage.setItem("last_active_role", role);
+    localStorage.setItem("last_active_role", chosenRole);
+    localStorage.setItem("last_active_dept", deptChoice);
+    localStorage.setItem("last_active_access", deptChoice);
 
     try {
       const rawMap = localStorage.getItem("role_accounts_map");
       const map = rawMap ? JSON.parse(rawMap) : {};
-      const list = Array.isArray(map[role]) ? map[role] : [];
+      const list = Array.isArray(map[deptChoice]) ? map[deptChoice] : [];
       if (!list.includes(regEmail)) list.push(regEmail);
-      map[role] = list;
+      map[deptChoice] = list;
+
+      const roleList = Array.isArray(map[chosenRole]) ? map[chosenRole] : [];
+      if (!roleList.includes(regEmail)) roleList.push(regEmail);
+      map[chosenRole] = roleList;
+
       localStorage.setItem("role_accounts_map", JSON.stringify(map));
 
       const rawKnown = localStorage.getItem("all_known_account_emails");
@@ -94,7 +112,7 @@ function RegisterPage() {
     } catch {}
 
     toast.success("Akun berhasil dibuat!", {
-      description: "Silakan masuk dengan memilih departemen/role dan memasukkan kata sandi Anda.",
+      description: `Silakan masuk dengan memilih ${deptChoice} dan memasukkan kata sandi Anda.`,
     });
     navigate({ to: "/auth/login", replace: true });
   }
@@ -154,15 +172,16 @@ function RegisterPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="role-select">Departemen </Label>
-              <Select value={role} onValueChange={(v) => setRole(v as AppRole)}>
+              <Label htmlFor="role-select">Departemen / User Akses</Label>
+              <Select value={deptChoice} onValueChange={(v) => setDeptChoice(v)}>
                 <SelectTrigger id="role-select">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="admin_process">{ROLE_LABELS["admin_process"]}</SelectItem>
-                  <SelectItem value="qc_field">{ROLE_LABELS["qc_field"]}</SelectItem>
-                  <SelectItem value="prod_process_uh">{ROLE_LABELS["prod_process_uh"]}</SelectItem>
+                  <SelectItem value="CK1201">CK1201 (Operator Ceklis Produksi)</SelectItem>
+                  <SelectItem value="CI1201">CI1201 (Continuous Improvement / QC)</SelectItem>
+                  <SelectItem value="GDSP1201">GDSP1201 (Admin Gudang & Operasional Sparepart)</SelectItem>
+                  <SelectItem value="TEKNIK">TEKNIK (Departemen Teknik & Maintenance)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
