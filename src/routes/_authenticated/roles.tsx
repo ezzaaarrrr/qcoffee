@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Plus, Pencil, Trash2, Building2, Shield, Lock, Layers } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, Shield, Lock, Layers, Database, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
 import { Panel } from "@/components/Panel";
@@ -36,6 +36,10 @@ import {
   getStoredDeptPermissions,
   saveStoredDeptPermission,
   isRouteAllowedForDept,
+  normalizeDepartmentKey,
+  fetchRemoteDeptPermissions,
+  DEPT_TO_ROLE,
+  SQL_DEPARTMENT_PERMISSIONS_MIGRATION,
 } from "@/lib/departmentPermissions";
 
 export const Route = createFileRoute("/_authenticated/roles")({
@@ -76,6 +80,10 @@ function RolesAndDepartmentsPage() {
   const [deptCode, setDeptCode] = useState("");
   const [deptDesc, setDeptDesc] = useState("");
 
+  // Modal Dialog SQL Migrasi Supabase
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+
   // Modal Edit Departemen
   const [editingDept, setEditingDept] = useState<DepartmentRow | null>(null);
   const [editName, setEditName] = useState("");
@@ -112,34 +120,10 @@ function RolesAndDepartmentsPage() {
     },
   });
 
-  // Query Matriks Permissions Departemen
+  // Query Matriks Permissions Departemen (Remote Supabase + local cache)
   const deptPermissionsQuery = useQuery({
     queryKey: ["department_permissions"],
-    queryFn: async () => {
-      try {
-        const { data, error } = await (supabase as any)
-          .from("department_permissions")
-          .select("*");
-        if (error) throw error;
-
-        const map: Record<string, boolean> = {};
-        (data ?? []).forEach((item: any) => {
-          map[`${item.department.toLowerCase()}:${item.route_path}`] = item.can_access;
-        });
-        return map;
-      } catch (err) {
-        // Fallback jika tabel remote belum dibuat
-        console.warn("Using local department permissions cache:", err);
-        const stored = getStoredDeptPermissions();
-        const map: Record<string, boolean> = {};
-        Object.entries(stored).forEach(([dept, routes]) => {
-          Object.entries(routes).forEach(([rPath, val]) => {
-            map[`${dept.toLowerCase()}:${rPath}`] = val;
-          });
-        });
-        return map;
-      }
-    },
+    queryFn: () => fetchRemoteDeptPermissions(supabase),
   });
 
   // Toggle Hak Akses Route untuk Departemen
@@ -153,23 +137,55 @@ function RolesAndDepartmentsPage() {
       routePath: string;
       canAccess: boolean;
     }) => {
-      // 1. Simpan ke local cache agar langsung efektif seketika
+      // 1. Simpan ke local cache agar langsung aktif di browser ini
       saveStoredDeptPermission(department, routePath, canAccess);
 
-      // 2. Coba simpan ke Supabase jika tabel tersedia
+      // 2. Simpan ke tabel Supabase department_permissions
       try {
-        await (supabase as any).from("department_permissions").upsert(
-          { department, route_path: routePath, can_access: canAccess },
+        const { error: deptErr } = await (supabase as any).from("department_permissions").upsert(
+          {
+            department,
+            route_path: routePath,
+            can_access: canAccess,
+            updated_at: new Date().toISOString(),
+          },
           { onConflict: "department,route_path" },
         );
+        if (deptErr) {
+          console.warn("Supabase department_permissions upsert notice:", deptErr);
+        }
       } catch (err) {
-        console.warn("Supabase department_permissions sync notice:", err);
+        console.warn("Supabase department_permissions caught:", err);
+      }
+
+      // 3. Simpan juga ke tabel Supabase role_permissions untuk role yang bersangkutan
+      const normDept = normalizeDepartmentKey(department).toLowerCase();
+      const mappedRole = DEPT_TO_ROLE[normDept] || DEPT_TO_ROLE[department.toLowerCase()];
+      if (mappedRole) {
+        try {
+          const { error: roleErr } = await (supabase as any).from("role_permissions").upsert(
+            {
+              role: mappedRole,
+              route_path: routePath,
+              can_access: canAccess,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "role,route_path" },
+          );
+          if (roleErr) {
+            console.warn("Supabase role_permissions upsert notice:", roleErr);
+          }
+        } catch (err) {
+          console.warn("Supabase role_permissions caught:", err);
+        }
       }
     },
     onSuccess: (_, variables) => {
       const routeInfo = SYSTEM_ROUTES.find((r) => r.path === variables.routePath);
-      const actionLabel = variables.canAccess ? "diaktifkan (Diizinkan)" : "dinonaktifkan (Ditolak)";
-      toast.success(`Hak akses halaman ${routeInfo?.label || variables.routePath} untuk departemen ${variables.department} berhasil ${actionLabel}`);
+      const actionLabel = variables.canAccess ? "Diizinkan (Muncul)" : "Ditolak (Hilang)";
+      toast.success(
+        `Hak akses halaman ${routeInfo?.label || variables.routePath} untuk departemen ${variables.department} diatur: ${actionLabel}`
+      );
       queryClient.invalidateQueries({ queryKey: ["department_permissions"] });
       queryClient.invalidateQueries({ queryKey: ["role_permissions"] });
     },
@@ -248,7 +264,14 @@ function RolesAndDepartmentsPage() {
   };
 
   const isAccessAllowed = (dept: string, path: string) => {
-    return isRouteAllowedForDept(path, dept, dept === "Super Admin", deptPermissionsQuery.data);
+    const isSuperAdminDept = dept === "Super Admin";
+    return isRouteAllowedForDept(
+      path,
+      dept,
+      isSuperAdminDept,
+      deptPermissionsQuery.data,
+      isSuperAdminDept ? ["admin"] : undefined,
+    );
   };
 
   const departmentList = departments.data ?? DEFAULT_DEPARTMENTS;
@@ -259,13 +282,24 @@ function RolesAndDepartmentsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Hak Akses & Departemen</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Kelola matriks hak akses halaman untuk setiap departemen (termasuk TEKNIK) serta master data departemen.
+            Kelola matriks hak akses halaman untuk setiap departemen (termasuk TEKNIK) serta sinkronisasi role database.
           </p>
         </div>
-        <Button onClick={() => setIsAddOpen(true)} size="sm" className="gap-1.5 shrink-0">
-          <Plus className="size-4" />
-          Tambah Departemen
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsSqlModalOpen(true)}
+            className="gap-1.5 text-xs text-blue-600 dark:text-blue-400 border-blue-500/30 hover:bg-blue-500/10"
+          >
+            <Database className="size-3.5" />
+            <span>Skrip SQL Migrasi Supabase</span>
+          </Button>
+          <Button onClick={() => setIsAddOpen(true)} size="sm" className="gap-1.5 shrink-0">
+            <Plus className="size-4" />
+            Tambah Departemen
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-6">
@@ -641,6 +675,73 @@ function RolesAndDepartmentsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* MODAL DIALOG: SKRIP SQL MIGRASI SUPABASE */}
+      <Dialog open={isSqlModalOpen} onOpenChange={setIsSqlModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Database className="size-5 text-blue-500" />
+              <span>Skrip SQL Migrasi Matriks Hak Akses Supabase</span>
+            </DialogTitle>
+            <DialogDescription>
+              Jalankan skrip SQL di bawah ini di <strong>Supabase Dashboard &rarr; SQL Editor</strong> untuk memastikan tabel matriks hak akses departemen dan fungsi validasi backend RLS aktif sepenuhnya.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-hidden flex flex-col my-2">
+            <div className="flex items-center justify-between pb-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                Tabel: <code>public.department_permissions</code> & <code>public.role_permissions</code>
+              </span>
+              <Button
+                size="sm"
+                variant={copiedSql ? "default" : "outline"}
+                className="gap-1.5 text-xs h-7"
+                onClick={() => {
+                  navigator.clipboard.writeText(SQL_DEPARTMENT_PERMISSIONS_MIGRATION);
+                  setCopiedSql(true);
+                  toast.success("Skrip SQL migrasi berhasil disalin ke clipboard!");
+                  setTimeout(() => setCopiedSql(false), 3000);
+                }}
+              >
+                {copiedSql ? (
+                  <>
+                    <Check className="size-3.5" />
+                    Tersalin!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="size-3.5" />
+                    Salin Skrip SQL
+                  </>
+                )}
+              </Button>
+            </div>
+            <pre className="flex-1 overflow-auto bg-slate-950 text-slate-100 p-3 rounded-md text-xs font-mono border border-slate-800 select-all">
+              {SQL_DEPARTMENT_PERMISSIONS_MIGRATION}
+            </pre>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsSqlModalOpen(false)}>
+              Tutup
+            </Button>
+            <Button
+              className="gap-1.5"
+              onClick={() => {
+                navigator.clipboard.writeText(SQL_DEPARTMENT_PERMISSIONS_MIGRATION);
+                setCopiedSql(true);
+                toast.success("Skrip SQL migrasi berhasil disalin ke clipboard!");
+                setTimeout(() => setCopiedSql(false), 3000);
+              }}
+            >
+              {copiedSql ? <Check className="size-4" /> : <Copy className="size-4" />}
+              Salin Skrip SQL
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

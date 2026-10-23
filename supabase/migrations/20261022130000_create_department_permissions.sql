@@ -7,7 +7,7 @@
 -- 1. Pastikan Departemen TEKNIK terdaftar pada master table departments
 INSERT INTO public.departments (name, code, description) VALUES
   ('TEKNIK', 'TKN', 'Departemen Teknik & Maintenance'),
-  ('CI1201', 'CI', 'Departemen Countinous Improvment'),
+  ('CI1201', 'CI', 'Departemen Continuous Improvement'),
   ('CK1201', 'Produksi CK', 'Operator Admin Ceklis'),
   ('GDSP1201', 'WH-SP', 'Admin Gudang & Operasional Sparepart'),
   ('Super Admin', 'SA', 'Super Admin System')
@@ -30,7 +30,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.department_permissions TO authent
 GRANT ALL ON public.department_permissions TO service_role;
 ALTER TABLE public.department_permissions ENABLE ROW LEVEL SECURITY;
 
--- 3. RLS Policies
+-- 3. RLS Policies untuk department_permissions
 DROP POLICY IF EXISTS "dept_permissions_select" ON public.department_permissions;
 DROP POLICY IF EXISTS "dept_permissions_admin_manage" ON public.department_permissions;
 
@@ -130,8 +130,9 @@ DECLARE
   v_dept text;
   v_is_admin boolean;
   v_allowed boolean;
+  v_role text;
 BEGIN
-  -- Cek apakah pengguna adalah admin (Super Admin selalu diizinkan)
+  -- 1. Super Admin selalu diizinkan
   SELECT EXISTS (
     SELECT 1 FROM public.user_roles WHERE user_id = p_user_id AND role = 'admin'
   ) INTO v_is_admin;
@@ -140,27 +141,81 @@ BEGIN
     RETURN true;
   END IF;
 
-  -- Ambil departemen pengguna dari profil
-  SELECT department INTO v_dept FROM public.profiles WHERE id = p_user_id;
+  -- 2. Halaman profil selalu diizinkan
+  IF p_route = '/profile' THEN
+    RETURN true;
+  END IF;
 
-  IF v_dept IS NULL OR v_dept = '' THEN
+  -- 3. Halaman admin khusus Super Admin
+  IF p_route = '/settings' OR p_route = '/roles' THEN
     RETURN false;
   END IF;
 
-  -- Cek matriks izin departemen
-  SELECT can_access INTO v_allowed
-  FROM public.department_permissions
-  WHERE LOWER(department) = LOWER(v_dept)
-    AND route_path = p_route;
+  -- 4. Ambil departemen pengguna dari profil
+  SELECT department INTO v_dept FROM public.profiles WHERE id = p_user_id;
 
-  IF v_allowed IS NOT NULL THEN
-    RETURN v_allowed;
+  -- 5. Cek izin di tabel department_permissions
+  IF v_dept IS NOT NULL AND v_dept <> '' THEN
+    SELECT can_access INTO v_allowed
+    FROM public.department_permissions
+    WHERE LOWER(department) = LOWER(v_dept)
+      AND route_path = p_route;
+
+    IF v_allowed IS NOT NULL THEN
+      RETURN v_allowed;
+    END IF;
   END IF;
 
-  -- Default jika belum dikonfigurasi: izinkan hanya profil akun
-  RETURN p_route = '/profile';
+  -- 6. Fallback periksa role_permissions berdasarkan user_roles
+  SELECT ur.role::text INTO v_role FROM public.user_roles ur WHERE ur.user_id = p_user_id LIMIT 1;
+  IF v_role IS NOT NULL THEN
+    SELECT can_access INTO v_allowed
+    FROM public.role_permissions
+    WHERE role::text = v_role
+      AND route_path = p_route;
+
+    IF v_allowed IS NOT NULL THEN
+      RETURN v_allowed;
+    END IF;
+  END IF;
+
+  -- 7. Fallback standar
+  IF p_route = '/dashboard' OR p_route = '/approvals' THEN
+    RETURN true;
+  END IF;
+
+  RETURN false;
 END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.check_user_department_access(uuid, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_user_department_access(uuid, text) TO service_role;
+
+-- 6. Validasi Backend RLS pada form dan transaksi agar tidak dapat dilewati langsung via API/URL
+-- Form Roasting:
+DROP POLICY IF EXISTS "roasting_dept_check" ON public.form_roasting;
+CREATE POLICY "roasting_dept_check" ON public.form_roasting
+  FOR ALL TO authenticated
+  USING (public.check_user_department_access(auth.uid(), '/roasting'))
+  WITH CHECK (public.check_user_department_access(auth.uid(), '/roasting'));
+
+-- Form Grinding:
+DROP POLICY IF EXISTS "grinding_dept_check" ON public.form_grinding;
+CREATE POLICY "grinding_dept_check" ON public.form_grinding
+  FOR ALL TO authenticated
+  USING (public.check_user_department_access(auth.uid(), '/grinding'))
+  WITH CHECK (public.check_user_department_access(auth.uid(), '/grinding'));
+
+-- Form Formulasi:
+DROP POLICY IF EXISTS "formulasi_dept_check" ON public.form_formulasi;
+CREATE POLICY "formulasi_dept_check" ON public.form_formulasi
+  FOR ALL TO authenticated
+  USING (public.check_user_department_access(auth.uid(), '/formulasi'))
+  WITH CHECK (public.check_user_department_access(auth.uid(), '/formulasi'));
+
+-- Warehouse Transactions (OBS Sparepart):
+DROP POLICY IF EXISTS "warehouse_dept_check" ON public.warehouse_transactions;
+CREATE POLICY "warehouse_dept_check" ON public.warehouse_transactions
+  FOR ALL TO authenticated
+  USING (public.check_user_department_access(auth.uid(), '/products'))
+  WITH CHECK (public.check_user_department_access(auth.uid(), '/products'));

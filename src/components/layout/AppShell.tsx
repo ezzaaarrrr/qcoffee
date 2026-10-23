@@ -20,10 +20,15 @@ import {
   User,
   FileText,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useCurrentUser } from "@/hooks/useAuth";
 import { ROLE_LABELS, type AppRole } from "@/lib/domain";
-import { isRouteAllowedForDept, getStoredDeptPermissions } from "@/lib/departmentPermissions";
+import {
+  isRouteAllowedForDept,
+  normalizeDepartmentKey,
+  fetchRemoteDeptPermissions,
+} from "@/lib/departmentPermissions";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -125,35 +130,23 @@ export function AppShell({
 
   const deptPermissionsQuery = useQuery({
     queryKey: ["department_permissions"],
-    queryFn: async () => {
-      try {
-        const { data, error } = await (supabase as any)
-          .from("department_permissions")
-          .select("*");
-        if (error) throw error;
-        const map: Record<string, boolean> = {};
-        (data ?? []).forEach((item: any) => {
-          map[`${item.department.toLowerCase()}:${item.route_path}`] = item.can_access;
-        });
-        return map;
-      } catch {
-        const stored = getStoredDeptPermissions();
-        const map: Record<string, boolean> = {};
-        Object.entries(stored).forEach(([dept, routes]) => {
-          Object.entries(routes).forEach(([rPath, val]) => {
-            map[`${dept.toLowerCase()}:${rPath}`] = val;
-          });
-        });
-        return map;
-      }
-    },
+    queryFn: () => fetchRemoteDeptPermissions(supabase),
   });
+
+  const effectiveDept = normalizeDepartmentKey(profile?.department, roles);
 
   const isNavAllowed = (path: string) => {
     if (isAdmin) return true;
-    const userDept = profile?.department?.trim();
-    return isRouteAllowedForDept(path, userDept, isAdmin, deptPermissionsQuery.data);
+    return isRouteAllowedForDept(
+      path,
+      effectiveDept,
+      isAdmin,
+      deptPermissionsQuery.data,
+      roles,
+    );
   };
+
+  const isCurrentPageAllowed = pathname === "/profile" || isAdmin || isNavAllowed(pathname);
 
   const visibleOperasional = OPERASIONAL.filter(
     (item) => (!item.adminOnly || isAdmin) && isNavAllowed(item.to),
@@ -307,7 +300,39 @@ export function AppShell({
           </div>
         </header>
 
-        <div className={cn("flex-1 overflow-y-auto p-8", contentClassName)}>{children}</div>
+        {isCurrentPageAllowed ? (
+          <div className={cn("flex-1 overflow-y-auto p-8", contentClassName)}>{children}</div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-8 flex items-center justify-center">
+            <div className="max-w-md w-full rounded-xl border border-destructive/30 bg-card p-6 text-center shadow-lg">
+              <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                <ShieldAlert className="size-8" />
+              </div>
+              <h2 className="text-xl font-bold tracking-tight text-foreground">Akses Halaman Ditolak</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Departemen <strong className="text-foreground">{effectiveDept}</strong> tidak memiliki izin untuk mengakses halaman <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{pathname}</code>. Status hak akses diatur sebagai <strong>Ditolak (Hilang)</strong> oleh Super Admin.
+              </p>
+              <div className="mt-6 flex flex-col sm:flex-row gap-2 justify-center">
+                <Button
+                  onClick={() => {
+                    const firstAllowed = [...visibleOperasional, ...visibleManajemen][0];
+                    navigate({ to: firstAllowed ? firstAllowed.to : "/profile" });
+                  }}
+                  className="w-full sm:w-auto text-xs"
+                >
+                  Kembali ke Menu Utama
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => navigate({ to: "/profile" })}
+                  className="w-full sm:w-auto text-xs"
+                >
+                  Pengaturan Akun
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

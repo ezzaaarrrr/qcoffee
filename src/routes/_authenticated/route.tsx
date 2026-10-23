@@ -1,6 +1,10 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
-import { isRouteAllowedForDept } from "@/lib/departmentPermissions";
+import {
+  isRouteAllowedForDept,
+  normalizeDepartmentKey,
+  fetchRemoteDeptPermissions,
+} from "@/lib/departmentPermissions";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -11,36 +15,50 @@ export const Route = createFileRoute("/_authenticated")({
     const user = data.user;
     const targetPath = location.pathname;
 
-    // Ambil data departemen dan role pengguna
-    const [profileRes, rolesRes] = await Promise.all([
+    // Ambil data profil, role, dan matriks hak akses live dari Supabase
+    const [profileRes, rolesRes, remotePermissions] = await Promise.all([
       supabase.from("profiles").select("department").eq("id", user.id).maybeSingle(),
       supabase.from("user_roles").select("role").eq("user_id", user.id),
+      fetchRemoteDeptPermissions(supabase),
     ]);
 
-    const isSuperAdmin = (rolesRes.data ?? []).some((r: any) => r.role === "admin");
-    const department = profileRes.data?.department;
+    const roles = (rolesRes.data ?? []).map((r: any) => r.role);
+    const isSuperAdmin = roles.includes("admin");
+    const department = normalizeDepartmentKey(profileRes.data?.department, roles);
 
-    // Validasi hak akses departemen pada frontend URL route
-    if (!isRouteAllowedForDept(targetPath, department, isSuperAdmin)) {
-      // Jika rute diblokir untuk departemen pengguna, alihkan ke halaman yang diizinkan
-      if (
-        targetPath !== "/dashboard" &&
-        isRouteAllowedForDept("/dashboard", department, isSuperAdmin)
-      ) {
-        throw redirect({ to: "/dashboard" });
-      }
-      if (
-        targetPath !== "/products" &&
-        isRouteAllowedForDept("/products", department, isSuperAdmin)
-      ) {
-        throw redirect({ to: "/products" });
-      }
-      if (targetPath !== "/profile") {
-        throw redirect({ to: "/profile" });
-      }
+    // Validasi hak akses departemen pada URL route langsung
+    const isAllowed = isRouteAllowedForDept(
+      targetPath,
+      department,
+      isSuperAdmin,
+      remotePermissions,
+      roles,
+    );
+
+    if (!isAllowed) {
+      // Cari halaman alternatif yang diizinkan untuk departemen ini
+      const candidateFallbacks = [
+        "/dashboard",
+        "/approvals",
+        "/products",
+        "/checklists",
+        "/formulasi",
+        "/grinding",
+        "/roasting",
+        "/profile",
+      ];
+
+      const fallbackRoute =
+        candidateFallbacks.find(
+          (candidate) =>
+            candidate !== targetPath &&
+            isRouteAllowedForDept(candidate, department, isSuperAdmin, remotePermissions, roles),
+        ) || "/profile";
+
+      throw redirect({ to: fallbackRoute });
     }
 
-    return { user, department, isSuperAdmin };
+    return { user, department, isSuperAdmin, roles, remotePermissions };
   },
   component: () => <Outlet />,
 });
