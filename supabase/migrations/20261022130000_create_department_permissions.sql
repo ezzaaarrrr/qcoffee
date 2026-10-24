@@ -4,7 +4,55 @@
 -- Dilengkapi validasi frontend dan backend RLS
 -- ==============================================================================
 
--- 1. Pastikan Departemen TEKNIK terdaftar pada master table departments
+-- 1. Bersihkan Departemen Legacy / Duplikat Lama
+DELETE FROM public.department_permissions
+WHERE department ILIKE '%countinous improvment%'
+   OR department ILIKE '%produksi cheking%'
+   OR department ILIKE '%warehouse - sparepart%'
+   OR department ILIKE '%teknik central kitchen%'
+   OR department IN (
+     'Departemen Countinous Improvment',
+     'Departemen Produksi Cheking',
+     'Department Warehouse - Sparepart',
+     'Department Teknik Central Kitchen',
+     'Continuous Improvement (CI)',
+     'Produksi Central Kitchen',
+     'Gudang Sparepart'
+   );
+
+DELETE FROM public.departments
+WHERE name ILIKE '%countinous improvment%'
+   OR name ILIKE '%produksi cheking%'
+   OR name ILIKE '%warehouse - sparepart%'
+   OR name ILIKE '%teknik central kitchen%'
+   OR name IN (
+     'Departemen Countinous Improvment',
+     'Departemen Produksi Cheking',
+     'Department Warehouse - Sparepart',
+     'Department Teknik Central Kitchen',
+     'Continuous Improvement (CI)',
+     'Produksi Central Kitchen',
+     'Gudang Sparepart'
+   );
+
+-- 2. Migrasikan profil user lama yang masih memakai departemen lama
+UPDATE public.profiles
+SET department = 'CI1201'
+WHERE department ILIKE '%countinous%' OR department ILIKE '%continuous%' OR department = 'CI';
+
+UPDATE public.profiles
+SET department = 'CK1201'
+WHERE department ILIKE '%cheking%' OR department ILIKE '%checking%' OR department = 'CK';
+
+UPDATE public.profiles
+SET department = 'GDSP1201'
+WHERE department ILIKE '%warehouse%sparepart%' OR department ILIKE '%gudang sparepart%' OR department = 'GDSP';
+
+UPDATE public.profiles
+SET department = 'TEKNIK'
+WHERE department ILIKE '%teknik%' OR department = 'TKN';
+
+-- 3. Pastikan Departemen Resmi terdaftar pada master table departments
 INSERT INTO public.departments (name, code, description) VALUES
   ('TEKNIK', 'TKN', 'Departemen Teknik & Maintenance'),
   ('CI1201', 'CI', 'Departemen Continuous Improvement'),

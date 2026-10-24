@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Plus, Pencil, Trash2, Building2, Shield, Lock, Layers, Database, Copy, Check } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, Shield, Lock, Layers, Database, Copy, Check, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
 import { Panel } from "@/components/Panel";
@@ -40,6 +40,7 @@ import {
   fetchRemoteDeptPermissions,
   DEPT_TO_ROLE,
   SQL_DEPARTMENT_PERMISSIONS_MIGRATION,
+  isLegacyDepartment,
 } from "@/lib/departmentPermissions";
 
 export const Route = createFileRoute("/_authenticated/roles")({
@@ -104,18 +105,46 @@ function RolesAndDepartmentsPage() {
         .from("departments")
         .select("*")
         .order("name");
+
+      // Auto-cleanup departemen legacy langsung di Supabase jika ditemukan
+      if (!error && Array.isArray(data)) {
+        const legacyItems = data.filter((d: any) => isLegacyDepartment(d.name));
+        if (legacyItems.length > 0) {
+          const legacyIds = legacyItems.map((d: any) => d.id).filter(Boolean);
+          const legacyNames = legacyItems.map((d: any) => d.name);
+          if (legacyIds.length > 0) {
+            (supabase as any).from("departments").delete().in("id", legacyIds).then(() => {
+              queryClient.invalidateQueries({ queryKey: ["departments"] });
+            }).catch(() => {});
+          }
+          if (legacyNames.length > 0) {
+            (supabase as any).from("department_permissions").delete().in("department", legacyNames).catch(() => {});
+          }
+        }
+      }
+
       if (error || !data || data.length === 0) {
         return DEFAULT_DEPARTMENTS;
       }
 
+      // Ambil daftar dan buang semua departemen legacy/lama
+      let list = (data as DepartmentRow[]).filter((d) => !isLegacyDepartment(d.name));
+
       // Pastikan DEPARTEMEN TEKNIK selalu tersedia di daftar departemen
-      const list = [...data] as DepartmentRow[];
       if (!list.some((d) => d.name.toUpperCase() === "TEKNIK")) {
         const defaultTeknik = DEFAULT_DEPARTMENTS[0];
         if (defaultTeknik) {
           list.unshift(defaultTeknik);
         }
       }
+
+      // Pastikan seluruh departemen standar resmi tersedia lengkap
+      DEFAULT_DEPARTMENTS.forEach((def) => {
+        if (!list.some((d) => d.name.toUpperCase() === def.name.toUpperCase())) {
+          list.push(def);
+        }
+      });
+
       return list;
     },
   });
@@ -126,7 +155,7 @@ function RolesAndDepartmentsPage() {
     queryFn: () => fetchRemoteDeptPermissions(supabase),
   });
 
-  // Toggle Hak Akses Route untuk Departemen
+  // Toggle Hak Akses Route untuk Departemen (ISOLASI TOTAL PER DEPARTEMEN)
   const togglePermission = useMutation({
     mutationFn: async ({
       department,
@@ -137,14 +166,18 @@ function RolesAndDepartmentsPage() {
       routePath: string;
       canAccess: boolean;
     }) => {
+      const normDept = normalizeDepartmentKey(department);
+
       // 1. Simpan ke local cache agar langsung aktif di browser ini
-      saveStoredDeptPermission(department, routePath, canAccess);
+      saveStoredDeptPermission(normDept, routePath, canAccess);
 
       // 2. Simpan ke tabel Supabase department_permissions
+      // PENTING: Hanya simpan ke department_permissions, jangan menyinkronkan ke role_permissions
+      // agar perubahan pada departemen TEKNIK tidak menimpa GDSP1201 dan sebaliknya!
       try {
         const { error: deptErr } = await (supabase as any).from("department_permissions").upsert(
           {
-            department,
+            department: normDept,
             route_path: routePath,
             can_access: canAccess,
             updated_at: new Date().toISOString(),
@@ -157,31 +190,6 @@ function RolesAndDepartmentsPage() {
       } catch (err) {
         console.warn("Supabase department_permissions caught:", err);
       }
-
-      // 3. Simpan juga ke tabel Supabase role_permissions untuk role yang bersangkutan
-      // PENTING: Jangan overwrite role_permissions untuk Teknik karena Teknik berbagi role sistem prod_process_uh dengan GDSP1201
-      const normDept = normalizeDepartmentKey(department).toLowerCase();
-      if (normDept !== "teknik") {
-        const mappedRole = DEPT_TO_ROLE[normDept] || DEPT_TO_ROLE[department.toLowerCase()];
-        if (mappedRole) {
-          try {
-            const { error: roleErr } = await (supabase as any).from("role_permissions").upsert(
-              {
-                role: mappedRole,
-                route_path: routePath,
-                can_access: canAccess,
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: "role,route_path" },
-            );
-            if (roleErr) {
-              console.warn("Supabase role_permissions upsert notice:", roleErr);
-            }
-          } catch (err) {
-            console.warn("Supabase role_permissions caught:", err);
-          }
-        }
-      }
     },
     onSuccess: (_, variables) => {
       const routeInfo = SYSTEM_ROUTES.find((r) => r.path === variables.routePath);
@@ -190,10 +198,46 @@ function RolesAndDepartmentsPage() {
         `Hak akses halaman ${routeInfo?.label || variables.routePath} untuk departemen ${variables.department} diatur: ${actionLabel}`
       );
       queryClient.invalidateQueries({ queryKey: ["department_permissions"] });
-      queryClient.invalidateQueries({ queryKey: ["role_permissions"] });
     },
     onError: (e: Error) =>
       toast.error("Gagal memperbarui hak akses", { description: e.message }),
+  });
+
+  // Reset Izin ke Standar Bawaan untuk Departemen yang sedang dipilih
+  const resetDeptPermissions = useMutation({
+    mutationFn: async (department: string) => {
+      const normDept = normalizeDepartmentKey(department);
+      const defaultMap: Record<string, boolean> =
+        DEFAULT_DEPARTMENT_PERMISSIONS[normDept] ||
+        DEFAULT_DEPARTMENT_PERMISSIONS["TEKNIK"] ||
+        {};
+
+      // 1. Update localStorage
+      Object.entries(defaultMap).forEach(([rPath, val]) => {
+        saveStoredDeptPermission(normDept, rPath, val);
+      });
+
+      // 2. Update Supabase department_permissions
+      try {
+        const rows = Object.entries(defaultMap).map(([rPath, val]) => ({
+          department: normDept,
+          route_path: rPath,
+          can_access: val,
+          updated_at: new Date().toISOString(),
+        }));
+        await (supabase as any).from("department_permissions").upsert(rows, {
+          onConflict: "department,route_path",
+        });
+      } catch (err) {
+        console.warn("Reset department permissions remote notice:", err);
+      }
+    },
+    onSuccess: (_, dept) => {
+      toast.success(`Hak akses departemen ${dept} berhasil di-reset ke konfigurasi standar.`);
+      queryClient.invalidateQueries({ queryKey: ["department_permissions"] });
+    },
+    onError: (e: Error) =>
+      toast.error("Gagal me-reset hak akses", { description: e.message }),
   });
 
   // ── DEPARTEMEN MUTATIONS ──────────────────────────────────────────────────
@@ -248,13 +292,22 @@ function RolesAndDepartmentsPage() {
 
   const deleteDept = useMutation({
     mutationFn: async (id: string) => {
+      const target = departmentList.find((d) => d.id === id) || deletingDept;
       const { error } = await (supabase as any).from("departments").delete().eq("id", id);
       if (error) console.warn("Department delete error:", error);
+      if (target?.name) {
+        await (supabase as any)
+          .from("department_permissions")
+          .delete()
+          .eq("department", target.name)
+          .catch(() => {});
+      }
     },
     onSuccess: () => {
       toast.success("Departemen berhasil dihapus");
       setDeletingDept(null);
       queryClient.invalidateQueries({ queryKey: ["departments"] });
+      queryClient.invalidateQueries({ queryKey: ["department_permissions"] });
     },
     onError: (e: Error) => toast.error("Gagal menghapus departemen", { description: e.message }),
   });
@@ -339,7 +392,7 @@ function RolesAndDepartmentsPage() {
           </div>
 
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-lg bg-surface-muted/40 border border-border/60">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-surface-muted/40 border border-border/60">
               <div>
                 <h3 className="text-sm font-semibold flex items-center gap-2">
                   <span>Izin Akses Menu & Halaman —</span>
@@ -349,11 +402,25 @@ function RolesAndDepartmentsPage() {
                   Gunakan toggle switch di bawah untuk mengizinkan (On) atau menolak (Off) hak akses pengguna departemen {selectedDept}.
                 </p>
               </div>
-              {selectedDept === "Super Admin" && (
-                <span className="text-xs bg-amber-500/15 text-amber-500 dark:text-amber-400 border border-amber-500/20 px-2.5 py-1 rounded-md font-medium shrink-0">
-                  Super Admin selalu memiliki akses penuh ke seluruh menu
-                </span>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                {selectedDept === "Super Admin" ? (
+                  <span className="text-xs bg-amber-500/15 text-amber-500 dark:text-amber-400 border border-amber-500/20 px-2.5 py-1 rounded-md font-medium shrink-0">
+                    Super Admin selalu memiliki akses penuh ke seluruh menu
+                  </span>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!isAdmin || resetDeptPermissions.isPending}
+                    onClick={() => resetDeptPermissions.mutate(selectedDept)}
+                    className="gap-1.5 text-xs text-muted-foreground hover:text-foreground shrink-0 border-border/80"
+                    title={`Reset hak akses departemen ${selectedDept} ke konfigurasi standar`}
+                  >
+                    <RotateCcw className="size-3.5" />
+                    <span>Reset Standar {selectedDept}</span>
+                  </Button>
+                )}
+              </div>
             </div>
 
             <div className="space-y-6">

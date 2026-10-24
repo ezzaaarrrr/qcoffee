@@ -125,7 +125,32 @@ export const DEFAULT_DEPARTMENT_PERMISSIONS: Record<string, Record<string, boole
   },
 };
 
-const LOCAL_STORAGE_KEY = "dept_permissions_matrix_v2";
+export const LOCAL_STORAGE_KEY = "dept_permissions_matrix_v2";
+
+export const LEGACY_DEPARTMENT_NAMES = [
+  "Departemen Countinous Improvment",
+  "Department Warehouse - Sparepart",
+  "Departemen Produksi Cheking",
+  "Department Teknik Central Kitchen",
+  "Continuous Improvement (CI)",
+  "Produksi Central Kitchen",
+  "Gudang Sparepart",
+];
+
+/** Cek apakah nama departemen merupakan nama legacy/lama yang harus disingkirkan */
+export function isLegacyDepartment(name?: string | null): boolean {
+  if (!name || typeof name !== "string") return false;
+  const lower = name.toLowerCase().trim();
+  return (
+    lower.includes("countinous improvment") ||
+    lower.includes("produksi cheking") ||
+    lower.includes("warehouse - sparepart") ||
+    lower.includes("teknik central kitchen") ||
+    lower === "continuous improvement (ci)" ||
+    lower === "produksi central kitchen" ||
+    lower === "gudang sparepart"
+  );
+}
 
 /** Normalisasi nama departemen untuk kecocokan matriks hak akses */
 export function normalizeDepartmentKey(
@@ -138,8 +163,8 @@ export function normalizeDepartmentKey(
     if (lower.includes("super") || lower === "sa" || lower === "admin") return "Super Admin";
     if (lower.includes("ci1201") || lower.includes("continuous") || lower.includes("improvment") || lower.includes("improvement") || lower === "ci") return "CI1201";
     if (lower.includes("ck1201") || lower.includes("cheking") || lower.includes("checking") || lower.includes("produksi") || lower === "ck") return "CK1201";
-    if (lower.includes("gdsp") || lower.includes("wh-sp") || lower.includes("gudang sparepart") || lower.includes("operasional sparepart")) return "GDSP1201";
     if (lower.includes("teknik") || lower === "tkn" || lower.includes("maintenance")) return "TEKNIK";
+    if (lower.includes("gdsp") || lower.includes("wh-sp") || lower.includes("gudang sparepart") || lower.includes("operasional sparepart") || lower.includes("warehouse") || lower.includes("sparepart")) return "GDSP1201";
     return raw;
   }
 
@@ -313,11 +338,59 @@ export function isRouteAllowedForDept(
 
 /** Skrip SQL Migrasi Lengkap untuk dibuat di Supabase SQL Editor */
 export const SQL_DEPARTMENT_PERMISSIONS_MIGRATION = `-- ==============================================================================
--- MIGRATION: HAK AKSES BERDASARKAN DEPARTEMEN & DEPARTEMEN TEKNIK
+-- MIGRATION: HAK AKSES BERDASARKAN DEPARTEMEN & PEMBERSIHAN DEPARTEMEN LEGACY
 -- Jalankan skrip ini di Supabase Dashboard -> SQL Editor
 -- ==============================================================================
 
--- 1. Master Departemen
+-- 1. Bersihkan Departemen Legacy / Duplikat Lama
+DELETE FROM public.department_permissions
+WHERE department ILIKE '%countinous improvment%'
+   OR department ILIKE '%produksi cheking%'
+   OR department ILIKE '%warehouse - sparepart%'
+   OR department ILIKE '%teknik central kitchen%'
+   OR department IN (
+     'Departemen Countinous Improvment',
+     'Departemen Produksi Cheking',
+     'Department Warehouse - Sparepart',
+     'Department Teknik Central Kitchen',
+     'Continuous Improvement (CI)',
+     'Produksi Central Kitchen',
+     'Gudang Sparepart'
+   );
+
+DELETE FROM public.departments
+WHERE name ILIKE '%countinous improvment%'
+   OR name ILIKE '%produksi cheking%'
+   OR name ILIKE '%warehouse - sparepart%'
+   OR name ILIKE '%teknik central kitchen%'
+   OR name IN (
+     'Departemen Countinous Improvment',
+     'Departemen Produksi Cheking',
+     'Department Warehouse - Sparepart',
+     'Department Teknik Central Kitchen',
+     'Continuous Improvement (CI)',
+     'Produksi Central Kitchen',
+     'Gudang Sparepart'
+   );
+
+-- 2. Migrasikan profil user lama yang masih memakai departemen lama ke kode standar
+UPDATE public.profiles
+SET department = 'CI1201'
+WHERE department ILIKE '%countinous%' OR department ILIKE '%continuous%' OR department = 'CI';
+
+UPDATE public.profiles
+SET department = 'CK1201'
+WHERE department ILIKE '%cheking%' OR department ILIKE '%checking%' OR department = 'CK';
+
+UPDATE public.profiles
+SET department = 'GDSP1201'
+WHERE department ILIKE '%warehouse%sparepart%' OR department ILIKE '%gudang sparepart%' OR department = 'GDSP';
+
+UPDATE public.profiles
+SET department = 'TEKNIK'
+WHERE department ILIKE '%teknik%' OR department = 'TKN';
+
+-- 3. Master Departemen Resmi
 INSERT INTO public.departments (name, code, description) VALUES
   ('TEKNIK', 'TKN', 'Departemen Teknik & Maintenance'),
   ('CI1201', 'CI', 'Departemen Continuous Improvement'),
@@ -328,7 +401,7 @@ ON CONFLICT (name) DO UPDATE SET
   code = EXCLUDED.code,
   description = EXCLUDED.description;
 
--- 2. Tabel matriks hak akses per departemen
+-- 4. Tabel matriks hak akses per departemen
 CREATE TABLE IF NOT EXISTS public.department_permissions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   department text NOT NULL,
@@ -343,7 +416,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.department_permissions TO authent
 GRANT ALL ON public.department_permissions TO service_role;
 ALTER TABLE public.department_permissions ENABLE ROW LEVEL SECURITY;
 
--- 3. RLS Policies
+-- 5. RLS Policies
 DROP POLICY IF EXISTS "dept_permissions_select" ON public.department_permissions;
 CREATE POLICY "dept_permissions_select" ON public.department_permissions
   FOR SELECT TO authenticated USING (true);
@@ -364,7 +437,72 @@ CREATE POLICY "dept_permissions_admin_manage" ON public.department_permissions
     )
   );
 
--- 4. Fungsi Backend Validasi Akses Departemen
+-- 6. Inisialisasi Matriks Izin Standar per Departemen
+INSERT INTO public.department_permissions (department, route_path, can_access) VALUES
+  -- TEKNIK: Dashboard, OBS Sparepart, Approval diizinkan; Checklist & Formulasi ditolak
+  ('TEKNIK', '/dashboard', true),
+  ('TEKNIK', '/products', true),
+  ('TEKNIK', '/approvals', true),
+  ('TEKNIK', '/profile', true),
+  ('TEKNIK', '/checklists', false),
+  ('TEKNIK', '/formulasi', false),
+  ('TEKNIK', '/grinding', false),
+  ('TEKNIK', '/roasting', false),
+  ('TEKNIK', '/settings', false),
+  ('TEKNIK', '/roles', false),
+
+  -- SUPER ADMIN: Semua diizinkan
+  ('Super Admin', '/dashboard', true),
+  ('Super Admin', '/checklists', true),
+  ('Super Admin', '/formulasi', true),
+  ('Super Admin', '/grinding', true),
+  ('Super Admin', '/roasting', true),
+  ('Super Admin', '/approvals', true),
+  ('Super Admin', '/products', true),
+  ('Super Admin', '/profile', true),
+  ('Super Admin', '/settings', true),
+  ('Super Admin', '/roles', true),
+
+  -- CI1201: Semua operasional diizinkan, settings & roles ditolak
+  ('CI1201', '/dashboard', true),
+  ('CI1201', '/checklists', true),
+  ('CI1201', '/formulasi', true),
+  ('CI1201', '/grinding', true),
+  ('CI1201', '/roasting', true),
+  ('CI1201', '/approvals', true),
+  ('CI1201', '/products', true),
+  ('CI1201', '/profile', true),
+  ('CI1201', '/settings', false),
+  ('CI1201', '/roles', false),
+
+  -- CK1201: Checklist & Proses diizinkan; Dashboard & Products ditolak
+  ('CK1201', '/dashboard', false),
+  ('CK1201', '/checklists', true),
+  ('CK1201', '/formulasi', true),
+  ('CK1201', '/grinding', true),
+  ('CK1201', '/roasting', true),
+  ('CK1201', '/approvals', true),
+  ('CK1201', '/products', false),
+  ('CK1201', '/profile', true),
+  ('CK1201', '/settings', false),
+  ('CK1201', '/roles', false),
+
+  -- GDSP1201: Dashboard, OBS Sparepart & Approval diizinkan
+  ('GDSP1201', '/dashboard', true),
+  ('GDSP1201', '/checklists', false),
+  ('GDSP1201', '/formulasi', false),
+  ('GDSP1201', '/grinding', false),
+  ('GDSP1201', '/roasting', false),
+  ('GDSP1201', '/approvals', true),
+  ('GDSP1201', '/products', true),
+  ('GDSP1201', '/profile', true),
+  ('GDSP1201', '/settings', false),
+  ('GDSP1201', '/roles', false)
+ON CONFLICT (department, route_path) DO UPDATE SET
+  can_access = EXCLUDED.can_access,
+  updated_at = now();
+
+-- 7. Fungsi Backend Validasi Akses Departemen
 CREATE OR REPLACE FUNCTION public.check_user_department_access(p_user_id uuid, p_route text)
 RETURNS boolean
 LANGUAGE plpgsql
