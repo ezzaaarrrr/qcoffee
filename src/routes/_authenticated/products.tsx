@@ -47,6 +47,8 @@ import {
   SlidersHorizontal,
   ArrowDownToLine,
   ArrowUpFromLine,
+  ShoppingCart,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
@@ -291,9 +293,19 @@ function parseActivityLog(log: ActivityLog) {
       const colonIdx = desc.indexOf(":");
       if (colonIdx !== -1) subtitle = desc.substring(colonIdx + 1).trim();
     }
-  } else if (action === "BARANG_KELUAR" || desc.toLowerCase().includes("pencatatan keluar")) {
+  } else if (
+    action === "BARANG_KELUAR" ||
+    action === "ORDER_SPAREPART" ||
+    desc.toLowerCase().includes("pencatatan keluar") ||
+    desc.toLowerCase().includes("sistem order") ||
+    desc.toLowerCase().includes("order sparepart") ||
+    desc.toLowerCase().includes("pengambilan/order")
+  ) {
     type = "OUT";
-    title = "Barang Keluar";
+    title =
+      action === "ORDER_SPAREPART" || desc.toLowerCase().includes("sistem order")
+        ? "Sistem Order Sparepart (Teknik)"
+        : "Barang Keluar";
     qtyLabel = "Stok berkurang";
     const match = desc.match(/(?:[:\-])\s*([\d\.,]+)\s*([A-Za-z]+)\s*(.+)/);
     if (match && match[1] && match[2] && match[3]) {
@@ -1884,6 +1896,18 @@ function WarehouseAndProductsPage() {
   const [isTxOpen, setIsTxOpen] = useState(false);
   const [txType, setTxType] = useState<"IN" | "OUT">("IN");
 
+  // ── SISTEM ORDER SPAREPART (TEKNIK & GUDANG) ───────────────────────────────
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [isOrdering, setIsOrdering] = useState(false);
+  const [orderProductSearch, setOrderProductSearch] = useState("");
+  const [orderForm, setOrderForm] = useState({
+    productId: "",
+    quantity: "1",
+    purpose: "",
+    officer: "",
+    notes: "",
+  });
+
   // Auto-open modal jika diarahkan dari dashboard dengan search parameter
   useEffect(() => {
     if (
@@ -2807,6 +2831,183 @@ function WarehouseAndProductsPage() {
     },
     onError: (e: Error) => toast.error("Gagal mencatat transaksi", { description: e.message }),
   });
+
+  // ── HANDLER PROSES SISTEM ORDER SPAREPART (PENGURANGAN ENDING BALANCE) ────
+  const handleProcessOrder = async () => {
+    if (!orderForm.productId) {
+      toast.error("Silakan pilih sparepart terlebih dahulu");
+      return;
+    }
+    const targetProduct = products.find((p) => p.id === orderForm.productId);
+    if (!targetProduct) {
+      toast.error("Sparepart tidak ditemukan dalam database");
+      return;
+    }
+    const qty = Number(orderForm.quantity);
+    if (!qty || qty <= 0) {
+      toast.error("Jumlah order harus lebih besar dari 0");
+      return;
+    }
+
+    const obsMeta = getProductObsMeta(targetProduct);
+    const currentEnding =
+      obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
+        ? Number(obsMeta.ending_balance)
+        : (targetProduct.current_stock ?? 0);
+
+    if (qty > currentEnding) {
+      toast.error(
+        `Jumlah order (${qty}) melebihi stok ending balance yang tersedia (${currentEnding})!`,
+      );
+      return;
+    }
+
+    if (!orderForm.purpose.trim()) {
+      toast.error("Keperluan / unit mesin wajib diisi");
+      return;
+    }
+
+    setIsOrdering(true);
+    try {
+      const newStock = Math.max(0, currentEnding - qty);
+      const purposeText = orderForm.purpose.trim();
+      const officerName =
+        orderForm.officer.trim() || profile?.full_name || profile?.email || "Administrator Teknik";
+      const notesText = orderForm.notes.trim() || `Order sistem sparepart untuk ${purposeText}`;
+
+      // 1. Ambil nomor urut transaksi
+      let nextSeq = 1;
+      try {
+        const { data: latestTx } = await (supabase as any)
+          .from("warehouse_transactions")
+          .select("transaction_number")
+          .order("created_at", { ascending: false })
+          .limit(30);
+        if (latestTx && latestTx.length > 0) {
+          const seqs = latestTx
+            .map((t: any) => {
+              const m = (t.transaction_number || "").match(
+                /(?:ORD|TES\s*-\s*GROUND\s*2)\s*-\s*(\d+)/i,
+              );
+              return m ? parseInt(m[1], 10) : 0;
+            })
+            .filter((n: number) => !isNaN(n));
+          if (seqs.length > 0) {
+            nextSeq = Math.max(...seqs) + 1;
+          } else {
+            nextSeq = latestTx.length + 1;
+          }
+        }
+      } catch {
+        nextSeq = transactions.length + 1;
+      }
+      const formattedSeq = String(nextSeq).padStart(2, "0");
+      const txNumber = `ORD - GROUND 2 - ${formattedSeq}`;
+
+      // 2. Simpan transaksi pengeluaran (OUT) di warehouse_transactions
+      const { error: txErr } = await (supabase as any).from("warehouse_transactions").insert({
+        transaction_number: txNumber,
+        tx_type: "OUT",
+        product_id: targetProduct.id,
+        product_name: targetProduct.name,
+        quantity: qty,
+        unit: targetProduct.unit || "PCS",
+        batch_number: new Date().toISOString().split("T")[0],
+        reference_no: "ORDER-TEKNIK",
+        supplier_or_dest: purposeText,
+        notes: notesText,
+        created_by: profile?.id,
+        created_by_name: officerName,
+      });
+
+      if (txErr && !txErr.message.includes("does not exist")) {
+        console.warn("warehouse_transactions insert warning:", txErr);
+      }
+
+      // 3. Update metadata OBS ending_balance & issued
+      let updatedObs = obsMeta
+        ? { ...obsMeta }
+        : {
+            beginning_balance: currentEnding,
+            receipt: 0,
+            issued: 0,
+            ending_balance: currentEnding,
+          };
+      updatedObs.ending_balance = newStock;
+      updatedObs.issued = (Number(updatedObs.issued) || 0) + qty;
+      const updatedDescription = JSON.stringify(updatedObs);
+
+      // 4. Update tabel products di Supabase
+      const { error: prodErr } = await supabase
+        .from("products")
+        .update({
+          current_stock: newStock,
+          description: updatedDescription,
+        } as any)
+        .eq("id", targetProduct.id);
+
+      if (prodErr) throw prodErr;
+
+      // 5. Update cache localStorage obs_stock_balances_map
+      if (typeof window !== "undefined" && window.localStorage) {
+        try {
+          const rawMap = window.localStorage.getItem("obs_stock_balances_map");
+          const map = rawMap ? JSON.parse(rawMap) : {};
+          const codeKey = targetProduct.code
+            ? String(targetProduct.code).trim().toLowerCase()
+            : "";
+          const nameKey = targetProduct.name
+            ? String(targetProduct.name).trim().toLowerCase()
+            : "";
+          const idKey = targetProduct.id ? String(targetProduct.id).trim() : "";
+
+          const prev =
+            (codeKey && map[codeKey]) ||
+            (nameKey && map[nameKey]) ||
+            (idKey && map[idKey]) ||
+            {};
+          const nextMeta = {
+            ...prev,
+            ending_balance: newStock,
+            issued: (Number(prev.issued) || 0) + qty,
+          };
+          if (codeKey) map[codeKey] = nextMeta;
+          if (nameKey) map[nameKey] = nextMeta;
+          if (idKey) map[idKey] = nextMeta;
+          window.localStorage.setItem("obs_stock_balances_map", JSON.stringify(map));
+        } catch {}
+      }
+
+      // 6. Catat riwayat aktivitas di warehouse_activity_logs
+      await recordActivity(
+        "ORDER_SPAREPART",
+        `[SISTEM ORDER] Pengambilan/Order ${qty} ${targetProduct.unit || "PCS"} ${targetProduct.name} (Kode: ${targetProduct.code || "-"}) untuk "${purposeText}". Sisa ending balance: ${newStock} ${targetProduct.unit || "PCS"}.`,
+        officerName,
+      );
+
+      // 7. Refresh semua query data
+      await queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      await queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
+      await queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
+
+      toast.success(
+        `Order berhasil diproses! Stok "${targetProduct.name}" berkurang menjadi ${newStock} ${targetProduct.unit || "PCS"}.`,
+      );
+      setIsOrderModalOpen(false);
+      setOrderForm({
+        productId: "",
+        quantity: "1",
+        purpose: "",
+        officer: "",
+        notes: "",
+      });
+      setOrderProductSearch("");
+    } catch (err: any) {
+      toast.error("Gagal memproses order sparepart", { description: err.message });
+    } finally {
+      setIsOrdering(false);
+    }
+  };
 
   // ── MUTATION: HAPUS RIWAYAT TRANSAKSI MUTASI ────────────────────────────────────
   const deleteTransaction = useMutation({
@@ -4061,6 +4262,26 @@ function WarehouseAndProductsPage() {
               : isTeknikUser
                 ? "OBS Sparepart"
                 : "Manajemen Master Barang"
+      }
+      actions={
+        <Button
+          onClick={() => {
+            setOrderForm({
+              productId: "",
+              quantity: "1",
+              purpose: "",
+              officer: profile?.full_name || profile?.email || "Administrator Teknik",
+              notes: "",
+            });
+            setOrderProductSearch("");
+            setIsOrderModalOpen(true);
+          }}
+          className="gap-1.5 bg-[#0f274a] hover:bg-[#183a6b] text-white font-semibold shadow-sm h-8 px-3 text-xs rounded-md transition-all flex items-center border border-blue-900/40 select-none cursor-pointer"
+          title="Buka Formulir Sistem Order Sparepart"
+        >
+          <ShoppingCart className="size-3.5 text-blue-300" />
+          <span>Sistem Order</span>
+        </Button>
       }
       contentClassName={isTeknikUser ? "p-3 sm:p-4 pt-2 sm:pt-2.5" : undefined}
     >
@@ -8884,6 +9105,286 @@ function WarehouseAndProductsPage() {
       </AlertDialog>
 
       {/* ── MODAL DIALOG: DETAIL TRANSAKSI MUTASI ────────────────────────────── */}
+      {/* ── MODAL SISTEM ORDER SPAREPART ───────────────────────────────────────── */}
+      <Dialog open={isOrderModalOpen} onOpenChange={setIsOrderModalOpen}>
+        <DialogContent className="sm:max-w-xl w-full max-h-[92vh] flex flex-col p-6 overflow-hidden">
+          <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="flex items-center justify-center size-9 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0">
+                <ShoppingCart className="size-4.5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-foreground">
+                  Sistem Order Sparepart
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  Formulir order pengambilan sparepart. Pengurangan stok ending balance berlaku otomatis secara real-time pada semua role dan tercatat di activity log.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          {(() => {
+            const selectedOrderProduct = orderForm.productId
+              ? products.find((p) => p.id === orderForm.productId) || null
+              : null;
+            const obsMeta = selectedOrderProduct ? getProductObsMeta(selectedOrderProduct) : null;
+            const selectedEndingBalance = selectedOrderProduct
+              ? obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
+                ? Number(obsMeta.ending_balance)
+                : (selectedOrderProduct.current_stock ?? 0)
+              : 0;
+            const orderQtyNum = Number(orderForm.quantity) || 0;
+            const projectedRemaining = Math.max(0, selectedEndingBalance - orderQtyNum);
+            const minStockVal = selectedOrderProduct ? (selectedOrderProduct.min_stock ?? 10) : 10;
+
+            return (
+              <div className="flex-1 overflow-y-auto py-3 space-y-4 pr-1">
+                {/* 1. Pilih Sparepart */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold flex items-center justify-between">
+                    <span>
+                      Pilih Sparepart OBS <span className="text-rose-500">*</span>
+                    </span>
+                    {selectedOrderProduct && (
+                      <span className="text-[11px] font-mono font-medium text-muted-foreground">
+                        Kode: {selectedOrderProduct.code || "—"}
+                      </span>
+                    )}
+                  </Label>
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-2.5 size-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="Ketik untuk mencari nama sparepart atau kode..."
+                        value={orderProductSearch}
+                        onChange={(e) => setOrderProductSearch(e.target.value)}
+                        className="pl-8.5 h-8 text-xs"
+                      />
+                    </div>
+                    <Select
+                      value={orderForm.productId}
+                      onValueChange={(val) => {
+                        setOrderForm((prev) => ({ ...prev, productId: val }));
+                      }}
+                    >
+                      <SelectTrigger className="w-full text-xs h-9">
+                        <SelectValue placeholder="-- Pilih Sparepart yang akan diorder --" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-60">
+                        {activeProductsObs
+                          .filter((p) => {
+                            if (!orderProductSearch.trim()) return true;
+                            const s = orderProductSearch.toLowerCase().trim();
+                            return (
+                              p.name.toLowerCase().includes(s) ||
+                              (p.code && p.code.toLowerCase().includes(s))
+                            );
+                          })
+                          .map((p) => {
+                            const pObs = getProductObsMeta(p);
+                            const end =
+                              pObs && pObs.ending_balance !== null && pObs.ending_balance !== undefined
+                                ? Number(pObs.ending_balance)
+                                : (p.current_stock ?? 0);
+                            return (
+                              <SelectItem key={p.id} value={p.id} className="text-xs py-1.5">
+                                <span className="font-mono text-muted-foreground mr-1.5">
+                                  {p.code || "—"}
+                                </span>{" "}
+                                <span className="font-medium text-foreground">{p.name}</span>{" "}
+                                <span
+                                  className={cn(
+                                    "ml-2 font-mono text-[11px] px-1.5 py-0.2 rounded font-semibold",
+                                    end <= (p.min_stock ?? 10)
+                                      ? "text-rose-600 bg-rose-50 dark:bg-rose-950/40"
+                                      : "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40",
+                                  )}
+                                >
+                                  (Stok: {end} {p.unit || "PCS"})
+                                </span>
+                              </SelectItem>
+                            );
+                          })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Info Kartu Stok Saat Ini jika barang terpilih */}
+                {selectedOrderProduct && (
+                  <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Ending Balance Saat Ini:</span>
+                      <span
+                        className={cn(
+                          "font-mono font-bold text-sm",
+                          selectedEndingBalance <= minStockVal
+                            ? "text-rose-600"
+                            : "text-emerald-600",
+                        )}
+                      >
+                        {selectedEndingBalance.toLocaleString("id-ID")}{" "}
+                        {selectedOrderProduct.unit || "PCS"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Batas Minimal Stok:</span>
+                      <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">
+                        {minStockVal.toLocaleString("id-ID")}{" "}
+                        {selectedOrderProduct.unit || "PCS"}
+                      </span>
+                    </div>
+                    {orderQtyNum > 0 && (
+                      <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground font-medium">Proyeksi Sisa Ending Balance:</span>
+                        <span
+                          className={cn(
+                            "font-mono font-bold",
+                            projectedRemaining <= minStockVal
+                              ? "text-rose-600"
+                              : "text-emerald-600",
+                          )}
+                        >
+                          {projectedRemaining.toLocaleString("id-ID")}{" "}
+                          {selectedOrderProduct.unit || "PCS"}
+                        </span>
+                      </div>
+                    )}
+                    {selectedEndingBalance <= 0 && (
+                      <div className="p-2 rounded bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-1.5">
+                        <CircleAlert className="size-4 shrink-0 text-rose-500" />
+                        <span>Stok sparepart ini habis (0). Tidak dapat melakukan order.</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 2. Jumlah Order & Petugas */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">
+                      Jumlah Order ({selectedOrderProduct?.unit || "PCS"}) <span className="text-rose-500">*</span>
+                    </Label>
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        type="number"
+                        min="1"
+                        max={selectedOrderProduct ? selectedEndingBalance : undefined}
+                        value={orderForm.quantity}
+                        onChange={(e) =>
+                          setOrderForm((prev) => ({ ...prev, quantity: e.target.value }))
+                        }
+                        className="h-8.5 text-xs font-mono font-bold"
+                        placeholder="1"
+                      />
+                      {selectedOrderProduct && selectedEndingBalance > 0 && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setOrderForm((prev) => ({
+                              ...prev,
+                              quantity: String(selectedEndingBalance),
+                            }))
+                          }
+                          className="h-8.5 text-[11px] px-2 whitespace-nowrap text-muted-foreground hover:text-foreground"
+                          title="Ambil seluruh stok yang tersedia"
+                        >
+                          Maks ({selectedEndingBalance})
+                        </Button>
+                      )}
+                    </div>
+                    {selectedOrderProduct && orderQtyNum > selectedEndingBalance && (
+                      <p className="text-[11px] text-rose-600 font-medium">
+                        Jumlah order melebihi stok yang tersedia ({selectedEndingBalance})
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 3. Nama Pemohon / Petugas */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">
+                      Petugas / Pemohon (Teknik) <span className="text-rose-500">*</span>
+                    </Label>
+                    <Input
+                      value={orderForm.officer}
+                      onChange={(e) => setOrderForm((prev) => ({ ...prev, officer: e.target.value }))}
+                      placeholder="Nama pemohon / teknisi"
+                      className="h-8.5 text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* 4. Keperluan / Unit Mesin */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">
+                    Keperluan / Unit Mesin / Lokasi Penggunaan <span className="text-rose-500">*</span>
+                  </Label>
+                  <Input
+                    value={orderForm.purpose}
+                    onChange={(e) => setOrderForm((prev) => ({ ...prev, purpose: e.target.value }))}
+                    placeholder="Contoh: Perbaikan Mesin Grinding 2, Penggantian Bearing Line B..."
+                    className="h-8.5 text-xs"
+                  />
+                </div>
+
+                {/* 5. Catatan Tambahan (Opsional) */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    Catatan Tambahan (Opsional)
+                  </Label>
+                  <Input
+                    value={orderForm.notes}
+                    onChange={(e) => setOrderForm((prev) => ({ ...prev, notes: e.target.value }))}
+                    placeholder="Keterangan kondisi mesin, no SPK, dsb."
+                    className="h-8.5 text-xs"
+                  />
+                </div>
+              </div>
+            );
+          })()}
+
+          <DialogFooter className="pt-3 border-t border-border/60 shrink-0 flex items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsOrderModalOpen(false)}
+              disabled={isOrdering}
+              className="text-xs h-8"
+            >
+              Batal
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleProcessOrder}
+              disabled={
+                isOrdering ||
+                !orderForm.productId ||
+                !orderForm.purpose.trim() ||
+                Number(orderForm.quantity) <= 0
+              }
+              className="gap-1.5 bg-[#0f274a] hover:bg-[#1a3c70] text-white font-semibold text-xs h-8 px-4"
+            >
+              {isOrdering ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  <span>Memproses...</span>
+                </>
+              ) : (
+                <>
+                  <ShoppingCart className="size-3.5" />
+                  <span>Konfirmasi & Proses Order</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!selectedTx} onOpenChange={(open) => !open && setSelectedTx(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
