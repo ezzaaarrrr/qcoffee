@@ -4062,6 +4062,7 @@ function WarehouseAndProductsPage() {
                 ? "OBS Sparepart"
                 : "Manajemen Master Barang"
       }
+      contentClassName={isTeknikUser ? "p-3 sm:p-4 pt-2 sm:pt-2.5" : undefined}
     >
       {/* Header Halaman: disembunyikan untuk user teknik pada menu OBS Sparepart */}
       {!(isTeknikUser && (activeTab === "items" || !activeTab || (activeTab !== "buffer_stock" && activeTab !== "transactions" && activeTab !== "logs"))) && (
@@ -4228,19 +4229,29 @@ function WarehouseAndProductsPage() {
             setTxDateFilter(getTodayDateStr());
           }
         }}
-        className="space-y-4"
+        className={cn("space-y-4", isTeknikUser && "space-y-2")}
       >
         {/* ── TAB 1: MASTER & STOK BARANG ─────────────────────────────────────── */}
-        <TabsContent value="items" className="space-y-4">
+        <TabsContent value="items" className={cn("space-y-4", isTeknikUser && "space-y-2")}>
           {/* Filter & Search Bar */}
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between bg-surface border border-border p-3">
+          <div
+            className={cn(
+              "flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between bg-surface border border-border",
+              isTeknikUser ? "p-1.5 sm:p-2 rounded-lg" : "p-3",
+            )}
+          >
             <div className={cn("relative flex-1", !isTeknikUser && "lg:max-w-md")}>
-              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+              <Search
+                className={cn(
+                  "absolute text-muted-foreground",
+                  isTeknikUser ? "left-3 top-2 size-4" : "left-3 top-2.5 size-4",
+                )}
+              />
               <Input
                 placeholder="Cari nama sparepart, kode material..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-9 text-xs sm:text-sm"
+                className={cn("pl-9 text-xs sm:text-sm", isTeknikUser ? "h-8" : "h-9")}
               />
             </div>
             {!isTeknikUser && (
@@ -4690,36 +4701,74 @@ function WarehouseAndProductsPage() {
                 <table className="w-full text-xs border-collapse border border-slate-300 dark:border-slate-700">
                   <thead>
                     <tr className="bg-[#0f274a] text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
-                      <th className="label-caps px-2.5 py-3 text-center w-12 whitespace-nowrap text-white font-semibold">
+                      <th
+                        className={cn(
+                          "label-caps px-2.5 text-center w-12 whitespace-nowrap text-white font-semibold",
+                          isTeknikUser ? "py-2" : "py-3",
+                        )}
+                      >
                         No
                       </th>
-                      <th className="label-caps px-2.5 py-3 text-left w-[110px] whitespace-nowrap text-white font-semibold">
+                      <th
+                        className={cn(
+                          "label-caps px-2.5 text-left w-[110px] whitespace-nowrap text-white font-semibold",
+                          isTeknikUser ? "py-2" : "py-3",
+                        )}
+                      >
                         Kode
                       </th>
-                      <th className="label-caps px-2.5 py-3 text-left min-w-[200px] text-white font-semibold">
+                      <th
+                        className={cn(
+                          "label-caps px-2.5 text-left min-w-[200px] text-white font-semibold",
+                          isTeknikUser ? "py-2" : "py-3",
+                        )}
+                      >
                         Material
                       </th>
-                      <th className="label-caps px-2.5 py-3 text-center w-[75px] whitespace-nowrap text-white font-semibold">
+                      <th
+                        className={cn(
+                          "label-caps px-2.5 text-center w-[75px] whitespace-nowrap text-white font-semibold",
+                          isTeknikUser ? "py-2" : "py-3",
+                        )}
+                      >
                         Satuan
                       </th>
-                      <th className="label-caps px-2.5 py-3 text-center w-[90px] whitespace-nowrap text-white font-semibold">
-                        Minimal Stok
-                      </th>
-                      <th className="label-caps px-2.5 py-3 text-center w-[115px] whitespace-nowrap text-white font-semibold">
+                      {!isTeknikUser && (
+                        <th className="label-caps px-2.5 py-3 text-center w-[90px] whitespace-nowrap text-white font-semibold">
+                          Minimal Stok
+                        </th>
+                      )}
+                      <th
+                        className={cn(
+                          "label-caps px-2.5 text-center w-[115px] whitespace-nowrap text-white font-semibold",
+                          isTeknikUser ? "py-2" : "py-3",
+                        )}
+                      >
                         BEGINNING BALANCE
                       </th>
-                      <th className="label-caps px-2.5 py-3 text-right w-[115px] whitespace-nowrap text-white font-semibold">
+                      <th
+                        className={cn(
+                          "label-caps px-2.5 text-center w-[115px] whitespace-nowrap text-white font-semibold",
+                          isTeknikUser ? "py-2" : "py-3",
+                        )}
+                      >
                         ENDING BALANCE
                       </th>
-                      <th className="label-caps px-2.5 py-3 text-center w-[90px] whitespace-nowrap text-white font-semibold">
-                        Maksimal Stok
-                      </th>
-                      <th className="label-caps px-2.5 py-3 text-center w-[115px] whitespace-nowrap text-white font-semibold">
-                        Kondisi
-                      </th>
-                      <th className="label-caps px-2.5 py-3 text-center w-[95px] whitespace-nowrap text-white font-semibold">
-                        Aksi
-                      </th>
+                      {!isTeknikUser && (
+                        <th className="label-caps px-2.5 py-3 text-center w-[90px] whitespace-nowrap text-white font-semibold">
+                          Maksimal Stok
+                        </th>
+                      )}
+                      {!isTeknikUser && (
+                        <th className="label-caps px-2.5 py-3 text-center w-[115px] whitespace-nowrap text-white font-semibold">
+                          Kondisi
+                        </th>
+                      )}
+                      {!isTeknikUser && (
+                        <th className="label-caps px-2.5 py-3 text-center w-[95px] whitespace-nowrap text-white font-semibold">
+                          Aksi
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -4814,19 +4863,34 @@ function WarehouseAndProductsPage() {
                           )}
                         >
                           {/* 1. No */}
-                          <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground w-12 bg-slate-50/40 dark:bg-slate-900/20">
+                          <td
+                            className={cn(
+                              "px-2.5 text-center font-mono text-muted-foreground w-12 bg-slate-50/40 dark:bg-slate-900/20",
+                              isTeknikUser ? "py-1.5" : "py-2.5",
+                            )}
+                          >
                             {itemNumber}
                           </td>
 
                           {/* 2. Kode */}
-                          <td className="px-2.5 py-2.5 text-left whitespace-nowrap font-mono font-medium">
+                          <td
+                            className={cn(
+                              "px-2.5 text-left whitespace-nowrap font-mono font-medium",
+                              isTeknikUser ? "py-1.5" : "py-2.5",
+                            )}
+                          >
                             <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
                               {p.code || "—"}
                             </span>
                           </td>
 
                           {/* 3. Material */}
-                          <td className="px-2.5 py-2.5 text-left min-w-[200px]">
+                          <td
+                            className={cn(
+                              "px-2.5 text-left min-w-[200px]",
+                              isTeknikUser ? "py-1.5" : "py-2.5",
+                            )}
+                          >
                             <div className="flex items-center gap-2">
                               {p.image_url ? (
                                 <a
@@ -4850,24 +4914,41 @@ function WarehouseAndProductsPage() {
                           </td>
 
                           {/* 4. Satuan */}
-                          <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                          <td
+                            className={cn(
+                              "px-2.5 text-center whitespace-nowrap",
+                              isTeknikUser ? "py-1.5" : "py-2.5",
+                            )}
+                          >
                             <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 uppercase">
                               {formatUnit(p.unit)}
                             </span>
                           </td>
 
                           {/* 5. Minimal Stok */}
-                          <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
-                            {minStock.toLocaleString("id-ID")}
-                          </td>
+                          {!isTeknikUser && (
+                            <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
+                              {minStock.toLocaleString("id-ID")}
+                            </td>
+                          )}
 
                           {/* 6. BEGINNING BALANCE */}
-                          <td className="px-2.5 py-2.5 text-center font-mono font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          <td
+                            className={cn(
+                              "px-2.5 text-center font-mono font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap",
+                              isTeknikUser ? "py-1.5" : "py-2.5",
+                            )}
+                          >
                             {Number(beginningBalance).toLocaleString("id-ID")}
                           </td>
 
                           {/* 7. ENDING BALANCE */}
-                          <td className="px-2.5 py-2.5 text-right font-mono font-bold whitespace-nowrap">
+                          <td
+                            className={cn(
+                              "px-2.5 text-center font-mono font-bold whitespace-nowrap",
+                              isTeknikUser ? "py-1.5" : "py-2.5",
+                            )}
+                          >
                             <span
                               className={cn(
                                 "tabular-nums text-sm",
@@ -4883,53 +4964,59 @@ function WarehouseAndProductsPage() {
                           </td>
 
                           {/* 10. Maksimal Stok */}
-                          <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
-                            {maxStock !== null && !isNaN(maxStock)
-                              ? maxStock.toLocaleString("id-ID")
-                              : "—"}
-                          </td>
+                          {!isTeknikUser && (
+                            <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
+                              {maxStock !== null && !isNaN(maxStock)
+                                ? maxStock.toLocaleString("id-ID")
+                                : "—"}
+                            </td>
+                          )}
 
                           {/* 8. Kondisi */}
-                          <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
-                            <span
-                              className={cn(
-                                "inline-flex items-center justify-center w-28 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs",
-                                kondisiStyle,
-                              )}
-                            >
-                              {kondisiText}
-                            </span>
-                          </td>
+                          {!isTeknikUser && (
+                            <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center justify-center w-28 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs",
+                                  kondisiStyle,
+                                )}
+                              >
+                                {kondisiText}
+                              </span>
+                            </td>
+                          )}
 
                           {/* 9. Aksi (detail, delete) */}
-                          <td className="px-2.5 py-2.5 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {/* Tombol Detail */}
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2.5 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
-                                onClick={() => setSelectedProduct(p)}
-                                title="Lihat Detail & Edit Barang"
-                              >
-                                <Eye className="size-3 text-primary" />
-                                <span>Detail</span>
-                              </Button>
-
-                              {/* Tombol Hapus (Khusus Admin/Authorized) */}
-                              {canDeleteMaster && (
+                          {!isTeknikUser && (
+                            <td className="px-2.5 py-2.5 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
+                              <div className="flex items-center justify-center gap-1.5">
+                                {/* Tombol Detail */}
                                 <Button
                                   size="sm"
-                                  variant="ghost"
-                                  className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                                  onClick={() => setDeletingItem(p)}
-                                  title="Hapus Barang"
+                                  variant="outline"
+                                  className="h-7 px-2.5 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+                                  onClick={() => setSelectedProduct(p)}
+                                  title="Lihat Detail & Edit Barang"
                                 >
-                                  <Trash2 className="size-3.5" />
+                                  <Eye className="size-3 text-primary" />
+                                  <span>Detail</span>
                                 </Button>
-                              )}
-                            </div>
-                          </td>
+
+                                {/* Tombol Hapus (Khusus Admin/Authorized) */}
+                                {canDeleteMaster && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                    onClick={() => setDeletingItem(p)}
+                                    title="Hapus Barang"
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -4937,7 +5024,12 @@ function WarehouseAndProductsPage() {
                 </table>
 
                 {/* Baris Navigasi Pagination Halaman (100 item per page) */}
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 text-xs text-muted-foreground select-none">
+                <div
+                  className={cn(
+                    "flex flex-col sm:flex-row items-center justify-between gap-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 text-xs text-muted-foreground select-none",
+                    isTeknikUser ? "px-3 py-1.5" : "px-4 py-3",
+                  )}
+                >
                   <div className="flex items-center gap-2">
                     <span>
                       Menampilkan{" "}

@@ -205,8 +205,8 @@ export function AppShell({
           collapsed ? "w-[68px]" : "w-64",
         )}
       >
-        <div className="flex h-16 shrink-0 items-center border-b border-blue-900/40 px-4">
-          <div className="flex items-center gap-3 w-full">
+        <div className="flex h-16 shrink-0 items-center border-b border-blue-900/40 px-3.5">
+          <div className="flex items-center gap-2.5">
             <div className="flex size-10 shrink-0 items-center justify-center">
               <img
                 src="/logo-sparepart-icon.png"
@@ -215,9 +215,14 @@ export function AppShell({
               />
             </div>
             {!collapsed && (
-              <span className="text-lg font-bold uppercase tracking-tighter leading-none text-white truncate">
-                Gudang Sparepart <span className="text-amber-300">M2</span>
-              </span>
+              <div className="flex flex-col justify-center leading-tight">
+                <span className="text-[13px] font-bold uppercase tracking-tight text-white">
+                  Gudang
+                </span>
+                <span className="text-[13px] font-bold uppercase tracking-tight text-white whitespace-nowrap">
+                  Sparepart <span className="text-amber-300">M2</span>
+                </span>
+              </div>
             )}
           </div>
         </div>
