@@ -28,6 +28,7 @@ import {
   isRouteAllowedForDept,
   normalizeDepartmentKey,
   fetchRemoteDeptPermissions,
+  checkIsTeknikUser,
 } from "@/lib/departmentPermissions";
 import { cn } from "@/lib/utils";
 import {
@@ -146,14 +147,24 @@ export function AppShell({
     );
   };
 
-  const isCurrentPageAllowed = pathname === "/profile" || isAdmin || isNavAllowed(pathname);
+  const isCurrentPageAllowed = isAdmin || isNavAllowed(pathname);
+
+  const isTeknikUser = checkIsTeknikUser(profile, roles);
 
   const visibleOperasional = OPERASIONAL.filter(
     (item) => (!item.adminOnly || isAdmin) && isNavAllowed(item.to),
   );
-  const visibleManajemen = MANAJEMEN.filter(
-    (item) => (!item.adminOnly || isAdmin) && isNavAllowed(item.to),
-  );
+  const visibleManajemen = MANAJEMEN.filter((item) => {
+    if ((item.adminOnly && !isAdmin) || !isNavAllowed(item.to)) return false;
+    // Khusus user teknik: di bagian menu produk hanya menampilkan OBS Sparepart saja
+    if (isTeknikUser && item.to === "/products") {
+      const tab = item.search?.tab;
+      if (tab === "buffer_stock" || tab === "transactions" || tab === "logs") {
+        return false;
+      }
+    }
+    return true;
+  });
 
   const renderNav = (items: NavItem[]) =>
     items.map((item, idx) => {
@@ -194,9 +205,9 @@ export function AppShell({
           collapsed ? "w-[68px]" : "w-64",
         )}
       >
-        <div className="border-b border-blue-900/40 p-4 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="flex size-14 shrink-0 items-center justify-center">
+        <div className="flex h-16 shrink-0 items-center border-b border-blue-900/40 px-4">
+          <div className="flex items-center gap-3 w-full">
+            <div className="flex size-10 shrink-0 items-center justify-center">
               <img
                 src="/logo-sparepart-icon.png"
                 alt="Logo Sparepart"
@@ -204,7 +215,7 @@ export function AppShell({
               />
             </div>
             {!collapsed && (
-              <span className="text-xl font-bold uppercase tracking-tighter leading-none text-white">
+              <span className="text-lg font-bold uppercase tracking-tighter leading-none text-white truncate">
                 Gudang Sparepart <span className="text-amber-300">M2</span>
               </span>
             )}

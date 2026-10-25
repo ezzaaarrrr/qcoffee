@@ -101,7 +101,7 @@ import { useCurrentUser } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { formatDate, formatUnit } from "@/lib/domain";
 import { exportSparepartInventoryExcel, getProductObsMeta } from "@/lib/exportUtils";
-import { normalizeDepartmentKey } from "@/lib/departmentPermissions";
+import { normalizeDepartmentKey, checkIsTeknikUser } from "@/lib/departmentPermissions";
 
 type ProductsSearch = {
   tab?: string | undefined;
@@ -1084,28 +1084,19 @@ function WarehouseAndProductsPage() {
   const queryClient = useQueryClient();
   const search = Route.useSearch();
 
-  // Identifikasi peran Departemen Teknik / Administrator Teknik
-  const userDept = normalizeDepartmentKey(profile?.department, roles);
-  const fullNameLower = profile?.full_name?.toLowerCase() || "";
-  const deptLower = profile?.department?.toLowerCase() || "";
-  const emailLower = profile?.email?.toLowerCase() || "";
+  const navigate = Route.useNavigate();
 
-  const isTeknikUser =
-    !isAdmin &&
-    (userDept === "TEKNIK" ||
-      deptLower.includes("teknik") ||
-      fullNameLower.includes("teknik") ||
-      fullNameLower.includes("administrator teknik") ||
-      emailLower.includes("teknik"));
+  // Identifikasi peran Departemen Teknik / Administrator Teknik
+  const isTeknikUser = checkIsTeknikUser(profile, roles);
 
   // Hak akses Departemen Warehouse Sparepart & Continuous Improvement
   const isWarehouseAdmin =
-    isAdmin || (!isTeknikUser && (roles.includes("prod_process_uh") || roles.includes("admin_process")));
-  const canManageWarehouse = isWarehouseAdmin || (!isTeknikUser && roles.includes("qc_field"));
-  const canDeleteMaster = isAdmin || (!isTeknikUser && roles.includes("prod_process_uh"));
+    !isTeknikUser && (isAdmin || roles.includes("prod_process_uh") || roles.includes("admin_process"));
+  const canManageWarehouse = !isTeknikUser && (isWarehouseAdmin || roles.includes("qc_field"));
+  const canDeleteMaster = !isTeknikUser && (isAdmin || roles.includes("prod_process_uh"));
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<string>(search.tab || "items");
+  const [activeTab, setActiveTab] = useState<string>(isTeknikUser ? "items" : search.tab || "items");
   const [searchQuery, setSearchQuery] = useState("");
   const [stockStatusFilter, setStockStatusFilter] = useState<string>("ALL");
   const [productDateFilter, setProductDateFilter] = useState<string>("");
@@ -1904,6 +1895,11 @@ function WarehouseAndProductsPage() {
       setIsTxOpen(true);
     }
     const targetTab = search.tab || "items";
+    if (isTeknikUser && targetTab !== "items") {
+      setActiveTab("items");
+      navigate({ search: (prev: any) => ({ ...prev, tab: "items" }), replace: true });
+      return;
+    }
     setActiveTab(targetTab);
     if (targetTab === "transactions") {
       setTxDateFilter(getTodayDateStr());
@@ -4062,11 +4058,14 @@ function WarehouseAndProductsPage() {
             ? "Riwayat Mutasi"
             : activeTab === "logs"
               ? "Riwayat Aktivitas"
-              : "Manajemen Master Barang"
+              : isTeknikUser
+                ? "OBS Sparepart"
+                : "Manajemen Master Barang"
       }
     >
-      {/* Header Halaman */}
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Header Halaman: disembunyikan untuk user teknik pada menu OBS Sparepart */}
+      {!(isTeknikUser && (activeTab === "items" || !activeTab || (activeTab !== "buffer_stock" && activeTab !== "transactions" && activeTab !== "logs"))) && (
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1
             className="text-2xl font-bold tracking-[0.5em] text-black"
@@ -4218,6 +4217,7 @@ function WarehouseAndProductsPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* Tabs Menu Gudang */}
       <Tabs
@@ -4234,7 +4234,7 @@ function WarehouseAndProductsPage() {
         <TabsContent value="items" className="space-y-4">
           {/* Filter & Search Bar */}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between bg-surface border border-border p-3">
-            <div className="relative flex-1 lg:max-w-md">
+            <div className={cn("relative flex-1", !isTeknikUser && "lg:max-w-md")}>
               <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
               <Input
                 placeholder="Cari nama sparepart, kode material..."
@@ -4243,91 +4243,93 @@ function WarehouseAndProductsPage() {
                 className="pl-9 h-9 text-xs sm:text-sm"
               />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-1.5">
-                <Filter className="size-3.5 text-muted-foreground" />
-                <Select value={stockStatusFilter} onValueChange={setStockStatusFilter}>
-                  <SelectTrigger className="w-48 h-9 text-xs">
-                    <SelectValue placeholder="Kondisi Stok" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL" className="text-xs">
-                      Semua Kondisi
-                    </SelectItem>
-                    <SelectItem value="ORDER" className="text-xs font-semibold text-rose-600">
-                      ⚠ ORDER (≤ Minimal Stok)
-                    </SelectItem>
-                    <SelectItem value="SAFETY" className="text-xs font-semibold text-emerald-600">
-                      ✓ SAFETY STOK (&gt; Minimal Stok)
-                    </SelectItem>
-                    <SelectItem
-                      value="OUT_OF_STOCK"
-                      className="text-xs font-semibold text-amber-600"
-                    >
-                      ⚡ OUT OF STOK (&gt; Maksimal Stok)
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            {!isTeknikUser && (
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Filter className="size-3.5 text-muted-foreground" />
+                  <Select value={stockStatusFilter} onValueChange={setStockStatusFilter}>
+                    <SelectTrigger className="w-48 h-9 text-xs">
+                      <SelectValue placeholder="Kondisi Stok" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL" className="text-xs">
+                        Semua Kondisi
+                      </SelectItem>
+                      <SelectItem value="ORDER" className="text-xs font-semibold text-rose-600">
+                        ⚠ ORDER (≤ Minimal Stok)
+                      </SelectItem>
+                      <SelectItem value="SAFETY" className="text-xs font-semibold text-emerald-600">
+                        ✓ SAFETY STOK (&gt; Minimal Stok)
+                      </SelectItem>
+                      <SelectItem
+                        value="OUT_OF_STOCK"
+                        className="text-xs font-semibold text-amber-600"
+                      >
+                        ⚡ OUT OF STOK (&gt; Maksimal Stok)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              {/* Filter Kalender Tanggal Tarik Data */}
-              <div className="flex items-center gap-1.5 bg-background border border-input rounded-md px-2.5 h-9 text-xs shadow-sm hover:border-primary/50 transition-colors">
-                <CalendarIcon className="size-3.5 text-muted-foreground shrink-0" />
-                <input
-                  type="date"
-                  value={productDateFilter}
-                  onChange={(e) => setProductDateFilter(e.target.value)}
-                  className="bg-transparent text-xs text-foreground focus:outline-none cursor-pointer font-medium"
-                  title="Tarik data berdasarkan tanggal kalender"
-                />
-                {productDateFilter && (
-                  <button
-                    type="button"
-                    onClick={() => setProductDateFilter("")}
-                    className="text-muted-foreground hover:text-foreground p-0.5 rounded-full hover:bg-muted transition-colors"
-                    title="Reset filter tanggal"
-                  >
-                    <X className="size-3" />
-                  </button>
-                )}
-              </div>
-
-              {/* Urutan List Barang */}
-              <div className="flex items-center gap-1.5">
-                <ArrowUpDown className="size-3.5 text-muted-foreground" />
-                <Select value={sortOption} onValueChange={setSortOption}>
-                  <SelectTrigger className="w-48 h-9 text-xs font-medium">
-                    <SelectValue placeholder="Urutkan" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem
-                      value="RECENT_MUTATION"
-                      className="text-xs font-semibold text-primary"
+                {/* Filter Kalender Tanggal Tarik Data */}
+                <div className="flex items-center gap-1.5 bg-background border border-input rounded-md px-2.5 h-9 text-xs shadow-sm hover:border-primary/50 transition-colors">
+                  <CalendarIcon className="size-3.5 text-muted-foreground shrink-0" />
+                  <input
+                    type="date"
+                    value={productDateFilter}
+                    onChange={(e) => setProductDateFilter(e.target.value)}
+                    className="bg-transparent text-xs text-foreground focus:outline-none cursor-pointer font-medium"
+                    title="Tarik data berdasarkan tanggal kalender"
+                  />
+                  {productDateFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setProductDateFilter("")}
+                      className="text-muted-foreground hover:text-foreground p-0.5 rounded-full hover:bg-muted transition-colors"
+                      title="Reset filter tanggal"
                     >
-                      ✦ Baru Ditambah / Mutasi
-                    </SelectItem>
-                    <SelectItem value="CODE_ASC" className="text-xs">
-                      Kode Barang (Angka Terkecil ke Terbesar)
-                    </SelectItem>
-                    <SelectItem value="CODE_DESC" className="text-xs">
-                      Kode Barang (Angka Terbesar ke Terkecil)
-                    </SelectItem>
-                    <SelectItem value="NAME_ASC" className="text-xs">
-                      Nama Barang (A - Z)
-                    </SelectItem>
-                    <SelectItem value="NAME_DESC" className="text-xs">
-                      Nama Barang (Z - A)
-                    </SelectItem>
-                    <SelectItem value="STOCK_DESC" className="text-xs">
-                      Stok Terbanyak
-                    </SelectItem>
-                    <SelectItem value="STOCK_ASC" className="text-xs">
-                      Stok Paling Sedikit
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                      <X className="size-3" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Urutan List Barang */}
+                <div className="flex items-center gap-1.5">
+                  <ArrowUpDown className="size-3.5 text-muted-foreground" />
+                  <Select value={sortOption} onValueChange={setSortOption}>
+                    <SelectTrigger className="w-48 h-9 text-xs font-medium">
+                      <SelectValue placeholder="Urutkan" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem
+                        value="RECENT_MUTATION"
+                        className="text-xs font-semibold text-primary"
+                      >
+                        ✦ Baru Ditambah / Mutasi
+                      </SelectItem>
+                      <SelectItem value="CODE_ASC" className="text-xs">
+                        Kode Barang (Angka Terkecil ke Terbesar)
+                      </SelectItem>
+                      <SelectItem value="CODE_DESC" className="text-xs">
+                        Kode Barang (Angka Terbesar ke Terkecil)
+                      </SelectItem>
+                      <SelectItem value="NAME_ASC" className="text-xs">
+                        Nama Barang (A - Z)
+                      </SelectItem>
+                      <SelectItem value="NAME_DESC" className="text-xs">
+                        Nama Barang (Z - A)
+                      </SelectItem>
+                      <SelectItem value="STOCK_DESC" className="text-xs">
+                        Stok Terbanyak
+                      </SelectItem>
+                      <SelectItem value="STOCK_ASC" className="text-xs">
+                        Stok Paling Sedikit
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* ── MONITORING INFO CARDS OBS SPAREPART ────────────────────────── */}

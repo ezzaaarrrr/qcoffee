@@ -179,6 +179,32 @@ export function normalizeDepartmentKey(
   return "TEKNIK";
 }
 
+/** Helper untuk mengidentifikasi apakah profil / sesi yang sedang aktif adalah user / akun teknik */
+export function checkIsTeknikUser(
+  profile?: { full_name?: string | null; department?: string | null; email?: string | null } | null,
+  roles?: string[] | AppRole[],
+): boolean {
+  const userDept = normalizeDepartmentKey(profile?.department, roles);
+  const fullNameLower = profile?.full_name?.toLowerCase() || "";
+  const deptLower = profile?.department?.toLowerCase() || "";
+  const emailLower = profile?.email?.toLowerCase() || "";
+  const storedAccess =
+    typeof window !== "undefined" ? localStorage.getItem("last_active_access") || "" : "";
+  const storedDept =
+    typeof window !== "undefined" ? localStorage.getItem("last_active_dept") || "" : "";
+
+  return (
+    userDept === "TEKNIK" ||
+    deptLower.includes("teknik") ||
+    fullNameLower.includes("teknik") ||
+    fullNameLower.includes("administrator teknik") ||
+    emailLower.includes("teknik") ||
+    storedAccess.toUpperCase() === "TEKNIK" ||
+    storedDept.toUpperCase().includes("TEKNIK")
+  );
+}
+
+
 /** Ambil cache izin departemen dari browser localStorage */
 export function getStoredDeptPermissions(): Record<string, Record<string, boolean>> {
   if (typeof window === "undefined") return DEFAULT_DEPARTMENT_PERMISSIONS;
@@ -268,7 +294,68 @@ export async function fetchRemoteDeptPermissions(
 }
 
 /**
- * Validasi apakah suatu rute diizinkan untuk departemen dan role tertentu
+ * Mengambil status izin akses halaman untuk departemen tertentu berdasarkan
+ * remotePermissions (Supabase), localStorage cache, dan fallback konfigurasi standar.
+ */
+export function getDeptPermission(
+  department?: string | null,
+  routePath?: string,
+  remotePermissions?: Record<string, boolean>,
+): boolean {
+  if (!routePath) return false;
+  const deptKey = normalizeDepartmentKey(department);
+
+  // 1. Super Admin selalu diizinkan untuk semua halaman
+  if (deptKey === "Super Admin") {
+    return true;
+  }
+
+  // 2. Periksa data spesifik departemen dari Supabase / remote permissions jika ada
+  if (remotePermissions) {
+    const remoteKey = `${deptKey.toLowerCase()}:${routePath}`;
+    if (remoteKey in remotePermissions && remotePermissions[remoteKey] !== undefined) {
+      return Boolean(remotePermissions[remoteKey]);
+    }
+
+    // Cocokkan secara case-insensitive
+    for (const [k, v] of Object.entries(remotePermissions)) {
+      if (k.toLowerCase() === remoteKey && v !== undefined) {
+        return Boolean(v);
+      }
+    }
+  }
+
+  // 3. Periksa cache localStorage
+  const stored = getStoredDeptPermissions();
+  const matchedDeptKey = Object.keys(stored).find(
+    (k) => normalizeDepartmentKey(k).toLowerCase() === deptKey.toLowerCase(),
+  );
+
+  const matchedDeptMap = matchedDeptKey ? stored[matchedDeptKey] : undefined;
+  if (matchedDeptMap && routePath in matchedDeptMap && matchedDeptMap[routePath] !== undefined) {
+    return Boolean(matchedDeptMap[routePath]);
+  }
+
+  // 4. Default fallback berdasarkan DEFAULT_DEPARTMENT_PERMISSIONS
+  const defaultKey = Object.keys(DEFAULT_DEPARTMENT_PERMISSIONS).find(
+    (k) => normalizeDepartmentKey(k).toLowerCase() === deptKey.toLowerCase(),
+  );
+
+  const defaultDeptMap = defaultKey ? DEFAULT_DEPARTMENT_PERMISSIONS[defaultKey] : undefined;
+  if (defaultDeptMap && routePath in defaultDeptMap && defaultDeptMap[routePath] !== undefined) {
+    return Boolean(defaultDeptMap[routePath]);
+  }
+
+  // 5. Fallback umum: izinkan dashboard & approval jika rute belum terdaftar
+  if (routePath === "/dashboard" || routePath === "/approvals") {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Validasi apakah suatu rute diizinkan untuk departemen dan role tertentu saat navigasi/guard
  */
 export function isRouteAllowedForDept(
   routePath: string,
@@ -282,58 +369,13 @@ export function isRouteAllowedForDept(
     return true;
   }
 
-  // 2. Rute profil selalu boleh diakses oleh pengguna yang telah login
-  if (routePath === "/profile") {
-    return true;
-  }
-
-  // 3. Rute khusus Super Admin diblokir total untuk non-admin
+  // 2. Rute khusus Super Admin diblokir total untuk non-admin
   if (routePath === "/settings" || routePath === "/roles") {
     return false;
   }
 
   const deptKey = normalizeDepartmentKey(department, userRoles);
-
-  // 4. Periksa data spesifik departemen dari Supabase (remote) jika tersedia
-  if (remotePermissions) {
-    const remoteKey = `${deptKey.toLowerCase()}:${routePath}`;
-    if (remoteKey in remotePermissions && remotePermissions[remoteKey] !== undefined) {
-      return Boolean(remotePermissions[remoteKey]);
-    }
-
-    // Cocokkan secara case-insensitive untuk departemen
-    for (const [k, v] of Object.entries(remotePermissions)) {
-      if (k.toLowerCase() === remoteKey) return Boolean(v);
-    }
-  }
-
-  // 5. Periksa cache localStorage
-  const stored = getStoredDeptPermissions();
-  const matchedDeptKey = Object.keys(stored).find(
-    (k) => normalizeDepartmentKey(k).toLowerCase() === deptKey.toLowerCase(),
-  );
-
-  const matchedDeptMap = matchedDeptKey ? stored[matchedDeptKey] : undefined;
-  if (matchedDeptMap && routePath in matchedDeptMap) {
-    return Boolean(matchedDeptMap[routePath]);
-  }
-
-  // 6. Default fallback berdasarkan DEFAULT_DEPARTMENT_PERMISSIONS
-  const defaultKey = Object.keys(DEFAULT_DEPARTMENT_PERMISSIONS).find(
-    (k) => normalizeDepartmentKey(k).toLowerCase() === deptKey.toLowerCase(),
-  );
-
-  const defaultDeptMap = defaultKey ? DEFAULT_DEPARTMENT_PERMISSIONS[defaultKey] : undefined;
-  if (defaultDeptMap && routePath in defaultDeptMap) {
-    return Boolean(defaultDeptMap[routePath]);
-  }
-
-  // 7. Fallback umum: izinkan dashboard & approval, sisanya false
-  if (routePath === "/dashboard" || routePath === "/approvals") {
-    return true;
-  }
-
-  return false;
+  return getDeptPermission(deptKey, routePath, remotePermissions);
 }
 
 /** Skrip SQL Migrasi Lengkap untuk dibuat di Supabase SQL Editor */
