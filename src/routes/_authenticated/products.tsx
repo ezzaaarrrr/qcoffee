@@ -49,6 +49,10 @@ import {
   ArrowUpFromLine,
   ShoppingCart,
   Loader2,
+  ClipboardList,
+  CheckCircle2,
+  XCircle,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
@@ -103,7 +107,15 @@ import { useCurrentUser } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { formatDate, formatUnit } from "@/lib/domain";
 import { exportSparepartInventoryExcel, getProductObsMeta } from "@/lib/exportUtils";
-import { normalizeDepartmentKey, checkIsTeknikUser } from "@/lib/departmentPermissions";
+import { normalizeDepartmentKey, checkIsTeknikUser, checkIsGdspUser } from "@/lib/departmentPermissions";
+import {
+  fetchSparepartOrders,
+  createSparepartOrder,
+  approveSparepartOrder,
+  rejectSparepartOrder,
+  type SparepartOrder,
+  type SparepartOrderItem,
+} from "@/lib/orderService";
 
 type ProductsSearch = {
   tab?: string | undefined;
@@ -1897,16 +1909,35 @@ function WarehouseAndProductsPage() {
   const [txType, setTxType] = useState<"IN" | "OUT">("IN");
 
   // ── SISTEM ORDER SPAREPART (TEKNIK & GUDANG) ───────────────────────────────
+  const isGdspUser = checkIsGdspUser(profile, roles, isAdmin);
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
-  const [orderProductSearch, setOrderProductSearch] = useState("");
-  const [orderForm, setOrderForm] = useState({
-    productId: "",
-    quantity: "1",
-    purpose: "",
-    officer: "",
-    notes: "",
+  const [isOrderMonitoringOpen, setIsOrderMonitoringOpen] = useState(false);
+  const [orderMonitoringSearch, setOrderMonitoringSearch] = useState("");
+  const [orderMonitoringStatus, setOrderMonitoringStatus] = useState<"ALL" | "PENDING" | "APPROVED" | "REJECTED">("ALL");
+  const [orderRejectTarget, setOrderRejectTarget] = useState<SparepartOrder | null>(null);
+  const [orderRejectReason, setOrderRejectReason] = useState("");
+
+  // Formulir Order: Meniru persis struktur dan field 'Catatan Keluar'
+  const [orderItems, setOrderItems] = useState<
+    Array<{ productId: string; quantity: string; unit: string }>
+  >([{ productId: "", quantity: "1", unit: "PCS" }]);
+  const [orderHeader, setOrderHeader] = useState({
+    batchNumber: new Date().toISOString().split("T")[0], // Tanggal Keluar
+    referenceNo: profile?.full_name || profile?.email || "Administrator Teknik", // User
+    supplierOrDest: "", // Alasan Permintaan Barang
+    notes: "", // Petugas Sparepart Shift 1/2/3
   });
+
+  // Query order sparepart dari database secara permanen
+  const { data: sparepartOrders = [] } = useQuery({
+    queryKey: ["sparepart_orders"],
+    queryFn: () => fetchSparepartOrders(supabase),
+  });
+
+  const pendingOrdersCount = useMemo(() => {
+    return sparepartOrders.filter((o) => o.status === "PENDING").length;
+  }, [sparepartOrders]);
 
   // Auto-open modal jika diarahkan dari dashboard dengan search parameter
   useEffect(() => {
@@ -1933,14 +1964,14 @@ function WarehouseAndProductsPage() {
   // Sinkronisasi judul tab browser sesuai menu/tab yang aktif
   useEffect(() => {
     const tabTitleMap: Record<string, string> = {
-      items: "OBS Sparepart",
+      items: isTeknikUser ? "Master barang" : "OBS Sparepart",
       buffer_stock: "Buffer Stok",
       transactions: "Riwayat Mutasi",
       logs: "Activity Log",
     };
-    const title = tabTitleMap[activeTab] || "OBS Sparepart";
+    const title = tabTitleMap[activeTab] || (isTeknikUser ? "Master barang" : "OBS Sparepart");
     document.title = title;
-  }, [activeTab]);
+  }, [activeTab, isTeknikUser]);
   const [txItems, setTxItems] = useState<
     Array<{ productId: string; quantity: string; unit: string }>
   >([{ productId: "", quantity: "1", unit: "kg" }]);
@@ -1995,6 +2026,49 @@ function WarehouseAndProductsPage() {
       active = false;
     };
   }, [queryClient]);
+
+  // ── REALTIME SYNCHRONIZATION DENGAN SUPABASE ─────────────────────────────────
+  useEffect(() => {
+    const channel = supabase
+      .channel("warehouse_realtime_orders_sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "products" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+          queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "warehouse_transactions" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
+          queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "warehouse_activity_logs" },
+        (payload: any) => {
+          queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
+          queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
+          if (
+            isGdspUser &&
+            payload?.new?.action === "ORDER_SPAREPART_PENDING"
+          ) {
+            toast.info("Permintaan Order Sparepart Baru!", {
+              description: payload?.new?.description || "Order baru dari Teknik menunggu approval.",
+            });
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient, isGdspUser]);
 
   // State Filter Tab Mutasi (In/Out & Tanggal - Default Hari Ini)
   const [txSearchQuery, setTxSearchQuery] = useState("");
@@ -2832,180 +2906,137 @@ function WarehouseAndProductsPage() {
     onError: (e: Error) => toast.error("Gagal mencatat transaksi", { description: e.message }),
   });
 
-  // ── HANDLER PROSES SISTEM ORDER SPAREPART (PENGURANGAN ENDING BALANCE) ────
+  // ── HANDLER SISTEM ORDER SPAREPART (MENUNGGU APPROVAL GDSP) ───────────────
   const handleProcessOrder = async () => {
-    if (!orderForm.productId) {
-      toast.error("Silakan pilih sparepart terlebih dahulu");
-      return;
-    }
-    const targetProduct = products.find((p) => p.id === orderForm.productId);
-    if (!targetProduct) {
-      toast.error("Sparepart tidak ditemukan dalam database");
-      return;
-    }
-    const qty = Number(orderForm.quantity);
-    if (!qty || qty <= 0) {
-      toast.error("Jumlah order harus lebih besar dari 0");
+    const validItems = orderItems.filter((it) => it.productId);
+    if (validItems.length === 0) {
+      toast.error("Silakan pilih minimal 1 sparepart yang akan diorder");
       return;
     }
 
-    const obsMeta = getProductObsMeta(targetProduct);
-    const currentEnding =
-      obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
-        ? Number(obsMeta.ending_balance)
-        : (targetProduct.current_stock ?? 0);
-
-    if (qty > currentEnding) {
-      toast.error(
-        `Jumlah order (${qty}) melebihi stok ending balance yang tersedia (${currentEnding})!`,
-      );
+    if (!orderHeader.referenceNo.trim()) {
+      toast.error("Nama pemohon / user wajib diisi");
       return;
     }
 
-    if (!orderForm.purpose.trim()) {
-      toast.error("Keperluan / unit mesin wajib diisi");
+    if (!orderHeader.supplierOrDest.trim()) {
+      toast.error("Alasan permintaan barang / unit mesin wajib diisi");
       return;
+    }
+
+    // Validasi kuantitas & ketersediaan stok setiap item
+    for (const it of validItems) {
+      const prod = products.find((p) => p.id === it.productId);
+      if (!prod) continue;
+      const obsMeta = getProductObsMeta(prod);
+      const currentStock =
+        obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
+          ? Number(obsMeta.ending_balance)
+          : (prod.current_stock ?? 0);
+      const qty = Number(it.quantity) || 0;
+      if (qty <= 0) {
+        toast.error(`Kuantitas order untuk "${prod.name}" harus lebih besar dari 0`);
+        return;
+      }
+      if (qty > currentStock) {
+        toast.error(
+          `Kuantitas order (${qty}) untuk "${prod.name}" melebihi stok yang tersedia (${currentStock})!`,
+        );
+        return;
+      }
     }
 
     setIsOrdering(true);
     try {
-      const newStock = Math.max(0, currentEnding - qty);
-      const purposeText = orderForm.purpose.trim();
-      const officerName =
-        orderForm.officer.trim() || profile?.full_name || profile?.email || "Administrator Teknik";
-      const notesText = orderForm.notes.trim() || `Order sistem sparepart untuk ${purposeText}`;
-
-      // 1. Ambil nomor urut transaksi
-      let nextSeq = 1;
-      try {
-        const { data: latestTx } = await (supabase as any)
-          .from("warehouse_transactions")
-          .select("transaction_number")
-          .order("created_at", { ascending: false })
-          .limit(30);
-        if (latestTx && latestTx.length > 0) {
-          const seqs = latestTx
-            .map((t: any) => {
-              const m = (t.transaction_number || "").match(
-                /(?:ORD|TES\s*-\s*GROUND\s*2)\s*-\s*(\d+)/i,
-              );
-              return m ? parseInt(m[1], 10) : 0;
-            })
-            .filter((n: number) => !isNaN(n));
-          if (seqs.length > 0) {
-            nextSeq = Math.max(...seqs) + 1;
-          } else {
-            nextSeq = latestTx.length + 1;
-          }
-        }
-      } catch {
-        nextSeq = transactions.length + 1;
-      }
-      const formattedSeq = String(nextSeq).padStart(2, "0");
-      const txNumber = `ORD - GROUND 2 - ${formattedSeq}`;
-
-      // 2. Simpan transaksi pengeluaran (OUT) di warehouse_transactions
-      const { error: txErr } = await (supabase as any).from("warehouse_transactions").insert({
-        transaction_number: txNumber,
-        tx_type: "OUT",
-        product_id: targetProduct.id,
-        product_name: targetProduct.name,
-        quantity: qty,
-        unit: targetProduct.unit || "PCS",
-        batch_number: new Date().toISOString().split("T")[0],
-        reference_no: "ORDER-TEKNIK",
-        supplier_or_dest: purposeText,
-        notes: notesText,
-        created_by: profile?.id,
-        created_by_name: officerName,
+      const itemsPayload = validItems.map((it) => {
+        const prod = products.find((p) => p.id === it.productId)!;
+        const obsMeta = getProductObsMeta(prod);
+        const currentStock =
+          obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
+            ? Number(obsMeta.ending_balance)
+            : (prod.current_stock ?? 0);
+        return {
+          productId: it.productId,
+          quantity: Number(it.quantity) || 1,
+          unit: it.unit || prod.unit || "PCS",
+          productName: prod.name,
+          productCode: prod.code || "",
+          currentStock,
+        };
       });
 
-      if (txErr && !txErr.message.includes("does not exist")) {
-        console.warn("warehouse_transactions insert warning:", txErr);
-      }
+      const newOrder = await createSparepartOrder(supabase, {
+        items: itemsPayload,
+        orderDate: orderHeader.batchNumber || (new Date().toISOString().split("T")[0] ?? ""),
+        userPemohon: orderHeader.referenceNo.trim(),
+        alasanPermintaan: orderHeader.supplierOrDest.trim(),
+        petugasShift: orderHeader.notes.trim() || "-",
+        userId: profile?.id || undefined,
+      });
 
-      // 3. Update metadata OBS ending_balance & issued
-      let updatedObs = obsMeta
-        ? { ...obsMeta }
-        : {
-            beginning_balance: currentEnding,
-            receipt: 0,
-            issued: 0,
-            ending_balance: currentEnding,
-          };
-      updatedObs.ending_balance = newStock;
-      updatedObs.issued = (Number(updatedObs.issued) || 0) + qty;
-      const updatedDescription = JSON.stringify(updatedObs);
-
-      // 4. Update tabel products di Supabase
-      const { error: prodErr } = await supabase
-        .from("products")
-        .update({
-          current_stock: newStock,
-          description: updatedDescription,
-        } as any)
-        .eq("id", targetProduct.id);
-
-      if (prodErr) throw prodErr;
-
-      // 5. Update cache localStorage obs_stock_balances_map
-      if (typeof window !== "undefined" && window.localStorage) {
-        try {
-          const rawMap = window.localStorage.getItem("obs_stock_balances_map");
-          const map = rawMap ? JSON.parse(rawMap) : {};
-          const codeKey = targetProduct.code
-            ? String(targetProduct.code).trim().toLowerCase()
-            : "";
-          const nameKey = targetProduct.name
-            ? String(targetProduct.name).trim().toLowerCase()
-            : "";
-          const idKey = targetProduct.id ? String(targetProduct.id).trim() : "";
-
-          const prev =
-            (codeKey && map[codeKey]) ||
-            (nameKey && map[nameKey]) ||
-            (idKey && map[idKey]) ||
-            {};
-          const nextMeta = {
-            ...prev,
-            ending_balance: newStock,
-            issued: (Number(prev.issued) || 0) + qty,
-          };
-          if (codeKey) map[codeKey] = nextMeta;
-          if (nameKey) map[nameKey] = nextMeta;
-          if (idKey) map[idKey] = nextMeta;
-          window.localStorage.setItem("obs_stock_balances_map", JSON.stringify(map));
-        } catch {}
-      }
-
-      // 6. Catat riwayat aktivitas di warehouse_activity_logs
-      await recordActivity(
-        "ORDER_SPAREPART",
-        `[SISTEM ORDER] Pengambilan/Order ${qty} ${targetProduct.unit || "PCS"} ${targetProduct.name} (Kode: ${targetProduct.code || "-"}) untuk "${purposeText}". Sisa ending balance: ${newStock} ${targetProduct.unit || "PCS"}.`,
-        officerName,
-      );
-
-      // 7. Refresh semua query data
-      await queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
-      await queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
+      await queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
       await queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
 
       toast.success(
-        `Order berhasil diproses! Stok "${targetProduct.name}" berkurang menjadi ${newStock} ${targetProduct.unit || "PCS"}.`,
+        `Permintaan Order ${newOrder.order_number} berhasil dibuat! Menunggu approval dari GDSP sebelum stok dipotong.`,
       );
       setIsOrderModalOpen(false);
-      setOrderForm({
-        productId: "",
-        quantity: "1",
-        purpose: "",
-        officer: "",
+      setOrderItems([{ productId: "", quantity: "1", unit: "PCS" }]);
+      setOrderHeader({
+        batchNumber: new Date().toISOString().split("T")[0],
+        referenceNo: profile?.full_name || profile?.email || "Administrator Teknik",
+        supplierOrDest: "",
         notes: "",
       });
-      setOrderProductSearch("");
     } catch (err: any) {
       toast.error("Gagal memproses order sparepart", { description: err.message });
     } finally {
       setIsOrdering(false);
+    }
+  };
+
+  // Handler Approval Order oleh GDSP
+  const handleApproveOrder = async (order: SparepartOrder) => {
+    try {
+      const approverName = profile?.full_name || profile?.email || "Petugas GDSP";
+      const approved = await approveSparepartOrder(supabase, order, {
+        id: profile?.id,
+        name: approverName,
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      await queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
+      await queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
+      await queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
+
+      toast.success(
+        `Order ${approved.order_number} disetujui! Stok otomatis terpotong dan tercatat di mutasi riwayat.`,
+      );
+    } catch (err: any) {
+      toast.error("Gagal menyetujui order", { description: err.message });
+    }
+  };
+
+  // Handler Tolak Order oleh GDSP
+  const handleRejectOrderConfirm = async () => {
+    if (!orderRejectTarget) return;
+    try {
+      const approverName = profile?.full_name || profile?.email || "Petugas GDSP";
+      const rejected = await rejectSparepartOrder(
+        supabase,
+        orderRejectTarget,
+        { id: profile?.id, name: approverName },
+        orderRejectReason,
+      );
+
+      await queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
+      await queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
+
+      toast.success(`Order ${rejected.order_number} ditolak. Stok tidak dipotong.`);
+      setOrderRejectTarget(null);
+      setOrderRejectReason("");
+    } catch (err: any) {
+      toast.error("Gagal menolak order", { description: err.message });
     }
   };
 
@@ -4260,31 +4291,86 @@ function WarehouseAndProductsPage() {
             : activeTab === "logs"
               ? "Riwayat Aktivitas"
               : isTeknikUser
-                ? "OBS Sparepart"
+                ? "Master barang"
                 : "Manajemen Master Barang"
       }
       actions={
-        <Button
-          onClick={() => {
-            setOrderForm({
-              productId: "",
-              quantity: "1",
-              purpose: "",
-              officer: profile?.full_name || profile?.email || "Administrator Teknik",
-              notes: "",
-            });
-            setOrderProductSearch("");
-            setIsOrderModalOpen(true);
-          }}
-          className="gap-1.5 bg-[#0f274a] hover:bg-[#183a6b] text-white font-semibold shadow-sm h-8 px-3 text-xs rounded-md transition-all flex items-center border border-blue-900/40 select-none cursor-pointer"
-          title="Buka Formulir Sistem Order Sparepart"
-        >
-          <ShoppingCart className="size-3.5 text-blue-300" />
-          <span>Sistem Order</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => {
+              setOrderItems([{ productId: "", quantity: "1", unit: "PCS" }]);
+              setOrderHeader({
+                batchNumber: new Date().toISOString().split("T")[0],
+                referenceNo: profile?.full_name || profile?.email || "Administrator Teknik",
+                supplierOrDest: "",
+                notes: "",
+              });
+              setIsOrderModalOpen(true);
+            }}
+            className="gap-1.5 bg-[#0f274a] hover:bg-[#183a6b] text-white font-semibold shadow-sm h-8 px-3 text-xs rounded-md transition-all flex items-center border border-blue-900/40 select-none cursor-pointer"
+            title="Buka Formulir Sistem Order Sparepart"
+          >
+            <ShoppingCart className="size-3.5 text-blue-300" />
+            <span>Sistem Order</span>
+          </Button>
+
+          <Button
+            onClick={() => setIsOrderMonitoringOpen(true)}
+            variant="outline"
+            className="gap-1.5 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-800 dark:text-slate-200 font-semibold shadow-sm h-8 px-3 text-xs rounded-md transition-all flex items-center select-none cursor-pointer"
+            title="Buka Monitoring Pemotongan Stok & Order"
+          >
+            <ClipboardList className="size-3.5 text-blue-600 dark:text-blue-400" />
+            <span className="hidden sm:inline">Monitoring Stok Order</span>
+            <span className="sm:hidden">Monitoring</span>
+            {pendingOrdersCount > 0 && (
+              <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-amber-500 text-white px-1.5 py-0.2 text-[10px] font-bold animate-pulse">
+                {pendingOrdersCount}
+              </span>
+            )}
+          </Button>
+        </div>
       }
       contentClassName={isTeknikUser ? "p-3 sm:p-4 pt-2 sm:pt-2.5" : undefined}
     >
+      {/* Banner Notifikasi Order untuk Role GDSP */}
+      {isGdspUser && pendingOrdersCount > 0 && (
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50/90 dark:border-amber-800 dark:bg-amber-950/40 p-3 text-xs text-amber-900 dark:text-amber-200 shadow-sm animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <div className="size-2 rounded-full bg-amber-500 animate-ping shrink-0" />
+            <div>
+              <strong>Pemberitahuan Approval Order:</strong> Ada{" "}
+              <span className="font-bold underline">{pendingOrdersCount} permintaan order sparepart</span>{" "}
+              dari Departemen Teknik yang menunggu persetujuan (approval) Anda. Stok tidak akan terpotong sebelum disetujui.
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => setIsOrderMonitoringOpen(true)}
+            className="h-7.5 px-3 text-xs bg-amber-600 hover:bg-amber-700 text-white font-semibold shrink-0"
+          >
+            Tinjau & Setujui Sekarang
+          </Button>
+        </div>
+      )}
+
+      {/* Banner Info Order untuk Role Teknik */}
+      {isTeknikUser && pendingOrdersCount > 0 && (
+        <div className="mb-3 flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50/70 dark:border-blue-900 dark:bg-blue-950/30 p-2.5 text-xs text-blue-900 dark:text-blue-200">
+          <div className="flex items-center gap-2">
+            <Info className="size-4 text-blue-600 dark:text-blue-400 shrink-0" />
+            <span>
+              Anda memiliki <strong>{pendingOrdersCount} order</strong> yang sedang menunggu persetujuan (approval) dari admin GDSP.
+            </span>
+          </div>
+          <button
+            onClick={() => setIsOrderMonitoringOpen(true)}
+            className="text-xs font-semibold text-blue-700 dark:text-blue-300 hover:underline cursor-pointer"
+          >
+            Lihat Status
+          </button>
+        </div>
+      )}
       {/* Header Halaman: disembunyikan untuk user teknik pada menu OBS Sparepart */}
       {!(isTeknikUser && (activeTab === "items" || !activeTab || (activeTab !== "buffer_stock" && activeTab !== "transactions" && activeTab !== "logs"))) && (
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -9105,10 +9191,10 @@ function WarehouseAndProductsPage() {
       </AlertDialog>
 
       {/* ── MODAL DIALOG: DETAIL TRANSAKSI MUTASI ────────────────────────────── */}
-      {/* ── MODAL SISTEM ORDER SPAREPART ───────────────────────────────────────── */}
+      {/* ── MODAL SISTEM ORDER SPAREPART (STRUKTUR SAMA SEPERTI CATATAN KELUAR) ── */}
       <Dialog open={isOrderModalOpen} onOpenChange={setIsOrderModalOpen}>
-        <DialogContent className="sm:max-w-xl w-full max-h-[92vh] flex flex-col p-6 overflow-hidden">
-          <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
+        <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
             <div className="flex items-center gap-2.5">
               <div className="flex items-center justify-center size-9 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0">
                 <ShoppingCart className="size-4.5" />
@@ -9118,241 +9204,665 @@ function WarehouseAndProductsPage() {
                   Sistem Order Sparepart
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  Formulir order pengambilan sparepart. Pengurangan stok ending balance berlaku otomatis secara real-time pada semua role dan tercatat di activity log.
+                  Formulir order pengambilan sparepart oleh Departemen Teknik. Order akan dikirimkan ke GDSP untuk persetujuan (approval) sebelum stok master barang otomatis terpotong.
                 </DialogDescription>
               </div>
             </div>
           </DialogHeader>
 
-          {(() => {
-            const selectedOrderProduct = orderForm.productId
-              ? products.find((p) => p.id === orderForm.productId) || null
-              : null;
-            const obsMeta = selectedOrderProduct ? getProductObsMeta(selectedOrderProduct) : null;
-            const selectedEndingBalance = selectedOrderProduct
-              ? obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
-                ? Number(obsMeta.ending_balance)
-                : (selectedOrderProduct.current_stock ?? 0)
-              : 0;
-            const orderQtyNum = Number(orderForm.quantity) || 0;
-            const projectedRemaining = Math.max(0, selectedEndingBalance - orderQtyNum);
-            const minStockVal = selectedOrderProduct ? (selectedOrderProduct.min_stock ?? 10) : 10;
-
-            return (
-              <div className="flex-1 overflow-y-auto py-3 space-y-4 pr-1">
-                {/* 1. Pilih Sparepart */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold flex items-center justify-between">
-                    <span>
-                      Pilih Sparepart OBS <span className="text-rose-500">*</span>
-                    </span>
-                    {selectedOrderProduct && (
-                      <span className="text-[11px] font-mono font-medium text-muted-foreground">
-                        Kode: {selectedOrderProduct.code || "—"}
-                      </span>
-                    )}
+          <div className="space-y-4 py-2 text-sm">
+            {/* Bagian List Barang (Multi-item hingga 15, persis Catatan Keluar) */}
+            <div className="space-y-3 rounded-lg border border-border bg-surface-muted/30 p-3.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-foreground">
+                    Daftar Barang ({orderItems.length}/15 Barang)
                   </Label>
-                  <div className="space-y-2">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-2.5 size-3.5 text-muted-foreground" />
-                      <Input
-                        placeholder="Ketik untuk mencari nama sparepart atau kode..."
-                        value={orderProductSearch}
-                        onChange={(e) => setOrderProductSearch(e.target.value)}
-                        className="pl-8.5 h-8 text-xs"
-                      />
-                    </div>
-                    <Select
-                      value={orderForm.productId}
-                      onValueChange={(val) => {
-                        setOrderForm((prev) => ({ ...prev, productId: val }));
-                      }}
-                    >
-                      <SelectTrigger className="w-full text-xs h-9">
-                        <SelectValue placeholder="-- Pilih Sparepart yang akan diorder --" />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-60">
-                        {activeProductsObs
-                          .filter((p) => {
-                            if (!orderProductSearch.trim()) return true;
-                            const s = orderProductSearch.toLowerCase().trim();
-                            return (
-                              p.name.toLowerCase().includes(s) ||
-                              (p.code && p.code.toLowerCase().includes(s))
-                            );
-                          })
-                          .map((p) => {
-                            const pObs = getProductObsMeta(p);
-                            const end =
-                              pObs && pObs.ending_balance !== null && pObs.ending_balance !== undefined
-                                ? Number(pObs.ending_balance)
-                                : (p.current_stock ?? 0);
-                            return (
-                              <SelectItem key={p.id} value={p.id} className="text-xs py-1.5">
-                                <span className="font-mono text-muted-foreground mr-1.5">
-                                  {p.code || "—"}
-                                </span>{" "}
-                                <span className="font-medium text-foreground">{p.name}</span>{" "}
-                                <span
-                                  className={cn(
-                                    "ml-2 font-mono text-[11px] px-1.5 py-0.2 rounded font-semibold",
-                                    end <= (p.min_stock ?? 10)
-                                      ? "text-rose-600 bg-rose-50 dark:bg-rose-950/40"
-                                      : "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40",
-                                  )}
-                                >
-                                  (Stok: {end} {p.unit || "PCS"})
-                                </span>
-                              </SelectItem>
-                            );
-                          })}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Pilih sparepart OBS dan tentukan kuantitas yang diorder
+                  </p>
                 </div>
-
-                {/* Info Kartu Stok Saat Ini jika barang terpilih */}
-                {selectedOrderProduct && (
-                  <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">Ending Balance Saat Ini:</span>
-                      <span
-                        className={cn(
-                          "font-mono font-bold text-sm",
-                          selectedEndingBalance <= minStockVal
-                            ? "text-rose-600"
-                            : "text-emerald-600",
-                        )}
-                      >
-                        {selectedEndingBalance.toLocaleString("id-ID")}{" "}
-                        {selectedOrderProduct.unit || "PCS"}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">Batas Minimal Stok:</span>
-                      <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">
-                        {minStockVal.toLocaleString("id-ID")}{" "}
-                        {selectedOrderProduct.unit || "PCS"}
-                      </span>
-                    </div>
-                    {orderQtyNum > 0 && (
-                      <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground font-medium">Proyeksi Sisa Ending Balance:</span>
-                        <span
-                          className={cn(
-                            "font-mono font-bold",
-                            projectedRemaining <= minStockVal
-                              ? "text-rose-600"
-                              : "text-emerald-600",
-                          )}
-                        >
-                          {projectedRemaining.toLocaleString("id-ID")}{" "}
-                          {selectedOrderProduct.unit || "PCS"}
-                        </span>
-                      </div>
-                    )}
-                    {selectedEndingBalance <= 0 && (
-                      <div className="p-2 rounded bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-1.5">
-                        <CircleAlert className="size-4 shrink-0 text-rose-500" />
-                        <span>Stok sparepart ini habis (0). Tidak dapat melakukan order.</span>
-                      </div>
-                    )}
-                  </div>
+                {orderItems.length < 15 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (orderItems.length < 15) {
+                        setOrderItems([...orderItems, { productId: "", quantity: "1", unit: "PCS" }]);
+                      }
+                    }}
+                    className="h-7 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
+                  >
+                    <Plus className="size-3.5" />
+                    Tambah Barang
+                  </Button>
                 )}
+              </div>
 
-                {/* 2. Jumlah Order & Petugas */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">
-                      Jumlah Order ({selectedOrderProduct?.unit || "PCS"}) <span className="text-rose-500">*</span>
-                    </Label>
-                    <div className="flex items-center gap-1.5">
-                      <Input
-                        type="number"
-                        min="1"
-                        max={selectedOrderProduct ? selectedEndingBalance : undefined}
-                        value={orderForm.quantity}
-                        onChange={(e) =>
-                          setOrderForm((prev) => ({ ...prev, quantity: e.target.value }))
-                        }
-                        className="h-8.5 text-xs font-mono font-bold"
-                        placeholder="1"
-                      />
-                      {selectedOrderProduct && selectedEndingBalance > 0 && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            setOrderForm((prev) => ({
-                              ...prev,
-                              quantity: String(selectedEndingBalance),
-                            }))
-                          }
-                          className="h-8.5 text-[11px] px-2 whitespace-nowrap text-muted-foreground hover:text-foreground"
-                          title="Ambil seluruh stok yang tersedia"
-                        >
-                          Maks ({selectedEndingBalance})
-                        </Button>
+              <div className="space-y-2.5">
+                {orderItems.map((item, idx) => {
+                  const selectedProd = products.find((p) => p.id === item.productId);
+                  const obsMeta = selectedProd ? getProductObsMeta(selectedProd) : null;
+                  const availableStock = selectedProd
+                    ? obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
+                      ? Number(obsMeta.ending_balance)
+                      : (selectedProd.current_stock ?? 0)
+                    : 0;
+
+                  return (
+                    <div
+                      key={idx}
+                      className="flex flex-col gap-2 rounded-md border border-border/80 bg-surface p-2.5 sm:flex-row sm:items-end"
+                    >
+                      {/* Search & Pilih Barang */}
+                      <div className="flex-1 space-y-1">
+                        <Label className="text-xs font-medium">
+                          Cari & Pilih Barang #{idx + 1} *
+                        </Label>
+                        <ProductSearchCombobox
+                          products={products}
+                          value={item.productId}
+                          itemNumber={idx + 1}
+                          onChange={(productId, unit) => {
+                            setOrderItems((prev) =>
+                              prev.map((it, i) =>
+                                i === idx ? { productId, unit: unit || "PCS", quantity: it.quantity } : it,
+                              ),
+                            );
+                          }}
+                        />
+                        {selectedProd && (
+                          <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
+                            <span>Sisa Ending Balance:</span>
+                            <span className={cn("font-mono font-bold", availableStock <= 0 ? "text-rose-600" : "text-emerald-600")}>
+                              {availableStock} {selectedProd.unit || "PCS"}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Jumlah Kuantitas */}
+                      <div className="w-full sm:w-28 space-y-1">
+                        <Label className="text-xs font-medium">Jumlah *</Label>
+                        <Input
+                          type="number"
+                          min="0.01"
+                          step="any"
+                          value={item.quantity}
+                          onChange={(e) => {
+                            const newQty = e.target.value;
+                            setOrderItems((prev) =>
+                              prev.map((it, i) =>
+                                i === idx
+                                  ? { productId: it.productId, unit: it.unit, quantity: newQty }
+                                  : it,
+                              ),
+                            );
+                          }}
+                          placeholder="cth. 1"
+                          className="h-9 text-xs font-mono font-bold"
+                        />
+                      </div>
+
+                      {/* Satuan (Readonly) */}
+                      <div className="w-full sm:w-24 space-y-1">
+                        <Label className="text-xs font-medium">Satuan</Label>
+                        <Input
+                          value={item.unit}
+                          disabled
+                          className="h-9 text-xs bg-surface-muted/60 text-muted-foreground font-mono"
+                        />
+                      </div>
+
+                      {/* Tombol Hapus Baris */}
+                      {orderItems.length > 1 && (
+                        <div className="flex justify-end sm:pb-0.5">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              const updated = orderItems.filter((_, i) => i !== idx);
+                              setOrderItems(updated);
+                            }}
+                            className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
+                            title="Hapus baris barang ini"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
                       )}
                     </div>
-                    {selectedOrderProduct && orderQtyNum > selectedEndingBalance && (
-                      <p className="text-[11px] text-rose-600 font-medium">
-                        Jumlah order melebihi stok yang tersedia ({selectedEndingBalance})
-                      </p>
-                    )}
-                  </div>
+                  );
+                })}
+              </div>
 
-                  {/* 3. Nama Pemohon / Petugas */}
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">
-                      Petugas / Pemohon (Teknik) <span className="text-rose-500">*</span>
-                    </Label>
-                    <Input
-                      value={orderForm.officer}
-                      onChange={(e) => setOrderForm((prev) => ({ ...prev, officer: e.target.value }))}
-                      placeholder="Nama pemohon / teknisi"
-                      className="h-8.5 text-xs"
-                    />
-                  </div>
-                </div>
+              {orderItems.length >= 15 && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+                  * Telah mencapai batas maksimal 15 barang dalam satu permintaan order.
+                </p>
+              )}
+            </div>
 
-                {/* 4. Keperluan / Unit Mesin */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">
-                    Keperluan / Unit Mesin / Lokasi Penggunaan <span className="text-rose-500">*</span>
-                  </Label>
-                  <Input
-                    value={orderForm.purpose}
-                    onChange={(e) => setOrderForm((prev) => ({ ...prev, purpose: e.target.value }))}
-                    placeholder="Contoh: Perbaikan Mesin Grinding 2, Penggantian Bearing Line B..."
-                    className="h-8.5 text-xs"
-                  />
-                </div>
+            {/* Form Informasi Tambahan Mutasi (Persis Catatan Keluar) */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Tanggal Keluar</Label>
+                <Input
+                  type="date"
+                  value={orderHeader.batchNumber || new Date().toISOString().split("T")[0]}
+                  onChange={(e) => setOrderHeader({ ...orderHeader, batchNumber: e.target.value })}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>User</Label>
+                <Input
+                  value={orderHeader.referenceNo}
+                  onChange={(e) => setOrderHeader({ ...orderHeader, referenceNo: e.target.value })}
+                  placeholder="cth. Nama Pemohon / User"
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
 
-                {/* 5. Catatan Tambahan (Opsional) */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium text-muted-foreground">
-                    Catatan Tambahan (Opsional)
-                  </Label>
-                  <Input
-                    value={orderForm.notes}
-                    onChange={(e) => setOrderForm((prev) => ({ ...prev, notes: e.target.value }))}
-                    placeholder="Keterangan kondisi mesin, no SPK, dsb."
-                    className="h-8.5 text-xs"
-                  />
+            <div className="space-y-1.5">
+              <Label>Alasan Permintaan Barang</Label>
+              <Input
+                value={orderHeader.supplierOrDest}
+                onChange={(e) => setOrderHeader({ ...orderHeader, supplierOrDest: e.target.value })}
+                placeholder="cth. Penggantian Bearing Rusak Line Roasting 1"
+                className="h-9 text-xs"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Petugas Sparepart Shift 1/2/3</Label>
+              <Input
+                value={orderHeader.notes}
+                onChange={(e) => setOrderHeader({ ...orderHeader, notes: e.target.value })}
+                placeholder="contoh: Shift 1 / Sultan"
+                className="h-9 text-xs"
+              />
+            </div>
+
+            {/* Info Alur Approval GDSP */}
+            <div className="p-3 rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50/70 dark:bg-blue-950/30 text-xs text-blue-900 dark:text-blue-200 flex items-start gap-2.5">
+              <Info className="size-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="font-semibold">Alur Persetujuan & Pemotongan Stok:</div>
+                <div className="text-[11px] leading-relaxed text-blue-800 dark:text-blue-300">
+                  Setelah tombol konfirmasi diklik, permintaan order akan tersimpan di database dengan status <strong>Menunggu Approval GDSP</strong>. Admin GDSP akan menerima notifikasi untuk memeriksa dan menyetujui. Stok master barang akan otomatis terpotong dan mutasi keluar tercatat secara real-time tepat setelah approval disetujui.
                 </div>
               </div>
-            );
-          })()}
+            </div>
+          </div>
 
           <DialogFooter className="pt-3 border-t border-border/60 shrink-0 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsOrderModalOpen(false)}
+                disabled={isOrdering}
+                className="text-xs h-8.5"
+              >
+                Batal
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setIsOrderModalOpen(false);
+                  setIsOrderMonitoringOpen(true);
+                }}
+                className="text-xs h-8.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/50"
+              >
+                <ClipboardList className="size-3.5 mr-1" />
+                Lihat Monitoring Stok Order
+              </Button>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleProcessOrder}
+              disabled={
+                isOrdering ||
+                orderItems.every((it) => !it.productId) ||
+                !orderHeader.supplierOrDest.trim() ||
+                !orderHeader.referenceNo.trim()
+              }
+              className="gap-1.5 bg-[#0f274a] hover:bg-[#1a3c70] text-white font-semibold text-xs h-8.5 px-4"
+            >
+              {isOrdering ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  <span>Mengirim Permintaan...</span>
+                </>
+              ) : (
+                <>
+                  <ShoppingCart className="size-3.5" />
+                  <span>Kirim Permintaan Order (Approval GDSP)</span>
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── MODAL DIALOG: MONITORING PEMOTONGAN STOK BARANG (ORDER TEKNIK) ────────── */}
+      <Dialog open={isOrderMonitoringOpen} onOpenChange={setIsOrderMonitoringOpen}>
+        <DialogContent className="max-w-5xl w-full max-h-[92vh] flex flex-col p-6 overflow-hidden">
+          <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center justify-center size-9 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0">
+                  <ClipboardList className="size-4.5" />
+                </div>
+                <div>
+                  <DialogTitle className="text-base font-bold text-foreground">
+                    Monitoring Pemotongan Stok Barang (Sistem Order)
+                  </DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                    Memantau informasi barang, jumlah stok sebelum dan sesudah transaksi, jumlah barang yang digunakan, tanggal & waktu, nomor referensi order, dan user pemotong stok secara real-time.
+                  </DialogDescription>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setIsOrderMonitoringOpen(false);
+                  setOrderItems([{ productId: "", quantity: "1", unit: "PCS" }]);
+                  setOrderHeader({
+                    batchNumber: new Date().toISOString().split("T")[0],
+                    referenceNo: profile?.full_name || profile?.email || "Administrator Teknik",
+                    supplierOrDest: "",
+                    notes: "",
+                  });
+                  setIsOrderModalOpen(true);
+                }}
+                className="gap-1.5 bg-[#0f274a] hover:bg-[#183a6b] text-white font-semibold text-xs h-8 px-3 shrink-0"
+              >
+                <Plus className="size-3.5" />
+                <span>Buat Order Baru</span>
+              </Button>
+            </div>
+          </DialogHeader>
+
+          {/* Stat Cards Monitoring */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3 shrink-0">
+            <div className="p-3 rounded-lg border border-border bg-surface">
+              <div className="text-[11px] font-medium text-muted-foreground">Total Permintaan Order</div>
+              <div className="text-xl font-bold font-mono text-foreground mt-0.5">
+                {sparepartOrders.length}
+              </div>
+            </div>
+            <div className="p-3 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20">
+              <div className="text-[11px] font-medium text-amber-700 dark:text-amber-400 flex items-center justify-between">
+                <span>Menunggu Approval GDSP</span>
+                {pendingOrdersCount > 0 && <span className="size-2 rounded-full bg-amber-500 animate-ping" />}
+              </div>
+              <div className="text-xl font-bold font-mono text-amber-600 dark:text-amber-300 mt-0.5">
+                {pendingOrdersCount}
+              </div>
+            </div>
+            <div className="p-3 rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20">
+              <div className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                Disetujui & Stok Terpotong
+              </div>
+              <div className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-300 mt-0.5">
+                {sparepartOrders.filter((o) => o.status === "APPROVED").length}
+              </div>
+            </div>
+            <div className="p-3 rounded-lg border border-rose-200 dark:border-rose-900 bg-rose-50/50 dark:bg-rose-950/20">
+              <div className="text-[11px] font-medium text-rose-700 dark:text-rose-400">Ditolak</div>
+              <div className="text-xl font-bold font-mono text-rose-600 dark:text-rose-300 mt-0.5">
+                {sparepartOrders.filter((o) => o.status === "REJECTED").length}
+              </div>
+            </div>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="flex flex-col sm:flex-row items-center gap-2 pb-3 shrink-0">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3 top-2.5 size-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Cari nomor order, nama barang, pemohon, atau pemotong stok..."
+                value={orderMonitoringSearch}
+                onChange={(e) => setOrderMonitoringSearch(e.target.value)}
+                className="pl-8.5 h-8.5 text-xs w-full"
+              />
+            </div>
+            <Select
+              value={orderMonitoringStatus}
+              onValueChange={(val: any) => setOrderMonitoringStatus(val)}
+            >
+              <SelectTrigger className="w-full sm:w-48 h-8.5 text-xs">
+                <SelectValue placeholder="Status Approval" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL" className="text-xs">Semua Status</SelectItem>
+                <SelectItem value="PENDING" className="text-xs text-amber-600 font-semibold">
+                  ⏳ Menunggu Approval
+                </SelectItem>
+                <SelectItem value="APPROVED" className="text-xs text-emerald-600 font-semibold">
+                  ✓ Disetujui (Stok Terpotong)
+                </SelectItem>
+                <SelectItem value="REJECTED" className="text-xs text-rose-600 font-semibold">
+                  ✕ Ditolak
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Tabel Monitoring Data */}
+          <div className="flex-1 overflow-y-auto border border-border rounded-lg bg-surface min-h-[280px]">
+            {(() => {
+              const q = orderMonitoringSearch.toLowerCase().trim();
+              const filteredOrders = sparepartOrders.filter((o) => {
+                if (orderMonitoringStatus !== "ALL" && o.status !== orderMonitoringStatus) {
+                  return false;
+                }
+                if (!q) return true;
+                const matchNum = o.order_number.toLowerCase().includes(q);
+                const matchPemohon = o.user_pemohon.toLowerCase().includes(q);
+                const matchAlasan = o.alasan_permintaan.toLowerCase().includes(q);
+                const matchApprover = (o.approved_by_name || "").toLowerCase().includes(q);
+                const matchItems = o.items.some(
+                  (it) =>
+                    it.product_name.toLowerCase().includes(q) ||
+                    it.product_code.toLowerCase().includes(q),
+                );
+                return matchNum || matchPemohon || matchAlasan || matchApprover || matchItems;
+              });
+
+              if (filteredOrders.length === 0) {
+                return (
+                  <div className="py-16 text-center text-xs text-muted-foreground space-y-2">
+                    <ClipboardList className="size-8 mx-auto text-muted-foreground/50" />
+                    <div>Tidak ada catatan order sparepart yang sesuai dengan filter.</div>
+                  </div>
+                );
+              }
+
+              return (
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead className="bg-surface-muted/60 text-muted-foreground border-b border-border sticky top-0 z-10 text-[11px] font-semibold uppercase tracking-wider">
+                    <tr>
+                      <th className="py-2.5 px-3">No. Order & Waktu</th>
+                      <th className="py-2.5 px-3">Informasi Barang</th>
+                      <th className="py-2.5 px-3 text-center">Jumlah Digunakan</th>
+                      <th className="py-2.5 px-3 text-center">Stok Sebelum</th>
+                      <th className="py-2.5 px-3 text-center">Stok Sesudah</th>
+                      <th className="py-2.5 px-3">Pemohon & Keperluan</th>
+                      <th className="py-2.5 px-3">User Pemotong Stok</th>
+                      <th className="py-2.5 px-3 text-center">Status</th>
+                      {(isGdspUser || isAdmin) && <th className="py-2.5 px-3 text-right">Aksi Approval</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {filteredOrders.map((ord) => {
+                      const isPending = ord.status === "PENDING";
+                      const isApproved = ord.status === "APPROVED";
+                      const isRejected = ord.status === "REJECTED";
+
+                      return (
+                        <tr
+                          key={ord.id || ord.order_number}
+                          className={cn(
+                            "hover:bg-surface-muted/40 transition-colors",
+                            isPending && "bg-amber-500/5",
+                          )}
+                        >
+                          {/* 1. No Order & Waktu */}
+                          <td className="py-3 px-3 align-top font-mono">
+                            <span className="font-bold text-foreground text-xs block">
+                              {ord.order_number}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground mt-0.5 block">
+                              {new Date(ord.created_at).toLocaleString("id-ID", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}{" "}
+                              WIB
+                            </span>
+                          </td>
+
+                          {/* 2. Informasi Barang */}
+                          <td className="py-3 px-3 align-top">
+                            <div className="space-y-1">
+                              {ord.items.map((it, idx) => (
+                                <div key={idx} className="font-medium text-foreground">
+                                  <span>{it.product_name}</span>{" "}
+                                  {it.product_code && (
+                                    <span className="font-mono text-[10px] text-muted-foreground bg-muted px-1 rounded">
+                                      {it.product_code}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+
+                          {/* 3. Jumlah Digunakan */}
+                          <td className="py-3 px-3 align-top text-center font-mono font-bold text-rose-600">
+                            {ord.items.map((it, idx) => (
+                              <div key={idx} className="whitespace-nowrap">
+                                -{it.quantity} {it.unit}
+                              </div>
+                            ))}
+                          </td>
+
+                          {/* 4. Stok Sebelum Transaksi */}
+                          <td className="py-3 px-3 align-top text-center font-mono text-muted-foreground">
+                            {ord.items.map((it, idx) => (
+                              <div key={idx} className="whitespace-nowrap font-medium">
+                                {it.stock_before !== undefined && it.stock_before !== null
+                                  ? `${it.stock_before} ${it.unit}`
+                                  : "—"}
+                              </div>
+                            ))}
+                          </td>
+
+                          {/* 5. Stok Sesudah Transaksi */}
+                          <td className="py-3 px-3 align-top text-center font-mono font-bold">
+                            {ord.items.map((it, idx) => {
+                              const sAfter = it.stock_after;
+                              return (
+                                <div
+                                  key={idx}
+                                  className={cn(
+                                    "whitespace-nowrap",
+                                    isApproved
+                                      ? "text-emerald-600"
+                                      : isPending
+                                        ? "text-amber-600"
+                                        : "text-muted-foreground",
+                                  )}
+                                >
+                                  {isApproved
+                                    ? sAfter !== undefined && sAfter !== null
+                                      ? `${sAfter} ${it.unit}`
+                                      : "—"
+                                    : isPending
+                                      ? sAfter !== undefined && sAfter !== null
+                                        ? `(${sAfter})*`
+                                        : "—"
+                                      : "—"}
+                                </div>
+                              );
+                            })}
+                          </td>
+
+                          {/* 6. Pemohon & Keperluan */}
+                          <td className="py-3 px-3 align-top">
+                            <div className="font-medium text-foreground">{ord.user_pemohon}</div>
+                            <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
+                              {ord.alasan_permintaan}
+                            </div>
+                            {ord.petugas_shift && ord.petugas_shift !== "-" && (
+                              <div className="text-[10px] text-muted-foreground/80 mt-0.5 font-mono">
+                                Shift/Catatan: {ord.petugas_shift}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* 7. User Pemotong Stok (GDSP) */}
+                          <td className="py-3 px-3 align-top">
+                            {isApproved ? (
+                              <div>
+                                <span className="font-semibold text-foreground block">
+                                  {ord.approved_by_name || "Petugas GDSP"}
+                                </span>
+                                {ord.approved_at && (
+                                  <span className="text-[10px] text-muted-foreground font-mono block">
+                                    {new Date(ord.approved_at).toLocaleString("id-ID", {
+                                      day: "2-digit",
+                                      month: "short",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}{" "}
+                                    WIB
+                                  </span>
+                                )}
+                              </div>
+                            ) : isRejected ? (
+                              <div>
+                                <span className="font-semibold text-rose-600 block">
+                                  {ord.approved_by_name || "Admin GDSP"} (Ditolak)
+                                </span>
+                                {ord.rejection_reason && (
+                                  <span className="text-[10px] text-rose-700 dark:text-rose-300 block italic">
+                                    &ldquo;{ord.rejection_reason}&rdquo;
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-amber-600 font-medium italic">
+                                Menunggu Approval GDSP
+                              </span>
+                            )}
+                          </td>
+
+                          {/* 8. Status */}
+                          <td className="py-3 px-3 align-top text-center">
+                            {isPending && (
+                              <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 text-[10px] font-semibold whitespace-nowrap animate-pulse">
+                                ⏳ Menunggu Approval
+                              </Badge>
+                            )}
+                            {isApproved && (
+                              <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 text-[10px] font-semibold whitespace-nowrap">
+                                ✓ Disetujui & Terpotong
+                              </Badge>
+                            )}
+                            {isRejected && (
+                              <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 text-[10px] font-semibold whitespace-nowrap">
+                                ✕ Ditolak
+                              </Badge>
+                            )}
+                          </td>
+
+                          {/* 9. Aksi untuk Role GDSP / Admin */}
+                          {(isGdspUser || isAdmin) && (
+                            <td className="py-3 px-3 align-top text-right whitespace-nowrap">
+                              {isPending ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleApproveOrder(ord)}
+                                    className="h-7 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                                    title="Setujui dan potong stok sekarang"
+                                  >
+                                    <CheckCircle2 className="size-3.5 mr-1" />
+                                    Setujui
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setOrderRejectTarget(ord);
+                                      setOrderRejectReason("");
+                                    }}
+                                    className="h-7 px-2.5 text-xs text-rose-600 border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/50"
+                                    title="Tolak permintaan order ini"
+                                  >
+                                    <XCircle className="size-3.5 mr-1" />
+                                    Tolak
+                                  </Button>
+                                </div>
+                              ) : (
+                                <span className="text-[11px] text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              );
+            })()}
+          </div>
+
+          <DialogFooter className="pt-3 border-t border-border/60 shrink-0 flex items-center justify-between">
+            <div className="text-[11px] text-muted-foreground">
+              * Tanda (*) pada kolom stok sesudah saat status pending merupakan proyeksi sisa stok jika order disetujui.
+            </div>
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setIsOrderModalOpen(false)}
-              disabled={isOrdering}
+              onClick={() => setIsOrderMonitoringOpen(false)}
+              className="text-xs h-8"
+            >
+              Tutup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── MODAL DIALOG: KONFIRMASI TOLAK ORDER GDSP ────────────────────────────── */}
+      <Dialog
+        open={Boolean(orderRejectTarget)}
+        onOpenChange={(open) => !open && setOrderRejectTarget(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-rose-600 flex items-center gap-2">
+              <XCircle className="size-5" />
+              <span>Tolak Permintaan Order Sparepart</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-1">
+              Order <strong>{orderRejectTarget?.order_number}</strong> akan ditolak dan stok barang tidak akan terpotong.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Alasan Penolakan *</Label>
+              <Input
+                value={orderRejectReason}
+                onChange={(e) => setOrderRejectReason(e.target.value)}
+                placeholder="Contoh: Stok sedang dialokasikan untuk maintenance prioritas lain"
+                className="h-9 text-xs"
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setOrderRejectTarget(null)}
               className="text-xs h-8"
             >
               Batal
@@ -9360,26 +9870,11 @@ function WarehouseAndProductsPage() {
             <Button
               type="button"
               size="sm"
-              onClick={handleProcessOrder}
-              disabled={
-                isOrdering ||
-                !orderForm.productId ||
-                !orderForm.purpose.trim() ||
-                Number(orderForm.quantity) <= 0
-              }
-              className="gap-1.5 bg-[#0f274a] hover:bg-[#1a3c70] text-white font-semibold text-xs h-8 px-4"
+              onClick={handleRejectOrderConfirm}
+              disabled={!orderRejectReason.trim()}
+              className="h-8 text-xs bg-rose-600 hover:bg-rose-700 text-white font-semibold"
             >
-              {isOrdering ? (
-                <>
-                  <Loader2 className="size-3.5 animate-spin" />
-                  <span>Memproses...</span>
-                </>
-              ) : (
-                <>
-                  <ShoppingCart className="size-3.5" />
-                  <span>Konfirmasi & Proses Order</span>
-                </>
-              )}
+              Konfirmasi Tolak Order
             </Button>
           </DialogFooter>
         </DialogContent>

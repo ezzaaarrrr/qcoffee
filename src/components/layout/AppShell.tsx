@@ -29,7 +29,9 @@ import {
   normalizeDepartmentKey,
   fetchRemoteDeptPermissions,
   checkIsTeknikUser,
+  checkIsGdspUser,
 } from "@/lib/departmentPermissions";
+import { fetchSparepartOrders } from "@/lib/orderService";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -74,9 +76,9 @@ export function AppShell({
   contentClassName,
 }: {
   breadcrumb: string;
-  actions?: ReactNode;
+  actions?: ReactNode | undefined;
   children: ReactNode;
-  contentClassName?: string;
+  contentClassName?: string | undefined;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const { profile, roles, isAdmin } = useCurrentUser();
@@ -150,13 +152,26 @@ export function AppShell({
   const isCurrentPageAllowed = isAdmin || isNavAllowed(pathname);
 
   const isTeknikUser = checkIsTeknikUser(profile, roles);
+  const isGdspUser = checkIsGdspUser(profile, roles, isAdmin);
+
+  // Query order pending untuk notifikasi approval GDSP
+  const { data: pendingOrders = [] } = useQuery({
+    queryKey: ["sparepart_orders_pending_count"],
+    queryFn: async () => {
+      const orders = await fetchSparepartOrders(supabase);
+      return orders.filter((o) => o.status === "PENDING");
+    },
+    enabled: isGdspUser,
+    refetchInterval: 12000,
+  });
+  const pendingOrdersCount = pendingOrders.length;
 
   const visibleOperasional = OPERASIONAL.filter(
     (item) => (!item.adminOnly || isAdmin) && isNavAllowed(item.to),
   );
   const visibleManajemen = MANAJEMEN.filter((item) => {
     if ((item.adminOnly && !isAdmin) || !isNavAllowed(item.to)) return false;
-    // Khusus user teknik: di bagian menu produk hanya menampilkan OBS Sparepart saja
+    // Khusus user teknik: di bagian menu produk hanya menampilkan OBS Sparepart (Master barang) saja
     if (isTeknikUser && item.to === "/products") {
       const tab = item.search?.tab;
       if (tab === "buffer_stock" || tab === "transactions" || tab === "logs") {
@@ -164,6 +179,11 @@ export function AppShell({
       }
     }
     return true;
+  }).map((item) => {
+    if (isTeknikUser && item.to === "/products" && (!item.search?.tab || item.search?.tab === "items")) {
+      return { ...item, label: "Master barang" };
+    }
+    return item;
   });
 
   const renderNav = (items: NavItem[]) =>
@@ -179,6 +199,7 @@ export function AppShell({
       }
 
       const Icon = item.icon;
+      const isApproval = item.to === "/approvals";
       return (
         <Link
           key={`${item.to}-${item.search?.tab || idx}`}
@@ -192,7 +213,16 @@ export function AppShell({
           )}
         >
           <Icon className="size-4 shrink-0" />
-          {!collapsed && <span className="truncate">{item.label}</span>}
+          {!collapsed && (
+            <div className="flex flex-1 items-center justify-between min-w-0">
+              <span className="truncate">{item.label}</span>
+              {isApproval && pendingOrdersCount > 0 && isGdspUser && (
+                <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-0.2 text-[10px] font-bold text-white shrink-0 animate-pulse">
+                  {pendingOrdersCount}
+                </span>
+              )}
+            </div>
+          )}
         </Link>
       );
     });
@@ -289,6 +319,16 @@ export function AppShell({
             <span className="font-semibold text-foreground">{breadcrumb}</span>
           </div>
           <div className="flex items-center gap-3">
+            {isGdspUser && pendingOrdersCount > 0 && (
+              <Link
+                to="/approvals"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-xs font-semibold hover:bg-amber-500/20 transition-colors shadow-2xs"
+                title="Ada permintaan order sparepart dari Teknik yang memerlukan approval"
+              >
+                <span className="size-2 rounded-full bg-amber-500 animate-ping shrink-0" />
+                <span>{pendingOrdersCount} Order Pending</span>
+              </Link>
+            )}
             {actions}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

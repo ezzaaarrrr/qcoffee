@@ -204,6 +204,27 @@ export function checkIsTeknikUser(
   );
 }
 
+/** Helper untuk mengidentifikasi apakah profil / sesi yang sedang aktif adalah role / user GDSP / Admin Gudang */
+export function checkIsGdspUser(
+  profile?: { full_name?: string | null; department?: string | null; email?: string | null } | null,
+  roles?: string[] | AppRole[],
+  isAdmin?: boolean,
+): boolean {
+  if (isAdmin) return true;
+  if (checkIsTeknikUser(profile, roles)) return false;
+  const userDept = normalizeDepartmentKey(profile?.department, roles);
+  const deptLower = profile?.department?.toLowerCase() || "";
+  const emailLower = profile?.email?.toLowerCase() || "";
+  return (
+    userDept === "GDSP1201" ||
+    deptLower.includes("gdsp") ||
+    deptLower.includes("gudang") ||
+    emailLower.includes("gdsp") ||
+    emailLower.includes("warehouse") ||
+    Boolean(roles?.includes("prod_process_uh"))
+  );
+}
+
 
 /** Ambil cache izin departemen dari browser localStorage */
 export function getStoredDeptPermissions(): Record<string, Record<string, boolean>> {
