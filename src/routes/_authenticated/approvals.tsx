@@ -281,7 +281,7 @@ function ApprovalsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Approval Center</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Pusat persetujuan dan verifikasi: Approval order sparepart (Teknik &rarr; GDSP) dan checklist produksi.
+            Pusat persetujuan dan verifikasi: Approval order sparepart (Teknik &rarr; GDSP).
           </p>
         </div>
 
@@ -383,14 +383,20 @@ function ApprovalsPage() {
               <tbody className="divide-y divide-border">
                 {pendingOrders.length === 0 && (
                   <tr>
-                    <td colSpan={canDecideOrder ? 5 : 4} className="px-4 py-12 text-center text-muted-foreground text-xs">
+                    <td
+                      colSpan={canDecideOrder ? 5 : 4}
+                      className="px-4 py-12 text-center text-muted-foreground text-xs"
+                    >
                       <CheckCircle2 className="size-8 mx-auto text-emerald-500/50 mb-2" />
                       Tidak ada permintaan order sparepart yang sedang menunggu approval.
                     </td>
                   </tr>
                 )}
                 {pendingOrders.map((ord) => (
-                  <tr key={ord.id || ord.order_number} className="hover:bg-muted/30 transition-colors">
+                  <tr
+                    key={ord.id || ord.order_number}
+                    className="hover:bg-muted/30 transition-colors"
+                  >
                     <td className="px-4 py-3 align-top font-mono">
                       <span className="font-bold text-foreground text-xs block">
                         {ord.order_number}
@@ -509,7 +515,10 @@ function ApprovalsPage() {
               <tbody className="divide-y divide-border">
                 {completedOrders.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground text-xs">
+                    <td
+                      colSpan={7}
+                      className="px-4 py-10 text-center text-muted-foreground text-xs"
+                    >
                       Belum ada riwayat order sparepart yang diselesaikan.
                     </td>
                   </tr>
@@ -517,7 +526,10 @@ function ApprovalsPage() {
                 {completedOrders.map((ord) => {
                   const isApproved = ord.status === "APPROVED";
                   return (
-                    <tr key={ord.id || ord.order_number} className="hover:bg-muted/20 transition-colors">
+                    <tr
+                      key={ord.id || ord.order_number}
+                      className="hover:bg-muted/20 transition-colors"
+                    >
                       <td className="px-4 py-3 align-top font-mono">
                         <span className="font-bold text-foreground text-xs block">
                           {ord.order_number}
@@ -573,7 +585,9 @@ function ApprovalsPage() {
                       </td>
 
                       <td className="px-4 py-3 align-top">
-                        <div className="font-medium text-foreground text-xs">{ord.user_pemohon}</div>
+                        <div className="font-medium text-foreground text-xs">
+                          {ord.user_pemohon}
+                        </div>
                         <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
                           {ord.alasan_permintaan}
                         </div>
@@ -745,23 +759,35 @@ function ApprovalsPage() {
               <span>Konfirmasi Persetujuan & Pemotongan Stok</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-              Order No. <strong>{selectedOrderToApprove?.order_number}</strong> dari {selectedOrderToApprove?.user_pemohon}
+              Order No. <strong>{selectedOrderToApprove?.order_number}</strong> dari{" "}
+              {selectedOrderToApprove?.user_pemohon}
             </DialogDescription>
           </DialogHeader>
 
           {selectedOrderToApprove && (
             <div className="space-y-4 py-2 text-xs">
               <div className="p-3 rounded-lg border border-border bg-surface-muted/40 space-y-2">
-                <div className="font-semibold text-foreground">Rincian Barang yang Akan Dipotong:</div>
+                <div className="font-semibold text-foreground">
+                  Rincian Barang yang Akan Dipotong:
+                </div>
                 <div className="space-y-1.5">
                   {selectedOrderToApprove.items.map((it, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-2 rounded bg-surface border border-border/60">
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between p-2 rounded bg-surface border border-border/60"
+                    >
                       <div>
                         <span className="font-medium text-foreground">{it.product_name}</span>
-                        {it.product_code && <span className="text-[10px] text-muted-foreground font-mono ml-1.5">({it.product_code})</span>}
+                        {it.product_code && (
+                          <span className="text-[10px] text-muted-foreground font-mono ml-1.5">
+                            ({it.product_code})
+                          </span>
+                        )}
                       </div>
                       <div className="text-right">
-                        <span className="font-bold text-rose-600 font-mono">-{it.quantity} {it.unit}</span>
+                        <span className="font-bold text-rose-600 font-mono">
+                          -{it.quantity} {it.unit}
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -773,7 +799,9 @@ function ApprovalsPage() {
                 <div className="space-y-0.5">
                   <div className="font-semibold">Perhatian Pemotongan Stok Otomatis:</div>
                   <div className="text-[11px] leading-relaxed">
-                    Setelah tombol persetujuan diklik, stok master barang di database akan otomatis terpotong secara permanen, dan transaksi mutasi keluar (OUT) akan langsung tercatat atas nama Anda.
+                    Setelah tombol persetujuan diklik, stok master barang di database akan otomatis
+                    terpotong secara permanen, dan transaksi mutasi keluar (OUT) akan langsung
+                    tercatat atas nama Anda.
                   </div>
                 </div>
               </div>
@@ -826,7 +854,8 @@ function ApprovalsPage() {
               <span>Tolak Permintaan Order Sparepart</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-              Order No. <strong>{selectedOrderToReject?.order_number}</strong> akan ditolak dan stok barang tidak akan terpotong.
+              Order No. <strong>{selectedOrderToReject?.order_number}</strong> akan ditolak dan stok
+              barang tidak akan terpotong.
             </DialogDescription>
           </DialogHeader>
 
@@ -879,9 +908,7 @@ function ApprovalsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label className="label-caps">
-              Catatan QC {action === "reject" && "(wajib)"}
-            </Label>
+            <Label className="label-caps">Catatan QC {action === "reject" && "(wajib)"}</Label>
             <Textarea
               rows={4}
               maxLength={1000}
