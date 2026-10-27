@@ -107,7 +107,11 @@ import { useCurrentUser } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { formatDate, formatUnit } from "@/lib/domain";
 import { exportSparepartInventoryExcel, getProductObsMeta } from "@/lib/exportUtils";
-import { normalizeDepartmentKey, checkIsTeknikUser, checkIsGdspUser } from "@/lib/departmentPermissions";
+import {
+  normalizeDepartmentKey,
+  checkIsTeknikUser,
+  checkIsGdspUser,
+} from "@/lib/departmentPermissions";
 import {
   fetchSparepartOrders,
   createSparepartOrder,
@@ -1115,12 +1119,15 @@ function WarehouseAndProductsPage() {
 
   // Hak akses Departemen Warehouse Sparepart & Continuous Improvement
   const isWarehouseAdmin =
-    !isTeknikUser && (isAdmin || roles.includes("prod_process_uh") || roles.includes("admin_process"));
+    !isTeknikUser &&
+    (isAdmin || roles.includes("prod_process_uh") || roles.includes("admin_process"));
   const canManageWarehouse = !isTeknikUser && (isWarehouseAdmin || roles.includes("qc_field"));
   const canDeleteMaster = !isTeknikUser && (isAdmin || roles.includes("prod_process_uh"));
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<string>(isTeknikUser ? "items" : search.tab || "items");
+  const [activeTab, setActiveTab] = useState<string>(
+    isTeknikUser ? "items" : search.tab || "items",
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [stockStatusFilter, setStockStatusFilter] = useState<string>("ALL");
   const [productDateFilter, setProductDateFilter] = useState<string>("");
@@ -1914,7 +1921,9 @@ function WarehouseAndProductsPage() {
   const [isOrdering, setIsOrdering] = useState(false);
   const [isOrderMonitoringOpen, setIsOrderMonitoringOpen] = useState(false);
   const [orderMonitoringSearch, setOrderMonitoringSearch] = useState("");
-  const [orderMonitoringStatus, setOrderMonitoringStatus] = useState<"ALL" | "PENDING" | "APPROVED" | "REJECTED">("ALL");
+  const [orderMonitoringStatus, setOrderMonitoringStatus] = useState<
+    "ALL" | "PENDING" | "APPROVED" | "REJECTED"
+  >("ALL");
   const [orderRejectTarget, setOrderRejectTarget] = useState<SparepartOrder | null>(null);
   const [orderRejectReason, setOrderRejectReason] = useState("");
 
@@ -2031,14 +2040,10 @@ function WarehouseAndProductsPage() {
   useEffect(() => {
     const channel = supabase
       .channel("warehouse_realtime_orders_sync")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "products" },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
-          queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
-        },
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+        queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
+      })
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "warehouse_transactions" },
@@ -2053,10 +2058,7 @@ function WarehouseAndProductsPage() {
         (payload: any) => {
           queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
           queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
-          if (
-            isGdspUser &&
-            payload?.new?.action === "ORDER_SPAREPART_PENDING"
-          ) {
+          if (isGdspUser && payload?.new?.action === "ORDER_SPAREPART_PENDING") {
             toast.info("Permintaan Order Sparepart Baru!", {
               description: payload?.new?.description || "Order baru dari Teknik menunggu approval.",
             });
@@ -4340,8 +4342,11 @@ function WarehouseAndProductsPage() {
             <div className="size-2 rounded-full bg-amber-500 animate-ping shrink-0" />
             <div>
               <strong>Pemberitahuan Approval Order:</strong> Ada{" "}
-              <span className="font-bold underline">{pendingOrdersCount} permintaan order sparepart</span>{" "}
-              dari Departemen Teknik yang menunggu persetujuan (approval) Anda. Stok tidak akan terpotong sebelum disetujui.
+              <span className="font-bold underline">
+                {pendingOrdersCount} permintaan order sparepart
+              </span>{" "}
+              dari Departemen Teknik yang menunggu persetujuan (approval) Anda. Stok tidak akan
+              terpotong sebelum disetujui.
             </div>
           </div>
           <Button
@@ -4360,7 +4365,8 @@ function WarehouseAndProductsPage() {
           <div className="flex items-center gap-2">
             <Info className="size-4 text-blue-600 dark:text-blue-400 shrink-0" />
             <span>
-              Anda memiliki <strong>{pendingOrdersCount} order</strong> yang sedang menunggu persetujuan (approval) dari admin GDSP.
+              Anda memiliki <strong>{pendingOrdersCount} order</strong> yang sedang menunggu
+              persetujuan (approval) dari admin GDSP.
             </span>
           </div>
           <button
@@ -4372,159 +4378,167 @@ function WarehouseAndProductsPage() {
         </div>
       )}
       {/* Header Halaman: disembunyikan untuk user teknik pada menu OBS Sparepart */}
-      {!(isTeknikUser && (activeTab === "items" || !activeTab || (activeTab !== "buffer_stock" && activeTab !== "transactions" && activeTab !== "logs"))) && (
+      {!(
+        isTeknikUser &&
+        (activeTab === "items" ||
+          !activeTab ||
+          (activeTab !== "buffer_stock" && activeTab !== "transactions" && activeTab !== "logs"))
+      ) && (
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1
-            className="text-2xl font-bold tracking-[0.5em] text-black"
-            style={{
-              fontFamily: "'Montserrat', sans-serif",
-              fontWeight: 700,
-              letterSpacing: "0.5em",
-            }}
-          >
-            {activeTab === "buffer_stock"
-              ? "Buffer Stock"
-              : activeTab === "transactions"
-                ? "Riwayat Mutasi"
-                : activeTab === "logs"
-                  ? "Aktivitas Seluruh Kegiatan"
-                  : "Manajemen Master Barang"}
-          </h1>
-          {activeTab !== "transactions" && (
-            <p className="mt-1 text-sm text-black/80" style={{ fontFamily: "'Inter', sans-serif" }}>
+          <div>
+            <h1
+              className="text-2xl font-bold tracking-[0.5em] text-black"
+              style={{
+                fontFamily: "'Montserrat', sans-serif",
+                fontWeight: 700,
+                letterSpacing: "0.5em",
+              }}
+            >
               {activeTab === "buffer_stock"
-                ? "Memantau dan mengelola stok cadangan sparepart untuk menjaga ketersediaan dan mendukung kebutuhan operasional."
-                : activeTab === "logs"
-                  ? "Rekam jejak seluruh aktivitas gudang"
-                  : "Kelola data master barang, pencatatan masuk/keluar, audit stok."}
-            </p>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2.5 shrink-0">
-          {activeTab === "logs" || isTeknikUser ? null : activeTab === "transactions" ||
-            search.tab === "transactions" ? (
-            /* Layout Sejajar Horizontal 1 Baris khusus Riwayat Mutasi */
-            <div className="flex items-center gap-2">
-              {canManageWarehouse && (
-                <>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setTxType("IN");
-                      setIsTxOpen(true);
-                    }}
-                    className="gap-1.5 bg-emerald-600 font-medium text-white shadow-sm hover:bg-emerald-700 active:scale-[0.98] transition-all h-8 text-xs px-3"
-                  >
-                    <ArrowDownLeft className="size-3.5" />
-                    Catat Masuk
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setTxType("OUT");
-                      setIsTxOpen(true);
-                    }}
-                    className="gap-1.5 bg-rose-600 font-medium text-white shadow-sm hover:bg-rose-700 active:scale-[0.98] transition-all h-8 text-xs px-3"
-                  >
-                    <ArrowUpRight className="size-3.5" />
-                    Catat Keluar
-                  </Button>
-                </>
-              )}
-
-              <Button
-                size="sm"
-                onClick={exportToExcel}
-                className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3"
-                title="Unduh Laporan Stok Sparepart (.xls Excel resmi & tanda tangan)"
+                ? "Buffer Stock"
+                : activeTab === "transactions"
+                  ? "Riwayat Mutasi"
+                  : activeTab === "logs"
+                    ? "Aktivitas Seluruh Kegiatan"
+                    : "Manajemen Master Barang"}
+            </h1>
+            {activeTab !== "transactions" && (
+              <p
+                className="mt-1 text-sm text-black/80"
+                style={{ fontFamily: "'Inter', sans-serif" }}
               >
-                <FileSpreadsheet className="size-3.5 text-emerald-400" />
-                Export Laporan
-              </Button>
-            </div>
-          ) : (
-            /* Layout 2 Kolom saat tombol Tambah Barang aktif */
-            <>
-              {/* Kolom 1: Catat Masuk (Atas) & Catat Keluar (Bawah) */}
-              <div className="flex flex-col gap-1.5">
-                {canManageWarehouse && (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setTxType("IN");
-                      setIsTxOpen(true);
-                    }}
-                    className="gap-1.5 bg-emerald-600 font-medium text-white shadow-sm hover:bg-emerald-700 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[130px]"
-                  >
-                    <ArrowDownLeft className="size-3.5" />
-                    Catat Masuk
-                  </Button>
-                )}
-                {canManageWarehouse && (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setTxType("OUT");
-                      setIsTxOpen(true);
-                    }}
-                    className="gap-1.5 bg-rose-600 font-medium text-white shadow-sm hover:bg-rose-700 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[130px]"
-                  >
-                    <ArrowUpRight className="size-3.5" />
-                    Catat Keluar
-                  </Button>
-                )}
-              </div>
+                {activeTab === "buffer_stock"
+                  ? "Memantau dan mengelola stok cadangan sparepart untuk menjaga ketersediaan dan mendukung kebutuhan operasional."
+                  : activeTab === "logs"
+                    ? "Rekam jejak seluruh aktivitas gudang"
+                    : "Kelola data master barang, pencatatan masuk/keluar, audit stok."}
+              </p>
+            )}
+          </div>
 
-              {/* Kolom 2: Tambah Barang (Atas) & Export Laporan (Bawah) */}
-              <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2.5 shrink-0">
+            {activeTab === "logs" || isTeknikUser ? null : activeTab === "transactions" ||
+              search.tab === "transactions" ? (
+              /* Layout Sejajar Horizontal 1 Baris khusus Riwayat Mutasi */
+              <div className="flex items-center gap-2">
                 {canManageWarehouse && (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      if (activeTab === "buffer_stock") {
-                        setBufferFormData({
-                          name: "",
-                          code: "",
-                          unit: "Roll",
-                          location: "Gudang Utama",
-                          shelf: "Rak A-1",
-                          qty_in: "0",
-                          qty_out: "0",
-                          min_stock: "10",
-                          safe_stock: "1",
-                          max_stock: "",
-                          current_stock: "0",
-                          description: "",
-                        });
-                        setIsBufferAddOpen(true);
-                      } else {
-                        setFormData((prev) => ({ ...prev, category: "Sparepart & Tools" }));
-                        setIsAddOpen(true);
-                      }
-                    }}
-                    className="gap-1.5 bg-white text-slate-900 font-semibold shadow-sm hover:bg-slate-100 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[155px]"
-                  >
-                    <Plus className="size-3.5 text-slate-900" />
-                    {activeTab === "buffer_stock" ? "Tambah Barang Buffer" : "Tambah Barang OBS"}
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setTxType("IN");
+                        setIsTxOpen(true);
+                      }}
+                      className="gap-1.5 bg-emerald-600 font-medium text-white shadow-sm hover:bg-emerald-700 active:scale-[0.98] transition-all h-8 text-xs px-3"
+                    >
+                      <ArrowDownLeft className="size-3.5" />
+                      Catat Masuk
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setTxType("OUT");
+                        setIsTxOpen(true);
+                      }}
+                      className="gap-1.5 bg-rose-600 font-medium text-white shadow-sm hover:bg-rose-700 active:scale-[0.98] transition-all h-8 text-xs px-3"
+                    >
+                      <ArrowUpRight className="size-3.5" />
+                      Catat Keluar
+                    </Button>
+                  </>
                 )}
 
                 <Button
                   size="sm"
                   onClick={exportToExcel}
-                  className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[155px]"
+                  className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3"
                   title="Unduh Laporan Stok Sparepart (.xls Excel resmi & tanda tangan)"
                 >
                   <FileSpreadsheet className="size-3.5 text-emerald-400" />
                   Export Laporan
                 </Button>
               </div>
-            </>
-          )}
+            ) : (
+              /* Layout 2 Kolom saat tombol Tambah Barang aktif */
+              <>
+                {/* Kolom 1: Catat Masuk (Atas) & Catat Keluar (Bawah) */}
+                <div className="flex flex-col gap-1.5">
+                  {canManageWarehouse && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setTxType("IN");
+                        setIsTxOpen(true);
+                      }}
+                      className="gap-1.5 bg-emerald-600 font-medium text-white shadow-sm hover:bg-emerald-700 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[130px]"
+                    >
+                      <ArrowDownLeft className="size-3.5" />
+                      Catat Masuk
+                    </Button>
+                  )}
+                  {canManageWarehouse && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setTxType("OUT");
+                        setIsTxOpen(true);
+                      }}
+                      className="gap-1.5 bg-rose-600 font-medium text-white shadow-sm hover:bg-rose-700 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[130px]"
+                    >
+                      <ArrowUpRight className="size-3.5" />
+                      Catat Keluar
+                    </Button>
+                  )}
+                </div>
+
+                {/* Kolom 2: Tambah Barang (Atas) & Export Laporan (Bawah) */}
+                <div className="flex flex-col gap-1.5">
+                  {canManageWarehouse && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (activeTab === "buffer_stock") {
+                          setBufferFormData({
+                            name: "",
+                            code: "",
+                            unit: "Roll",
+                            location: "Gudang Utama",
+                            shelf: "Rak A-1",
+                            qty_in: "0",
+                            qty_out: "0",
+                            min_stock: "10",
+                            safe_stock: "1",
+                            max_stock: "",
+                            current_stock: "0",
+                            description: "",
+                          });
+                          setIsBufferAddOpen(true);
+                        } else {
+                          setFormData((prev) => ({ ...prev, category: "Sparepart & Tools" }));
+                          setIsAddOpen(true);
+                        }
+                      }}
+                      className="gap-1.5 bg-white text-slate-900 font-semibold shadow-sm hover:bg-slate-100 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[155px]"
+                    >
+                      <Plus className="size-3.5 text-slate-900" />
+                      {activeTab === "buffer_stock" ? "Tambah Barang Buffer" : "Tambah Barang OBS"}
+                    </Button>
+                  )}
+
+                  <Button
+                    size="sm"
+                    onClick={exportToExcel}
+                    className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[155px]"
+                    title="Unduh Laporan Stok Sparepart (.xls Excel resmi & tanda tangan)"
+                  >
+                    <FileSpreadsheet className="size-3.5 text-emerald-400" />
+                    Export Laporan
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      </div>
       )}
 
       {/* Tabs Menu Gudang */}
@@ -4654,340 +4668,344 @@ function WarehouseAndProductsPage() {
           {!isTeknikUser && (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {/* Card 1: Total Item OBS */}
-            <div
-              className={cn(
-                "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
-                stockStatusFilter === "ALL" && !searchQuery && !productDateFilter
-                  ? "border-blue-400 bg-blue-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
-                  : "border-blue-500 bg-blue-600 hover:bg-blue-700 hover:shadow-lg opacity-95 hover:opacity-100",
-              )}
-              onClick={() => {
-                setStockStatusFilter("ALL");
-                setSearchQuery("");
-                setProductDateFilter("");
-              }}
-              title="Klik untuk menampilkan semua data barang OBS (Reset seluruh filter)"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center justify-center size-8 rounded-md bg-blue-500 text-white border border-blue-400 group-hover:scale-105 transition-transform">
-                    <Boxes className="size-4" />
-                  </div>
-                  <span className="label-caps !text-white">Total Item</span>
-                </div>
-
-                {stockStatusFilter === "ALL" && !searchQuery && !productDateFilter && (
-                  <div
-                    className="size-2 rounded-full bg-white animate-pulse"
-                    title="Semua data aktif"
-                  />
-                )}
-              </div>
-
-              <div className="font-mono text-2xl font-bold tabular-nums text-white">
-                {loadingProducts ? "—" : totalActiveItemsObs}
-              </div>
-
-              <div className="mt-1 flex items-center justify-between text-[10px] text-blue-100">
-                <span>Barang aktif terdaftar</span>
-                <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
-                  Lihat Semua
-                </span>
-              </div>
-            </div>
-
-            {/* Card 2: Total Stok Qty */}
-            <div
-              className={cn(
-                "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
-                sortOption === "STOCK_DESC" || sortOption === "STOCK_ASC"
-                  ? "ring-2 ring-white/90 shadow-lg scale-[1.01]"
-                  : "hover:shadow-lg opacity-95 hover:opacity-100",
-              )}
-              style={{
-                animationDelay: "50ms",
-                backgroundColor: "#0092B8",
-                borderColor: "#0083A6",
-              }}
-              onClick={() => {
-                setSortOption((prev) => (prev === "STOCK_DESC" ? "STOCK_ASC" : "STOCK_DESC"));
-              }}
-              title="Klik untuk mengurutkan daftar berdasarkan jumlah stok (Terbanyak / Tersedikit)"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="flex items-center justify-center size-8 rounded-md text-white border group-hover:scale-105 transition-transform"
-                    style={{
-                      backgroundColor: "#00ACCF",
-                      borderColor: "#00A0C2",
-                    }}
-                  >
-                    <Package className="size-4" />
-                  </div>
-                  <span className="label-caps !text-white">Total Stok</span>
-                </div>
-
-                {(sortOption === "STOCK_DESC" || sortOption === "STOCK_ASC") && (
-                  <span className="flex items-center gap-1 bg-black/25 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded backdrop-blur-xs">
-                    <ArrowUpDown className="size-2.5" />
-                    {sortOption === "STOCK_DESC" ? "Terbanyak" : "Tersedikit"}
-                  </span>
-                )}
-              </div>
-
-              <div className="font-mono text-2xl font-bold tabular-nums text-white">
-                {loadingProducts ? "—" : totalStockQtyObs.toLocaleString("id-ID")}
-              </div>
-
-              <div className="mt-1 flex items-center justify-between text-[10px] text-cyan-100">
-                <span>Jumlah seluruh pcs/unit</span>
-                <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
-                  Urut Stok
-                </span>
-              </div>
-            </div>
-
-            {/* Card 3: ORDER — Perlu Restock */}
-            <div
-              className={cn(
-                "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
-                stockStatusFilter === "ORDER"
-                  ? "border-rose-400 bg-red-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
-                  : "border-red-500 bg-red-600 hover:bg-red-700 hover:shadow-lg opacity-95 hover:opacity-100",
-              )}
-              style={{ animationDelay: "100ms" }}
-              onClick={() => setStockStatusFilter(stockStatusFilter === "ORDER" ? "ALL" : "ORDER")}
-              title="Klik untuk memfilter barang berstatus ORDER (Stok ≤ batas minimum)"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center justify-center size-8 rounded-md bg-rose-500 text-white border border-rose-400 group-hover:scale-105 transition-transform">
-                    <CircleAlert className="size-4" />
-                  </div>
-                  <span className="label-caps !text-white">Order</span>
-                </div>
-
-                {stockStatusFilter === "ORDER" && (
-                  <div
-                    className="size-2 rounded-full bg-white animate-pulse"
-                    title="Filter Order Aktif"
-                  />
-                )}
-              </div>
-
-              <div className="font-mono text-2xl font-bold tabular-nums text-white">
-                {loadingProducts ? "—" : obsOrderCount}
-              </div>
-
-              <div className="mt-1 flex items-center justify-between text-[10px] text-rose-100">
-                <span>Stok ≤ batas minimum</span>
-                <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
-                  {stockStatusFilter === "ORDER" ? "Reset" : "Filter"}
-                </span>
-              </div>
-            </div>
-
-            {/* Card 4: SAFETY STOK */}
-            <div
-              className={cn(
-                "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
-                stockStatusFilter === "SAFETY"
-                  ? "border-emerald-400 bg-green-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
-                  : "border-green-500 bg-green-600 hover:bg-green-700 hover:shadow-lg opacity-95 hover:opacity-100",
-              )}
-              style={{ animationDelay: "150ms" }}
-              onClick={() =>
-                setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
-              }
-              title="Klik untuk memfilter barang berstatus SAFETY STOK (Stok aman > minimum)"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center justify-center size-8 rounded-md bg-green-500 text-white border border-green-400 group-hover:scale-105 transition-transform">
-                    <ShieldCheck className="size-4" />
-                  </div>
-                  <span className="label-caps !text-white">Safety Stok</span>
-                </div>
-
-                {stockStatusFilter === "SAFETY" && (
-                  <div
-                    className="size-2 rounded-full bg-white animate-pulse"
-                    title="Filter Safety Aktif"
-                  />
-                )}
-              </div>
-
-              <div className="font-mono text-2xl font-bold tabular-nums text-white">
-                {loadingProducts ? "—" : obsSafetyCount}
-              </div>
-
-              <div className="mt-1 flex items-center justify-between text-[10px] text-emerald-100">
-                <span>Stok aman &gt; minimum</span>
-                <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
-                  {stockStatusFilter === "SAFETY" ? "Reset" : "Filter"}
-                </span>
-              </div>
-            </div>
-
-            {/* Card 5: OUT OF STOK */}
-            <div
-              className={cn(
-                "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
-                stockStatusFilter === "OUT_OF_STOCK"
-                  ? "border-amber-400 bg-amber-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
-                  : "border-amber-500 bg-amber-600 hover:bg-amber-700 hover:shadow-lg opacity-95 hover:opacity-100",
-              )}
-              style={{ animationDelay: "200ms" }}
-              onClick={() =>
-                setStockStatusFilter(stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK")
-              }
-              title="Klik untuk memfilter barang berstatus OUT OF STOK (Melebihi maks. stok)"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center justify-center size-8 rounded-md bg-amber-500 text-white border border-amber-400 group-hover:scale-105 transition-transform">
-                    <TrendingDown className="size-4" />
-                  </div>
-                  <span className="label-caps !text-white">Out of Stok</span>
-                </div>
-
-                {stockStatusFilter === "OUT_OF_STOCK" && (
-                  <div
-                    className="size-2 rounded-full bg-white animate-pulse"
-                    title="Filter Out of Stok Aktif"
-                  />
-                )}
-              </div>
-
-              <div className="font-mono text-2xl font-bold tabular-nums text-white">
-                {loadingProducts ? "—" : obsOutOfStockCount}
-              </div>
-
-              <div className="mt-1 flex items-center justify-between text-[10px] text-amber-100">
-                <span>Melebihi maks. stok</span>
-                <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
-                  {stockStatusFilter === "OUT_OF_STOCK" ? "Reset" : "Filter"}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* ── PROGRESS BAR DISTRIBUSI KONDISI STOK ──────────────────────── */}
-          {!loadingProducts && totalActiveItemsObs > 0 && (
-            <div
-              className="rise-in border border-border bg-surface p-4"
-              style={{ animationDelay: "300ms" }}
-            >
-              <div className="flex items-center justify-between mb-2.5">
-                <span className="label-caps">Distribusi Kondisi Stok</span>
-                <span className="text-[10px] font-mono text-muted-foreground">
-                  {totalActiveItemsObs} item aktif
-                </span>
-              </div>
-              <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                {obsSafetyPct > 0 && (
-                  <div
-                    className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-700 ease-out cursor-pointer hover:opacity-85"
-                    style={{ width: `${obsSafetyPct}%` }}
-                    onClick={() =>
-                      setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
-                    }
-                    title={`Safety Stok: ${obsSafetyCount} item (${obsSafetyPct}%) — Klik untuk filter`}
-                  />
-                )}
-                {obsOrderPct > 0 && (
-                  <div
-                    className="h-full bg-gradient-to-r from-rose-500 to-rose-400 transition-all duration-700 ease-out cursor-pointer hover:opacity-85"
-                    style={{ width: `${obsOrderPct}%` }}
-                    onClick={() =>
-                      setStockStatusFilter(stockStatusFilter === "ORDER" ? "ALL" : "ORDER")
-                    }
-                    title={`Order: ${obsOrderCount} item (${obsOrderPct}%) — Klik untuk filter`}
-                  />
-                )}
-                {obsOutOfStockPct > 0 && (
-                  <div
-                    className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-700 ease-out cursor-pointer hover:opacity-85"
-                    style={{ width: `${obsOutOfStockPct}%` }}
-                    onClick={() =>
-                      setStockStatusFilter(
-                        stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK",
-                      )
-                    }
-                    title={`Out of Stok: ${obsOutOfStockCount} item (${obsOutOfStockPct}%) — Klik untuk filter`}
-                  />
-                )}
-              </div>
-              <div className="flex items-center gap-4 mt-2.5 flex-wrap">
+                {/* Card 1: Total Item OBS */}
                 <div
                   className={cn(
-                    "flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded transition-all select-none",
-                    stockStatusFilter === "SAFETY"
-                      ? "bg-emerald-50 dark:bg-emerald-950/40 ring-1 ring-emerald-400 font-semibold"
-                      : "hover:bg-slate-100 dark:hover:bg-slate-800",
+                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                    stockStatusFilter === "ALL" && !searchQuery && !productDateFilter
+                      ? "border-blue-400 bg-blue-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                      : "border-blue-500 bg-blue-600 hover:bg-blue-700 hover:shadow-lg opacity-95 hover:opacity-100",
                   )}
-                  onClick={() =>
-                    setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
-                  }
-                  title="Klik untuk memfilter barang Safety Stok"
+                  onClick={() => {
+                    setStockStatusFilter("ALL");
+                    setSearchQuery("");
+                    setProductDateFilter("");
+                  }}
+                  title="Klik untuk menampilkan semua data barang OBS (Reset seluruh filter)"
                 >
-                  <div className="size-2.5 rounded-full bg-emerald-500" />
-                  <span className="text-[10px] text-muted-foreground">
-                    Safety{" "}
-                    <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
-                      {obsSafetyPct}%
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-center size-8 rounded-md bg-blue-500 text-white border border-blue-400 group-hover:scale-105 transition-transform">
+                        <Boxes className="size-4" />
+                      </div>
+                      <span className="label-caps !text-white">Total Item</span>
+                    </div>
+
+                    {stockStatusFilter === "ALL" && !searchQuery && !productDateFilter && (
+                      <div
+                        className="size-2 rounded-full bg-white animate-pulse"
+                        title="Semua data aktif"
+                      />
+                    )}
+                  </div>
+
+                  <div className="font-mono text-2xl font-bold tabular-nums text-white">
+                    {loadingProducts ? "—" : totalActiveItemsObs}
+                  </div>
+
+                  <div className="mt-1 flex items-center justify-between text-[10px] text-blue-100">
+                    <span>Barang aktif terdaftar</span>
+                    <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                      Lihat Semua
                     </span>
-                  </span>
+                  </div>
                 </div>
+
+                {/* Card 2: Total Stok Qty */}
                 <div
                   className={cn(
-                    "flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded transition-all select-none",
-                    stockStatusFilter === "ORDER"
-                      ? "bg-rose-50 dark:bg-rose-950/40 ring-1 ring-rose-400 font-semibold"
-                      : "hover:bg-slate-100 dark:hover:bg-slate-800",
+                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                    sortOption === "STOCK_DESC" || sortOption === "STOCK_ASC"
+                      ? "ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                      : "hover:shadow-lg opacity-95 hover:opacity-100",
                   )}
+                  style={{
+                    animationDelay: "50ms",
+                    backgroundColor: "#0092B8",
+                    borderColor: "#0083A6",
+                  }}
+                  onClick={() => {
+                    setSortOption((prev) => (prev === "STOCK_DESC" ? "STOCK_ASC" : "STOCK_DESC"));
+                  }}
+                  title="Klik untuk mengurutkan daftar berdasarkan jumlah stok (Terbanyak / Tersedikit)"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="flex items-center justify-center size-8 rounded-md text-white border group-hover:scale-105 transition-transform"
+                        style={{
+                          backgroundColor: "#00ACCF",
+                          borderColor: "#00A0C2",
+                        }}
+                      >
+                        <Package className="size-4" />
+                      </div>
+                      <span className="label-caps !text-white">Total Stok</span>
+                    </div>
+
+                    {(sortOption === "STOCK_DESC" || sortOption === "STOCK_ASC") && (
+                      <span className="flex items-center gap-1 bg-black/25 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded backdrop-blur-xs">
+                        <ArrowUpDown className="size-2.5" />
+                        {sortOption === "STOCK_DESC" ? "Terbanyak" : "Tersedikit"}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="font-mono text-2xl font-bold tabular-nums text-white">
+                    {loadingProducts ? "—" : totalStockQtyObs.toLocaleString("id-ID")}
+                  </div>
+
+                  <div className="mt-1 flex items-center justify-between text-[10px] text-cyan-100">
+                    <span>Jumlah seluruh pcs/unit</span>
+                    <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                      Urut Stok
+                    </span>
+                  </div>
+                </div>
+
+                {/* Card 3: ORDER — Perlu Restock */}
+                <div
+                  className={cn(
+                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                    stockStatusFilter === "ORDER"
+                      ? "border-rose-400 bg-red-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                      : "border-red-500 bg-red-600 hover:bg-red-700 hover:shadow-lg opacity-95 hover:opacity-100",
+                  )}
+                  style={{ animationDelay: "100ms" }}
                   onClick={() =>
                     setStockStatusFilter(stockStatusFilter === "ORDER" ? "ALL" : "ORDER")
                   }
-                  title="Klik untuk memfilter barang Order"
+                  title="Klik untuk memfilter barang berstatus ORDER (Stok ≤ batas minimum)"
                 >
-                  <div className="size-2.5 rounded-full bg-rose-500" />
-                  <span className="text-[10px] text-muted-foreground">
-                    Order{" "}
-                    <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">
-                      {obsOrderPct}%
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-center size-8 rounded-md bg-rose-500 text-white border border-rose-400 group-hover:scale-105 transition-transform">
+                        <CircleAlert className="size-4" />
+                      </div>
+                      <span className="label-caps !text-white">Order</span>
+                    </div>
+
+                    {stockStatusFilter === "ORDER" && (
+                      <div
+                        className="size-2 rounded-full bg-white animate-pulse"
+                        title="Filter Order Aktif"
+                      />
+                    )}
+                  </div>
+
+                  <div className="font-mono text-2xl font-bold tabular-nums text-white">
+                    {loadingProducts ? "—" : obsOrderCount}
+                  </div>
+
+                  <div className="mt-1 flex items-center justify-between text-[10px] text-rose-100">
+                    <span>Stok ≤ batas minimum</span>
+                    <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                      {stockStatusFilter === "ORDER" ? "Reset" : "Filter"}
                     </span>
-                  </span>
+                  </div>
                 </div>
+
+                {/* Card 4: SAFETY STOK */}
                 <div
                   className={cn(
-                    "flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded transition-all select-none",
-                    stockStatusFilter === "OUT_OF_STOCK"
-                      ? "bg-amber-50 dark:bg-amber-950/40 ring-1 ring-amber-400 font-semibold"
-                      : "hover:bg-slate-100 dark:hover:bg-slate-800",
+                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                    stockStatusFilter === "SAFETY"
+                      ? "border-emerald-400 bg-green-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                      : "border-green-500 bg-green-600 hover:bg-green-700 hover:shadow-lg opacity-95 hover:opacity-100",
                   )}
+                  style={{ animationDelay: "150ms" }}
+                  onClick={() =>
+                    setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
+                  }
+                  title="Klik untuk memfilter barang berstatus SAFETY STOK (Stok aman > minimum)"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-center size-8 rounded-md bg-green-500 text-white border border-green-400 group-hover:scale-105 transition-transform">
+                        <ShieldCheck className="size-4" />
+                      </div>
+                      <span className="label-caps !text-white">Safety Stok</span>
+                    </div>
+
+                    {stockStatusFilter === "SAFETY" && (
+                      <div
+                        className="size-2 rounded-full bg-white animate-pulse"
+                        title="Filter Safety Aktif"
+                      />
+                    )}
+                  </div>
+
+                  <div className="font-mono text-2xl font-bold tabular-nums text-white">
+                    {loadingProducts ? "—" : obsSafetyCount}
+                  </div>
+
+                  <div className="mt-1 flex items-center justify-between text-[10px] text-emerald-100">
+                    <span>Stok aman &gt; minimum</span>
+                    <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                      {stockStatusFilter === "SAFETY" ? "Reset" : "Filter"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Card 5: OUT OF STOK */}
+                <div
+                  className={cn(
+                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                    stockStatusFilter === "OUT_OF_STOCK"
+                      ? "border-amber-400 bg-amber-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                      : "border-amber-500 bg-amber-600 hover:bg-amber-700 hover:shadow-lg opacity-95 hover:opacity-100",
+                  )}
+                  style={{ animationDelay: "200ms" }}
                   onClick={() =>
                     setStockStatusFilter(
                       stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK",
                     )
                   }
-                  title="Klik untuk memfilter barang Out of Stok"
+                  title="Klik untuk memfilter barang berstatus OUT OF STOK (Melebihi maks. stok)"
                 >
-                  <div className="size-2.5 rounded-full bg-amber-500" />
-                  <span className="text-[10px] text-muted-foreground">
-                    Out of Stok{" "}
-                    <span className="font-mono font-semibold text-amber-600 dark:text-amber-400">
-                      {obsOutOfStockPct}%
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-center size-8 rounded-md bg-amber-500 text-white border border-amber-400 group-hover:scale-105 transition-transform">
+                        <TrendingDown className="size-4" />
+                      </div>
+                      <span className="label-caps !text-white">Out of Stok</span>
+                    </div>
+
+                    {stockStatusFilter === "OUT_OF_STOCK" && (
+                      <div
+                        className="size-2 rounded-full bg-white animate-pulse"
+                        title="Filter Out of Stok Aktif"
+                      />
+                    )}
+                  </div>
+
+                  <div className="font-mono text-2xl font-bold tabular-nums text-white">
+                    {loadingProducts ? "—" : obsOutOfStockCount}
+                  </div>
+
+                  <div className="mt-1 flex items-center justify-between text-[10px] text-amber-100">
+                    <span>Melebihi maks. stok</span>
+                    <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                      {stockStatusFilter === "OUT_OF_STOCK" ? "Reset" : "Filter"}
                     </span>
-                  </span>
+                  </div>
                 </div>
               </div>
-            </div>
+
+              {/* ── PROGRESS BAR DISTRIBUSI KONDISI STOK ──────────────────────── */}
+              {!loadingProducts && totalActiveItemsObs > 0 && (
+                <div
+                  className="rise-in border border-border bg-surface p-4"
+                  style={{ animationDelay: "300ms" }}
+                >
+                  <div className="flex items-center justify-between mb-2.5">
+                    <span className="label-caps">Distribusi Kondisi Stok</span>
+                    <span className="text-[10px] font-mono text-muted-foreground">
+                      {totalActiveItemsObs} item aktif
+                    </span>
+                  </div>
+                  <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    {obsSafetyPct > 0 && (
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-700 ease-out cursor-pointer hover:opacity-85"
+                        style={{ width: `${obsSafetyPct}%` }}
+                        onClick={() =>
+                          setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
+                        }
+                        title={`Safety Stok: ${obsSafetyCount} item (${obsSafetyPct}%) — Klik untuk filter`}
+                      />
+                    )}
+                    {obsOrderPct > 0 && (
+                      <div
+                        className="h-full bg-gradient-to-r from-rose-500 to-rose-400 transition-all duration-700 ease-out cursor-pointer hover:opacity-85"
+                        style={{ width: `${obsOrderPct}%` }}
+                        onClick={() =>
+                          setStockStatusFilter(stockStatusFilter === "ORDER" ? "ALL" : "ORDER")
+                        }
+                        title={`Order: ${obsOrderCount} item (${obsOrderPct}%) — Klik untuk filter`}
+                      />
+                    )}
+                    {obsOutOfStockPct > 0 && (
+                      <div
+                        className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-700 ease-out cursor-pointer hover:opacity-85"
+                        style={{ width: `${obsOutOfStockPct}%` }}
+                        onClick={() =>
+                          setStockStatusFilter(
+                            stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK",
+                          )
+                        }
+                        title={`Out of Stok: ${obsOutOfStockCount} item (${obsOutOfStockPct}%) — Klik untuk filter`}
+                      />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4 mt-2.5 flex-wrap">
+                    <div
+                      className={cn(
+                        "flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded transition-all select-none",
+                        stockStatusFilter === "SAFETY"
+                          ? "bg-emerald-50 dark:bg-emerald-950/40 ring-1 ring-emerald-400 font-semibold"
+                          : "hover:bg-slate-100 dark:hover:bg-slate-800",
+                      )}
+                      onClick={() =>
+                        setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
+                      }
+                      title="Klik untuk memfilter barang Safety Stok"
+                    >
+                      <div className="size-2.5 rounded-full bg-emerald-500" />
+                      <span className="text-[10px] text-muted-foreground">
+                        Safety{" "}
+                        <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                          {obsSafetyPct}%
+                        </span>
+                      </span>
+                    </div>
+                    <div
+                      className={cn(
+                        "flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded transition-all select-none",
+                        stockStatusFilter === "ORDER"
+                          ? "bg-rose-50 dark:bg-rose-950/40 ring-1 ring-rose-400 font-semibold"
+                          : "hover:bg-slate-100 dark:hover:bg-slate-800",
+                      )}
+                      onClick={() =>
+                        setStockStatusFilter(stockStatusFilter === "ORDER" ? "ALL" : "ORDER")
+                      }
+                      title="Klik untuk memfilter barang Order"
+                    >
+                      <div className="size-2.5 rounded-full bg-rose-500" />
+                      <span className="text-[10px] text-muted-foreground">
+                        Order{" "}
+                        <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">
+                          {obsOrderPct}%
+                        </span>
+                      </span>
+                    </div>
+                    <div
+                      className={cn(
+                        "flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded transition-all select-none",
+                        stockStatusFilter === "OUT_OF_STOCK"
+                          ? "bg-amber-50 dark:bg-amber-950/40 ring-1 ring-amber-400 font-semibold"
+                          : "hover:bg-slate-100 dark:hover:bg-slate-800",
+                      )}
+                      onClick={() =>
+                        setStockStatusFilter(
+                          stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK",
+                        )
+                      }
+                      title="Klik untuk memfilter barang Out of Stok"
+                    >
+                      <div className="size-2.5 rounded-full bg-amber-500" />
+                      <span className="text-[10px] text-muted-foreground">
+                        Out of Stok{" "}
+                        <span className="font-mono font-semibold text-amber-600 dark:text-amber-400">
+                          {obsOutOfStockPct}%
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
-        </>
-      )}
 
           {/* Tabel Barang */}
           <div className="border border-border bg-surface overflow-x-auto rounded-lg shadow-2xs">
@@ -9204,7 +9222,9 @@ function WarehouseAndProductsPage() {
                   Sistem Order Sparepart
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                  Formulir order pengambilan sparepart oleh Departemen Teknik. Order akan dikirimkan ke GDSP untuk persetujuan (approval) sebelum stok master barang otomatis terpotong.
+                  Formulir order pengambilan sparepart oleh Departemen Teknik. Order akan dikirimkan
+                  ke GDSP untuk persetujuan (approval) sebelum stok master barang otomatis
+                  terpotong.
                 </DialogDescription>
               </div>
             </div>
@@ -9229,7 +9249,10 @@ function WarehouseAndProductsPage() {
                     size="sm"
                     onClick={() => {
                       if (orderItems.length < 15) {
-                        setOrderItems([...orderItems, { productId: "", quantity: "1", unit: "PCS" }]);
+                        setOrderItems([
+                          ...orderItems,
+                          { productId: "", quantity: "1", unit: "PCS" },
+                        ]);
                       }
                     }}
                     className="h-7 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
@@ -9245,7 +9268,9 @@ function WarehouseAndProductsPage() {
                   const selectedProd = products.find((p) => p.id === item.productId);
                   const obsMeta = selectedProd ? getProductObsMeta(selectedProd) : null;
                   const availableStock = selectedProd
-                    ? obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
+                    ? obsMeta &&
+                      obsMeta.ending_balance !== null &&
+                      obsMeta.ending_balance !== undefined
                       ? Number(obsMeta.ending_balance)
                       : (selectedProd.current_stock ?? 0)
                     : 0;
@@ -9267,7 +9292,9 @@ function WarehouseAndProductsPage() {
                           onChange={(productId, unit) => {
                             setOrderItems((prev) =>
                               prev.map((it, i) =>
-                                i === idx ? { productId, unit: unit || "PCS", quantity: it.quantity } : it,
+                                i === idx
+                                  ? { productId, unit: unit || "PCS", quantity: it.quantity }
+                                  : it,
                               ),
                             );
                           }}
@@ -9275,7 +9302,12 @@ function WarehouseAndProductsPage() {
                         {selectedProd && (
                           <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
                             <span>Sisa Ending Balance:</span>
-                            <span className={cn("font-mono font-bold", availableStock <= 0 ? "text-rose-600" : "text-emerald-600")}>
+                            <span
+                              className={cn(
+                                "font-mono font-bold",
+                                availableStock <= 0 ? "text-rose-600" : "text-emerald-600",
+                              )}
+                            >
                               {availableStock} {selectedProd.unit || "PCS"}
                             </span>
                           </div>
@@ -9393,7 +9425,11 @@ function WarehouseAndProductsPage() {
               <div className="space-y-1">
                 <div className="font-semibold">Alur Persetujuan & Pemotongan Stok:</div>
                 <div className="text-[11px] leading-relaxed text-blue-800 dark:text-blue-300">
-                  Setelah tombol konfirmasi diklik, permintaan order akan tersimpan di database dengan status <strong>Menunggu Approval GDSP</strong>. Admin GDSP akan menerima notifikasi untuk memeriksa dan menyetujui. Stok master barang akan otomatis terpotong dan mutasi keluar tercatat secara real-time tepat setelah approval disetujui.
+                  Setelah tombol konfirmasi diklik, permintaan order akan tersimpan di database
+                  dengan status <strong>Menunggu Approval GDSP</strong>. Admin GDSP akan menerima
+                  notifikasi untuk memeriksa dan menyetujui. Stok master barang akan otomatis
+                  terpotong dan mutasi keluar tercatat secara real-time tepat setelah approval
+                  disetujui.
                 </div>
               </div>
             </div>
@@ -9467,7 +9503,9 @@ function WarehouseAndProductsPage() {
                     Monitoring Pemotongan Stok Barang (Sistem Order)
                   </DialogTitle>
                   <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                    Memantau informasi barang, jumlah stok sebelum dan sesudah transaksi, jumlah barang yang digunakan, tanggal & waktu, nomor referensi order, dan user pemotong stok secara real-time.
+                    Memantau informasi barang, jumlah stok sebelum dan sesudah transaksi, jumlah
+                    barang yang digunakan, tanggal & waktu, nomor referensi order, dan user pemotong
+                    stok secara real-time.
                   </DialogDescription>
                 </div>
               </div>
@@ -9495,7 +9533,9 @@ function WarehouseAndProductsPage() {
           {/* Stat Cards Monitoring */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3 shrink-0">
             <div className="p-3 rounded-lg border border-border bg-surface">
-              <div className="text-[11px] font-medium text-muted-foreground">Total Permintaan Order</div>
+              <div className="text-[11px] font-medium text-muted-foreground">
+                Total Permintaan Order
+              </div>
               <div className="text-xl font-bold font-mono text-foreground mt-0.5">
                 {sparepartOrders.length}
               </div>
@@ -9503,7 +9543,9 @@ function WarehouseAndProductsPage() {
             <div className="p-3 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20">
               <div className="text-[11px] font-medium text-amber-700 dark:text-amber-400 flex items-center justify-between">
                 <span>Menunggu Approval GDSP</span>
-                {pendingOrdersCount > 0 && <span className="size-2 rounded-full bg-amber-500 animate-ping" />}
+                {pendingOrdersCount > 0 && (
+                  <span className="size-2 rounded-full bg-amber-500 animate-ping" />
+                )}
               </div>
               <div className="text-xl font-bold font-mono text-amber-600 dark:text-amber-300 mt-0.5">
                 {pendingOrdersCount}
@@ -9518,7 +9560,9 @@ function WarehouseAndProductsPage() {
               </div>
             </div>
             <div className="p-3 rounded-lg border border-rose-200 dark:border-rose-900 bg-rose-50/50 dark:bg-rose-950/20">
-              <div className="text-[11px] font-medium text-rose-700 dark:text-rose-400">Ditolak</div>
+              <div className="text-[11px] font-medium text-rose-700 dark:text-rose-400">
+                Ditolak
+              </div>
               <div className="text-xl font-bold font-mono text-rose-600 dark:text-rose-300 mt-0.5">
                 {sparepartOrders.filter((o) => o.status === "REJECTED").length}
               </div>
@@ -9544,7 +9588,9 @@ function WarehouseAndProductsPage() {
                 <SelectValue placeholder="Status Approval" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL" className="text-xs">Semua Status</SelectItem>
+                <SelectItem value="ALL" className="text-xs">
+                  Semua Status
+                </SelectItem>
                 <SelectItem value="PENDING" className="text-xs text-amber-600 font-semibold">
                   ⏳ Menunggu Approval
                 </SelectItem>
@@ -9600,7 +9646,9 @@ function WarehouseAndProductsPage() {
                       <th className="py-2.5 px-3">Pemohon & Keperluan</th>
                       <th className="py-2.5 px-3">User Pemotong Stok</th>
                       <th className="py-2.5 px-3 text-center">Status</th>
-                      {(isGdspUser || isAdmin) && <th className="py-2.5 px-3 text-right">Aksi Approval</th>}
+                      {(isGdspUser || isAdmin) && (
+                        <th className="py-2.5 px-3 text-right">Aksi Approval</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
@@ -9759,7 +9807,7 @@ function WarehouseAndProductsPage() {
                             )}
                             {isApproved && (
                               <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 text-[10px] font-semibold whitespace-nowrap">
-                                ✓ Disetujui & Terpotong
+                                ✓ APPROVAL
                               </Badge>
                             )}
                             {isRejected && (
@@ -9813,7 +9861,8 @@ function WarehouseAndProductsPage() {
 
           <DialogFooter className="pt-3 border-t border-border/60 shrink-0 flex items-center justify-between">
             <div className="text-[11px] text-muted-foreground">
-              * Tanda (*) pada kolom stok sesudah saat status pending merupakan proyeksi sisa stok jika order disetujui.
+              * Tanda (*) pada kolom stok sesudah saat status pending merupakan proyeksi sisa stok
+              jika order disetujui.
             </div>
             <Button
               type="button"
@@ -9840,7 +9889,8 @@ function WarehouseAndProductsPage() {
               <span>Tolak Permintaan Order Sparepart</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground mt-1">
-              Order <strong>{orderRejectTarget?.order_number}</strong> akan ditolak dan stok barang tidak akan terpotong.
+              Order <strong>{orderRejectTarget?.order_number}</strong> akan ditolak dan stok barang
+              tidak akan terpotong.
             </DialogDescription>
           </DialogHeader>
 

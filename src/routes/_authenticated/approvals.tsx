@@ -615,7 +615,7 @@ function ApprovalsPage() {
                       <td className="px-4 py-3 align-top text-center">
                         {isApproved ? (
                           <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 text-[10px] font-semibold whitespace-nowrap">
-                            ✓ Disetujui & Terpotong
+                            ✓ AAPPROVAL
                           </Badge>
                         ) : (
                           <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 text-[10px] font-semibold whitespace-nowrap">
