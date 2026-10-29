@@ -7,7 +7,7 @@ export const ROLE_LABELS: Record<AppRole, string> = {
   qc_field: "CI1201",
   prod_process_uh: "GDSP1201",
   admin: "Super Admin",
-  teknik : "Admin Teknik"
+  teknik : "Teknik"
 };
 
 export const SHIFTS: Shift[] = ["Shift 1", "Shift 2", "Shift 3"];
