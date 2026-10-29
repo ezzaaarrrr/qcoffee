@@ -487,7 +487,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin_process" | "qc_field" | "prod_process_uh" | "admin"
+      app_role: "admin_process" | "qc_field" | "prod_process_uh" | "admin" | "teknik" 
       shift_enum: "Shift 1" | "Shift 2" | "Shift 3"
       status_enum: "Draft" | "Pending QC" | "Approved" | "Rejected"
     }
