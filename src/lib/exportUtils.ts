@@ -38,22 +38,24 @@ export type ObsStockMeta = {
  * Ekstrak metadata saldo OBS (BEGINNING BALANCE, RECEIPT, ISSUED, ENDING BALANCE)
  * yang tersimpan secara terstruktur pada field description produk atau cache browser.
  */
-export function getProductObsMeta(p?: {
-  id?: string;
-  code?: string | null;
-  name?: string;
-  description?: string | null;
-  beginning_balance?: number | null;
-  receipt?: number | null;
-  issued?: number | null;
-  ending_balance?: number | null;
-} | null): ObsStockMeta | null {
+export function getProductObsMeta(
+  p?: {
+    id?: string;
+    code?: string | null;
+    name?: string;
+    description?: string | null;
+    beginning_balance?: number | null;
+    receipt?: number | null;
+    issued?: number | null;
+    ending_balance?: number | null;
+  } | null,
+): ObsStockMeta | null {
   if (!p) return null;
   if (
-    p.beginning_balance !== undefined && p.beginning_balance !== null ||
-    p.receipt !== undefined && p.receipt !== null ||
-    p.issued !== undefined && p.issued !== null ||
-    p.ending_balance !== undefined && p.ending_balance !== null
+    (p.beginning_balance !== undefined && p.beginning_balance !== null) ||
+    (p.receipt !== undefined && p.receipt !== null) ||
+    (p.issued !== undefined && p.issued !== null) ||
+    (p.ending_balance !== undefined && p.ending_balance !== null)
   ) {
     return {
       beginning_balance: p.beginning_balance ?? null,
@@ -80,17 +82,10 @@ export function getProductObsMeta(p?: {
               ? parsed.beginning_balance
               : (parsed.beg ?? null),
           receipt:
-            parsed.receipt !== undefined
-              ? parsed.receipt
-              : (parsed.rec ?? parsed.in ?? null),
-          issued:
-            parsed.issued !== undefined
-              ? parsed.issued
-              : (parsed.iss ?? parsed.out ?? null),
+            parsed.receipt !== undefined ? parsed.receipt : (parsed.rec ?? parsed.in ?? null),
+          issued: parsed.issued !== undefined ? parsed.issued : (parsed.iss ?? parsed.out ?? null),
           ending_balance:
-            parsed.ending_balance !== undefined
-              ? parsed.ending_balance
-              : (parsed.end ?? null),
+            parsed.ending_balance !== undefined ? parsed.ending_balance : (parsed.end ?? null),
         };
       }
     } catch {}
@@ -104,17 +99,14 @@ export function getProductObsMeta(p?: {
         const nameKey = p.name ? String(p.name).trim().toLowerCase() : "";
         const idKey = p.id ? String(p.id).trim() : "";
         const found =
-          (codeKey && map[codeKey]) ||
-          (nameKey && map[nameKey]) ||
-          (idKey && map[idKey]);
+          (codeKey && map[codeKey]) || (nameKey && map[nameKey]) || (idKey && map[idKey]);
         if (found) {
           return {
             beginning_balance:
               found.beginning_balance !== undefined ? found.beginning_balance : null,
             receipt: found.receipt !== undefined ? found.receipt : null,
             issued: found.issued !== undefined ? found.issued : null,
-            ending_balance:
-              found.ending_balance !== undefined ? found.ending_balance : null,
+            ending_balance: found.ending_balance !== undefined ? found.ending_balance : null,
           };
         }
       }
@@ -150,13 +142,15 @@ export function formatReportDateTime(dateStr?: string | Date | null): string {
   try {
     const d = typeof dateStr === "string" ? new Date(dateStr) : dateStr;
     if (isNaN(d.getTime())) return "—";
-    return d.toLocaleDateString("id-ID", {
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }) + " WIB";
+    return (
+      d.toLocaleDateString("id-ID", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }) + " WIB"
+    );
   } catch {
     return "—";
   }
@@ -435,7 +429,8 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
   } = options;
 
   const fileDate = new Date().toISOString().split("T")[0];
-  const periodText = period || new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+  const periodText =
+    period || new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
   let totalMasukAll = 0;
   let totalPengeluaranAll = 0;
@@ -449,10 +444,9 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
 
       const rawMax = (p as any).max_stock;
       const maxStock =
-        rawMax !== null && rawMax !== undefined && rawMax !== ""
-          ? Number(rawMax)
-          : null;
-      const maxStockStr = maxStock !== null && !isNaN(maxStock) && maxStock > 0 ? String(maxStock) : "-";
+        rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
+      const maxStockStr =
+        maxStock !== null && !isNaN(maxStock) && maxStock > 0 ? String(maxStock) : "-";
 
       const nameKey = p.name ? p.name.trim().toLowerCase() : "";
       const codeKey = p.code ? p.code.trim().toLowerCase() : "";
@@ -481,8 +475,8 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
         obsMeta && obsMeta.beginning_balance !== null && obsMeta.beginning_balance !== undefined
           ? Number(obsMeta.beginning_balance)
           : (p as any).beginning_balance !== null && (p as any).beginning_balance !== undefined
-              ? Number((p as any).beginning_balance)
-              : endingStock;
+            ? Number((p as any).beginning_balance)
+            : endingStock;
       const beginningBalance = rawBeg !== null && !isNaN(rawBeg) ? rawBeg : 0;
       totalBeginningAll += beginningBalance;
 
@@ -647,17 +641,21 @@ export function exportSparepartMutasiExcel(options: ExportMutasiOptions) {
 
   const totalQtyIn = inTx.reduce(
     (acc, t) => acc + t.items.reduce((s, it) => s + (it.quantity || 0), 0),
-    0
+    0,
   );
   const totalQtyOut = outTx.reduce(
     (acc, t) => acc + t.items.reduce((s, it) => s + (it.quantity || 0), 0),
-    0
+    0,
   );
 
   const rowsHtml = groupedTransactions
     .map((tx, idx) => {
       const isMasuk = tx.tx_type === "IN";
-      const tipeLabel = isMasuk ? "MASUK (INBOUND)" : tx.tx_type === "OUT" ? "KELUAR (OUTBOUND)" : "PENYESUAIAN";
+      const tipeLabel = isMasuk
+        ? "MASUK (INBOUND)"
+        : tx.tx_type === "OUT"
+          ? "KELUAR (OUTBOUND)"
+          : "PENYESUAIAN";
       const tipeClass = isMasuk ? "badge-in" : "badge-out";
       const rowClass = idx % 2 === 0 ? "even" : "odd";
 
@@ -669,16 +667,22 @@ export function exportSparepartMutasiExcel(options: ExportMutasiOptions) {
               <span style="font-weight: bold; color: ${isMasuk ? "#047857" : "#be123c"};">
                 (${isMasuk ? "+" : "-"}${it.quantity.toLocaleString("id-ID")} ${it.unit})
               </span>
-            </div>`
+            </div>`,
         )
         .join("");
 
       const batchStr = tx.batch_number ? `Batch: <strong>${tx.batch_number}</strong>` : "Batch: —";
       const refStr = tx.reference_no
-        ? (isMasuk ? `PO: <strong>${tx.reference_no}</strong>` : `User: <strong>${tx.reference_no}</strong>`)
-        : (isMasuk ? "PO: —" : "User: —");
+        ? isMasuk
+          ? `PO: <strong>${tx.reference_no}</strong>`
+          : `User: <strong>${tx.reference_no}</strong>`
+        : isMasuk
+          ? "PO: —"
+          : "User: —";
       const pihakStr = tx.supplier_or_dest || "—";
-      const noteStr = tx.notes ? `<div style="font-size: 8.5pt; color: #64748b; margin-top: 2px;"><em>Ket: ${tx.notes}</em></div>` : "";
+      const noteStr = tx.notes
+        ? `<div style="font-size: 8.5pt; color: #64748b; margin-top: 2px;"><em>Ket: ${tx.notes}</em></div>`
+        : "";
 
       return `
         <tr class="${rowClass}">
@@ -856,8 +860,11 @@ export function exportDashboardSparepartExecutiveExcel(options: ExportDashboardO
   const totalStokFisik = products.reduce((acc, p) => acc + (p.current_stock ?? 0), 0);
 
   // Bagian 1: Tabel Barang Limit / Kritis
-  const limitRowsHtml = limitProducts.length > 0
-    ? limitProducts.map((p, idx) => `
+  const limitRowsHtml =
+    limitProducts.length > 0
+      ? limitProducts
+          .map(
+            (p, idx) => `
         <tr class="limit-row">
           <td style="text-align: center; color: #be123c; font-weight: bold;">${idx + 1}</td>
           <td style="font-family: Consolas, monospace; font-weight: bold; mso-number-format:'\\@';">${p.code || "—"}</td>
@@ -869,14 +876,18 @@ export function exportDashboardSparepartExecutiveExcel(options: ExportDashboardO
           <td style="text-align: right; color: #64748b;">${(p.min_stock ?? 10).toLocaleString("id-ID")}</td>
           <td style="text-align: center;"><span class="badge-limit">PERLU RESTOCK</span></td>
         </tr>
-      `).join("")
-    : `<tr><td colspan="9" style="text-align: center; padding: 14px; color: #15803d; font-weight: bold;">Semua stok sparepart berada dalam batas aman normal (tidak ada barang kritis).</td></tr>`;
+      `,
+          )
+          .join("")
+      : `<tr><td colspan="9" style="text-align: center; padding: 14px; color: #15803d; font-weight: bold;">Semua stok sparepart berada dalam batas aman normal (tidak ada barang kritis).</td></tr>`;
 
   // Bagian 2: Ringkasan Seluruh Stok Barang
-  const allProductRowsHtml = products.slice(0, 100).map((p, idx) => {
-    const isLimit = (p.current_stock ?? 0) <= (p.min_stock ?? 10);
-    return `
-      <tr class="${isLimit ? "limit-row" : (idx % 2 === 0 ? "even" : "odd")}">
+  const allProductRowsHtml = products
+    .slice(0, 100)
+    .map((p, idx) => {
+      const isLimit = (p.current_stock ?? 0) <= (p.min_stock ?? 10);
+      return `
+      <tr class="${isLimit ? "limit-row" : idx % 2 === 0 ? "even" : "odd"}">
         <td style="text-align: center; color: #64748b; font-size: 9pt;">${idx + 1}</td>
         <td style="font-family: Consolas, monospace; font-weight: bold; font-size: 9pt; mso-number-format:'\\@';">${p.code || "—"}</td>
         <td style="font-weight: 600;">${p.name}</td>
@@ -892,13 +903,18 @@ export function exportDashboardSparepartExecutiveExcel(options: ExportDashboardO
         </td>
       </tr>
     `;
-  }).join("");
+    })
+    .join("");
 
   // Bagian 3: Riwayat Mutasi Terkini
-  const latestTxRowsHtml = groupedTransactions.slice(0, 25).map((tx, idx) => {
-    const isMasuk = tx.tx_type === "IN";
-    const itemsSummary = tx.items.map((it) => `${it.product_name} (${isMasuk ? "+" : "-"}${it.quantity} ${it.unit})`).join(", ");
-    return `
+  const latestTxRowsHtml = groupedTransactions
+    .slice(0, 25)
+    .map((tx, idx) => {
+      const isMasuk = tx.tx_type === "IN";
+      const itemsSummary = tx.items
+        .map((it) => `${it.product_name} (${isMasuk ? "+" : "-"}${it.quantity} ${it.unit})`)
+        .join(", ");
+      return `
       <tr class="${idx % 2 === 0 ? "even" : "odd"}">
         <td style="text-align: center; color: #64748b; font-size: 9pt;">${idx + 1}</td>
         <td style="font-family: Consolas, monospace; font-weight: bold; mso-number-format:'\\@';">${tx.transaction_number}</td>
@@ -909,7 +925,8 @@ export function exportDashboardSparepartExecutiveExcel(options: ExportDashboardO
         <td style="font-size: 9pt;">${tx.created_by_name || "Petugas"}</td>
       </tr>
     `;
-  }).join("");
+    })
+    .join("");
 
   const contentHtml = `
     <!-- Kop & Judul Laporan -->

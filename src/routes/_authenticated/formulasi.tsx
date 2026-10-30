@@ -89,8 +89,7 @@ function FormulasiPage() {
     setMaterials((prev) => prev.map((m, i) => (i === idx ? { ...m, ...patch } : m)));
 
   const addMaterial = () => setMaterials((prev) => [...prev, { ...EMPTY_MATERIAL }]);
-  const removeMaterial = (idx: number) =>
-    setMaterials((prev) => prev.filter((_, i) => i !== idx));
+  const removeMaterial = (idx: number) => setMaterials((prev) => prev.filter((_, i) => i !== idx));
 
   const rows = useQuery({ queryKey: ["formulasi"], queryFn: fetchFormulasi });
   const products = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
@@ -101,10 +100,12 @@ function FormulasiPage() {
       if (!user) throw new Error("Sesi tidak valid");
       // Serialize materials to JSON string; sum total qty
       const materialJson = JSON.stringify(
-        materials.filter((m) => m.material.trim()).map((m) => ({
-          nama: m.material.trim(),
-          qty: m.quantity ? Number(m.quantity) : 0,
-        }))
+        materials
+          .filter((m) => m.material.trim())
+          .map((m) => ({
+            nama: m.material.trim(),
+            qty: m.quantity ? Number(m.quantity) : 0,
+          })),
       );
       const totalQty = materials.reduce((sum, m) => sum + (m.quantity ? Number(m.quantity) : 0), 0);
       const { error } = await supabase.from("form_formulasi").insert({
@@ -195,7 +196,10 @@ function FormulasiPage() {
               </tr>
             )}
             {data.map((row) => (
-              <tr key={row.id} className="border-b border-border last:border-0 hover:bg-surface-muted">
+              <tr
+                key={row.id}
+                className="border-b border-border last:border-0 hover:bg-surface-muted"
+              >
                 <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">
                   {formatDate(row.tanggal_mixing)}
                 </td>
@@ -207,14 +211,19 @@ function FormulasiPage() {
                 <td className="px-4 py-3 max-w-[180px]">
                   {(() => {
                     try {
-                      const parsed = JSON.parse(row.material ?? "[]") as { nama: string; qty: number }[];
+                      const parsed = JSON.parse(row.material ?? "[]") as {
+                        nama: string;
+                        qty: number;
+                      }[];
                       if (Array.isArray(parsed) && parsed.length > 0) {
                         return (
                           <ol className="list-decimal list-inside space-y-0.5 text-xs">
                             {parsed.map((m, i) => (
                               <li key={i}>
                                 <span className="font-medium">{m.nama}</span>
-                                {m.qty ? <span className="text-muted-foreground"> ({m.qty} kg)</span> : null}
+                                {m.qty ? (
+                                  <span className="text-muted-foreground"> ({m.qty} kg)</span>
+                                ) : null}
                               </li>
                             ))}
                           </ol>
@@ -333,7 +342,6 @@ function FormulasiPage() {
                 value={formatNumber(minutesBetween(form.start_mixing, form.selesai_mixing), 1)}
               />
             </Field>
-
           </div>
 
           {/* Material List */}
@@ -382,14 +390,15 @@ function FormulasiPage() {
               <p className="text-xs text-muted-foreground text-right">
                 Total:{" "}
                 <span className="font-mono font-medium">
-                  {materials.reduce((s, m) => s + (m.quantity ? Number(m.quantity) : 0), 0).toFixed(2)}
+                  {materials
+                    .reduce((s, m) => s + (m.quantity ? Number(m.quantity) : 0), 0)
+                    .toFixed(2)}
                 </span>
               </p>
             )}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
-
             <Field label="Operator Premix">
               <Input
                 value={form.operator_premix}
@@ -421,7 +430,6 @@ function FormulasiPage() {
               onChange={(e) => setForm({ ...form, keterangan: e.target.value })}
             />
           </Field>
-
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>

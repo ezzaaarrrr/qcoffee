@@ -1,7 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { AlertCircle, ShieldAlert, Lock, UserCheck, Eye, EyeOff, Mail, KeyRound, CheckCircle2 } from "lucide-react";
+import {
+  AlertCircle,
+  ShieldAlert,
+  Lock,
+  UserCheck,
+  Eye,
+  EyeOff,
+  Mail,
+  KeyRound,
+  CheckCircle2,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +68,7 @@ function getCandidateEmailsForAccess(target: LoginAccessTarget): string[] {
       "sparepart@gmail.com",
       "gudang@gmail.com",
       "unit_head@gmail.com",
+      "adminteknik@gmail.com",
     ],
     GDSP1201: [
       "gdsp1201@gmail.com",
@@ -347,10 +358,7 @@ function LoginPage() {
 
       // 3. Validasi Hak Akses & Departemen Akun Pengguna
       const [rolesRes, profileRes] = await Promise.all([
-        supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", authenticatedUser.id),
+        supabase.from("user_roles").select("role").eq("user_id", authenticatedUser.id),
         supabase
           .from("profiles")
           .select("department, full_name")
@@ -391,7 +399,7 @@ function LoginPage() {
 
           const errorDetail = {
             title: "Hak Akses / Departemen Tidak Sesuai",
-            desc: `Akun ini terdaftar pada departemen "${userDept || registeredRoles.map((r) => ROLE_LABELS[r] || r).join(', ')}", bukan sebagai "${selectedAccess}". Silakan pilih opsi yang sesuai pada dropdown User.`,
+            desc: `Akun ini terdaftar pada departemen "${userDept || registeredRoles.map((r) => ROLE_LABELS[r] || r).join(", ")}", bukan sebagai "${selectedAccess}". Silakan pilih opsi yang sesuai pada dropdown User.`,
             type: "role" as const,
           };
 
@@ -637,7 +645,8 @@ function LoginPage() {
                   </DialogTitle>
                 </div>
                 <DialogDescription className="text-xs text-blue-200/70">
-                  Masukkan email akun yang terdaftar untuk menerima tautan pemulihan kata sandi akun Anda.
+                  Masukkan email akun yang terdaftar untuk menerima tautan pemulihan kata sandi akun
+                  Anda.
                 </DialogDescription>
               </DialogHeader>
 
@@ -697,7 +706,9 @@ function LoginPage() {
                       Bantuan Langsung Super Admin
                     </p>
                     <p className="leading-relaxed">
-                      Untuk akun operator/divisi gudang internal, Anda juga dapat meminta Super Admin untuk mengatur ulang kata sandi secara langsung melalui menu Pengaturan Pengguna.
+                      Untuk akun operator/divisi gudang internal, Anda juga dapat meminta Super
+                      Admin untuk mengatur ulang kata sandi secara langsung melalui menu Pengaturan
+                      Pengguna.
                     </p>
                   </div>
 

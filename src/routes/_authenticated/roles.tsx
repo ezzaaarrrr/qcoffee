@@ -180,7 +180,9 @@ function RolesAndDepartmentsPage() {
     onMutate: async ({ department, routePath, canAccess }) => {
       // Batalkan refetch yang bertabrakan agar perubahan lokal langsung terlihat
       await queryClient.cancelQueries({ queryKey: ["department_permissions"] });
-      const prevData = queryClient.getQueryData<Record<string, boolean>>(["department_permissions"]);
+      const prevData = queryClient.getQueryData<Record<string, boolean>>([
+        "department_permissions",
+      ]);
       const normDept = normalizeDepartmentKey(department);
 
       // Simpan langsung ke localStorage browser
@@ -252,7 +254,9 @@ function RolesAndDepartmentsPage() {
   const resetDeptPermissions = useMutation({
     onMutate: async (department: string) => {
       await queryClient.cancelQueries({ queryKey: ["department_permissions"] });
-      const prevData = queryClient.getQueryData<Record<string, boolean>>(["department_permissions"]);
+      const prevData = queryClient.getQueryData<Record<string, boolean>>([
+        "department_permissions",
+      ]);
       const normDept = normalizeDepartmentKey(department);
       const defaultMap: Record<string, boolean> =
         DEFAULT_DEPARTMENT_PERMISSIONS[normDept] || DEFAULT_DEPARTMENT_PERMISSIONS["TEKNIK"] || {};

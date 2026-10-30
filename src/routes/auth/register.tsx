@@ -180,7 +180,9 @@ function RegisterPage() {
                 <SelectContent>
                   <SelectItem value="CK1201">CK1201 (Operator Ceklis Produksi)</SelectItem>
                   <SelectItem value="CI1201">CI1201 (Continuous Improvement / QC)</SelectItem>
-                  <SelectItem value="GDSP1201">GDSP1201 (Admin Gudang & Operasional Sparepart)</SelectItem>
+                  <SelectItem value="GDSP1201">
+                    GDSP1201 (Admin Gudang & Operasional Sparepart)
+                  </SelectItem>
                   <SelectItem value="TEKNIK">TEKNIK (Departemen Teknik & Maintenance)</SelectItem>
                 </SelectContent>
               </Select>

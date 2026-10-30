@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { createClient } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import { fetchProfiles, fetchUserRoles } from "@/lib/queries";
 import { ROLE_LABELS, type AppRole } from "@/lib/domain";
 import { useCurrentUser } from "@/hooks/useAuth";
@@ -73,7 +74,8 @@ export const Route = createFileRoute("/_authenticated/settings")({
       { title: "Manajemen User" },
       {
         name: "description",
-        content: "Kelola pengguna, tambah user baru, edit profil, hapus akun, dan atur peran (role) pengguna.",
+        content:
+          "Kelola pengguna, tambah user baru, edit profil, hapus akun, dan atur peran (role) pengguna.",
       },
     ],
   }),
@@ -130,7 +132,8 @@ function UserManagementPage() {
           if (p.email) {
             const em = p.email.toLowerCase();
             allKnownSet.add(em);
-            const userRole = roles.data.find((r) => r.user_id === p.id)?.role as AppRole | undefined;
+            const userRole = roles.data.find((r) => r.user_id === p.id)?.role as
+              AppRole | undefined;
             if (userRole) {
               const list = Array.isArray(map[userRole]) ? map[userRole] : [];
               if (!list.includes(em)) {
@@ -231,12 +234,10 @@ function UserManagementPage() {
           })
           .eq("id", data.user.id);
 
-        await supabase
-          .from("user_roles")
-          .upsert({
-            user_id: data.user.id,
-            role: newRole,
-          });
+        await supabase.from("user_roles").upsert({
+          user_id: data.user.id,
+          role: newRole,
+        });
       }
     },
     onSuccess: () => {
@@ -308,9 +309,10 @@ function UserManagementPage() {
         const del = await supabase.from("user_roles").delete().eq("user_id", editingUser.id);
         if (del.error) throw del.error;
 
-        const { error: roleErr } = await supabase
-          .from("user_roles")
-          .insert({ user_id: editingUser.id, role: editRole });
+        const { error: roleErr } = await supabase.from("user_roles").insert({
+          user_id: editingUser.id,
+          role: editRole as Database["public"]["Enums"]["app_role"],
+        });
         if (roleErr) throw roleErr;
       }
     },
@@ -389,7 +391,10 @@ function UserManagementPage() {
 
       if (rpcErr) {
         // Jika RPC belum dieksekusi di Supabase remote, fallback hapus langsung dari tabel profiles & user_roles
-        const { error: roleDelErr } = await supabase.from("user_roles").delete().eq("user_id", user.id);
+        const { error: roleDelErr } = await supabase
+          .from("user_roles")
+          .delete()
+          .eq("user_id", user.id);
         if (roleDelErr) throw roleDelErr;
 
         const { error: profileDelErr } = await supabase.from("profiles").delete().eq("id", user.id);
@@ -453,12 +458,17 @@ function UserManagementPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Manajemen Pengguna</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Kelola daftar akun pengguna, tambah user baru, edit departemen, dan atur hak akses peran (role).
+            Kelola daftar akun pengguna, tambah user baru, edit departemen, dan atur hak akses peran
+            (role).
           </p>
         </div>
 
         {isAdmin && (
-          <Button onClick={() => setIsAddOpen(true)} size="sm" className="gap-1.5 self-start sm:self-auto">
+          <Button
+            onClick={() => setIsAddOpen(true)}
+            size="sm"
+            className="gap-1.5 self-start sm:self-auto"
+          >
             <UserPlus className="size-4" />
             Tambah Pengguna Baru
           </Button>
@@ -467,7 +477,8 @@ function UserManagementPage() {
 
       {!isAdmin && (
         <div className="mb-6 border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning rounded-sm">
-          Hanya Super Admin yang memiliki wewenang untuk menambah, mengubah, atau menghapus pengguna.
+          Hanya Super Admin yang memiliki wewenang untuk menambah, mengubah, atau menghapus
+          pengguna.
         </div>
       )}
 
@@ -489,7 +500,9 @@ function UserManagementPage() {
               <SelectValue placeholder="Semua Peran / Role" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL" className="text-xs">Semua Peran (Role)</SelectItem>
+              <SelectItem value="ALL" className="text-xs">
+                Semua Peran (Role)
+              </SelectItem>
               {(Object.keys(ROLE_LABELS) as AppRole[]).map((r) => (
                 <SelectItem key={r} value={r} className="text-xs">
                   {ROLE_LABELS[r]}
@@ -560,10 +573,14 @@ function UserManagementPage() {
                           variant="outline"
                           className={cn(
                             "text-xs font-normal border",
-                            userRole === "admin" && "bg-purple-500/10 text-purple-700 border-purple-300 dark:text-purple-300",
-                            userRole === "prod_process_uh" && "bg-blue-500/10 text-blue-700 border-blue-300 dark:text-blue-300",
-                            userRole === "qc_field" && "bg-amber-500/10 text-amber-700 border-amber-300 dark:text-amber-300",
-                            userRole === "admin_process" && "bg-emerald-500/10 text-emerald-700 border-emerald-300 dark:text-emerald-300",
+                            userRole === "admin" &&
+                              "bg-purple-500/10 text-purple-700 border-purple-300 dark:text-purple-300",
+                            userRole === "prod_process_uh" &&
+                              "bg-blue-500/10 text-blue-700 border-blue-300 dark:text-blue-300",
+                            userRole === "qc_field" &&
+                              "bg-amber-500/10 text-amber-700 border-amber-300 dark:text-amber-300",
+                            userRole === "admin_process" &&
+                              "bg-emerald-500/10 text-emerald-700 border-emerald-300 dark:text-emerald-300",
                           )}
                         >
                           {ROLE_LABELS[userRole] || userRole}
@@ -611,7 +628,11 @@ function UserManagementPage() {
                             disabled={isCurrentUser}
                             className="size-8 text-rose-500 hover:bg-rose-500/10 hover:text-rose-600 disabled:opacity-20"
                             onClick={() => setDeletingUser(p)}
-                            title={isCurrentUser ? "Tidak dapat menghapus akun sendiri" : "Hapus akun pengguna"}
+                            title={
+                              isCurrentUser
+                                ? "Tidak dapat menghapus akun sendiri"
+                                : "Hapus akun pengguna"
+                            }
                           >
                             <Trash2 className="size-4" />
                           </Button>
@@ -632,7 +653,8 @@ function UserManagementPage() {
           <DialogHeader>
             <DialogTitle>Tambah Pengguna Baru</DialogTitle>
             <DialogDescription>
-              Buat akun pengguna baru dengan menetapkan nama, email, kata sandi, departemen, dan role.
+              Buat akun pengguna baru dengan menetapkan nama, email, kata sandi, departemen, dan
+              role.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3.5 py-2 text-sm">
@@ -691,7 +713,11 @@ function UserManagementPage() {
                     onClick={() => setShowNewUserPassword(!showNewUserPassword)}
                     title={showNewUserPassword ? "Sembunyikan password" : "Lihat password"}
                   >
-                    {showNewUserPassword ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                    {showNewUserPassword ? (
+                      <EyeOff className="size-3.5" />
+                    ) : (
+                      <Eye className="size-3.5" />
+                    )}
                   </Button>
                   {newPassword && (
                     <Button
@@ -768,7 +794,9 @@ function UserManagementPage() {
             </Button>
             <Button
               onClick={() => createUser.mutate()}
-              disabled={createUser.isPending || !newFullName.trim() || !newEmail.trim() || !newPassword}
+              disabled={
+                createUser.isPending || !newFullName.trim() || !newEmail.trim() || !newPassword
+              }
             >
               {createUser.isPending ? "Mendaftarkan..." : "Tambah Pengguna"}
             </Button>
@@ -785,7 +813,8 @@ function UserManagementPage() {
               <DialogTitle className="text-foreground">Kelola Kata Sandi Pengguna</DialogTitle>
             </div>
             <DialogDescription>
-              Sebagai Super Admin, Anda dapat mengatur ulang kata sandi pengguna dan melihatnya sebelum disimpan untuk dibagikan.
+              Sebagai Super Admin, Anda dapat mengatur ulang kata sandi pengguna dan melihatnya
+              sebelum disimpan untuk dibagikan.
             </DialogDescription>
           </DialogHeader>
 
@@ -794,7 +823,9 @@ function UserManagementPage() {
               {/* Ringkasan Akun Target */}
               <div className="rounded-lg border border-border bg-surface-muted/40 p-3 space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-foreground text-sm">{passwordUser.full_name || "Tanpa Nama"}</span>
+                  <span className="font-semibold text-foreground text-sm">
+                    {passwordUser.full_name || "Tanpa Nama"}
+                  </span>
                   {roleOf(passwordUser.id) && (
                     <Badge variant="outline" className="text-[10px] font-normal py-0">
                       {ROLE_LABELS[roleOf(passwordUser.id)!]}
@@ -816,7 +847,10 @@ function UserManagementPage() {
               {/* Input Kata Sandi Baru dengan Tools Lihat, Buat Acak, dan Salin */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="new-password-input" className="font-semibold text-xs text-foreground">
+                  <Label
+                    htmlFor="new-password-input"
+                    className="font-semibold text-xs text-foreground"
+                  >
                     Kata Sandi Baru *
                   </Label>
                   <button
@@ -852,7 +886,11 @@ function UserManagementPage() {
                       onClick={() => setShowPassword(!showPassword)}
                       title={showPassword ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
                     >
-                      {showPassword ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                      {showPassword ? (
+                        <EyeOff className="size-3.5" />
+                      ) : (
+                        <Eye className="size-3.5" />
+                      )}
                     </Button>
 
                     {/* Tombol Salin */}
@@ -875,7 +913,10 @@ function UserManagementPage() {
                 </div>
 
                 <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
-                  <span>Panjang: {newPasswordInput.length} karakter {newPasswordInput.length >= 8 ? "✓" : "(min. 8)"}</span>
+                  <span>
+                    Panjang: {newPasswordInput.length} karakter{" "}
+                    {newPasswordInput.length >= 8 ? "✓" : "(min. 8)"}
+                  </span>
                   {showPassword && newPasswordInput && (
                     <span className="text-emerald-600 dark:text-emerald-400 font-medium">
                       Mode terlihat aktif
@@ -888,7 +929,8 @@ function UserManagementPage() {
               <div className="rounded border border-primary/20 bg-primary/5 p-2.5 text-xs text-muted-foreground flex gap-2">
                 <Info className="size-4 text-primary shrink-0 mt-0.5" />
                 <div className="leading-relaxed text-[11.5px]">
-                  Kata sandi yang disimpan akan dienkripsi secara aman dengan algoritma bcrypt. Salin kata sandi baru untuk dibagikan kepada pengguna yang bersangkutan.
+                  Kata sandi yang disimpan akan dienkripsi secara aman dengan algoritma bcrypt.
+                  Salin kata sandi baru untuk dibagikan kepada pengguna yang bersangkutan.
                 </div>
               </div>
             </div>
@@ -922,7 +964,11 @@ function UserManagementPage() {
             <div className="space-y-3.5 py-2 text-sm">
               <div className="space-y-1.5">
                 <Label>Email</Label>
-                <Input value={editingUser.email} disabled className="bg-surface-muted font-mono text-xs" />
+                <Input
+                  value={editingUser.email}
+                  disabled
+                  className="bg-surface-muted font-mono text-xs"
+                />
               </div>
 
               <div className="space-y-1.5">
@@ -1005,7 +1051,9 @@ function UserManagementPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus Akun Pengguna?</AlertDialogTitle>
             <AlertDialogDescription>
-              Apakah Anda yakin ingin menghapus akun pengguna <strong>&ldquo;{deletingUser?.full_name || deletingUser?.email}&rdquo;</strong>? Pengguna ini tidak akan dapat masuk kembali ke sistem.
+              Apakah Anda yakin ingin menghapus akun pengguna{" "}
+              <strong>&ldquo;{deletingUser?.full_name || deletingUser?.email}&rdquo;</strong>?
+              Pengguna ini tidak akan dapat masuk kembali ke sistem.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

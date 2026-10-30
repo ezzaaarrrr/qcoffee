@@ -75,8 +75,7 @@ function ProfileSettingsPage() {
       queryClient.invalidateQueries({ queryKey: ["current_user_profile"] });
       queryClient.invalidateQueries({ queryKey: ["profiles"] });
     },
-    onError: (e: Error) =>
-      toast.error("Gagal memperbarui profil", { description: e.message }),
+    onError: (e: Error) => toast.error("Gagal memperbarui profil", { description: e.message }),
   });
 
   // ── UPDATE PASSWORD MANDIRI ──────────────────────────────────────────────────
@@ -102,8 +101,7 @@ function ProfileSettingsPage() {
       setNewPassword("");
       setConfirmPassword("");
     },
-    onError: (e: Error) =>
-      toast.error("Gagal mengubah kata sandi", { description: e.message }),
+    onError: (e: Error) => toast.error("Gagal mengubah kata sandi", { description: e.message }),
   });
 
   // ── UPLOAD TANDA TANGAN DIGITAL (SUPABASE STORAGE) ──────────────────────────
@@ -233,7 +231,11 @@ function ProfileSettingsPage() {
               className="w-full gap-2 text-xs"
             >
               <UploadCloud className="size-3.5" />
-              {isUploading ? "Mengunggah..." : profile?.signature_url ? "Ganti Tanda Tangan" : "Upload Tanda Tangan"}
+              {isUploading
+                ? "Mengunggah..."
+                : profile?.signature_url
+                  ? "Ganti Tanda Tangan"
+                  : "Upload Tanda Tangan"}
             </Button>
           </div>
         </div>
@@ -277,7 +279,8 @@ function ProfileSettingsPage() {
                       className="bg-surface-muted font-mono text-xs"
                     />
                     <p className="text-[11px] text-muted-foreground">
-                      Email akun dikelola oleh Super Administrator dan tidak dapat diganti sembarangan.
+                      Email akun dikelola oleh Super Administrator dan tidak dapat diganti
+                      sembarangan.
                     </p>
                   </div>
 

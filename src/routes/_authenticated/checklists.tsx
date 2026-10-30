@@ -135,8 +135,13 @@ function DashboardChecklistPage() {
   // Statistik Agregat
   const totalCount = allActivity.length;
   const pendingCount = allActivity.filter((a) => a.status.toLowerCase().includes("pending")).length;
-  const approvedCount = allActivity.filter((a) => a.status.toLowerCase().includes("approved") || a.status.toLowerCase().includes("disetujui")).length;
-  const rejectedCount = allActivity.filter((a) => a.status.toLowerCase().includes("reject") || a.status.toLowerCase().includes("ditolak")).length;
+  const approvedCount = allActivity.filter(
+    (a) =>
+      a.status.toLowerCase().includes("approved") || a.status.toLowerCase().includes("disetujui"),
+  ).length;
+  const rejectedCount = allActivity.filter(
+    (a) => a.status.toLowerCase().includes("reject") || a.status.toLowerCase().includes("ditolak"),
+  ).length;
 
   // Filtered List
   const filteredActivity = useMemo(() => {
@@ -145,8 +150,12 @@ function DashboardChecklistPage() {
       const matchStatus =
         statusFilter === "all" ||
         (statusFilter === "pending" && item.status.toLowerCase().includes("pending")) ||
-        (statusFilter === "approved" && (item.status.toLowerCase().includes("approved") || item.status.toLowerCase().includes("disetujui"))) ||
-        (statusFilter === "rejected" && (item.status.toLowerCase().includes("reject") || item.status.toLowerCase().includes("ditolak")));
+        (statusFilter === "approved" &&
+          (item.status.toLowerCase().includes("approved") ||
+            item.status.toLowerCase().includes("disetujui"))) ||
+        (statusFilter === "rejected" &&
+          (item.status.toLowerCase().includes("reject") ||
+            item.status.toLowerCase().includes("ditolak")));
 
       const matchSearch =
         !searchTerm.trim() ||
@@ -195,7 +204,9 @@ function DashboardChecklistPage() {
             <tr><td style="padding: 6px; font-weight: bold;">Operator:</td><td>${f.operator_premix || "—"}</td></tr>
             <tr><td style="padding: 6px; font-weight: bold;">Status:</td><td>${f.status}</td></tr>
           </table>
-          ${materials.length > 0 ? `
+          ${
+            materials.length > 0
+              ? `
             <h4 style="margin-top: 15px; font-size: 12px; border-bottom: 1px solid #ccc; padding-bottom: 4px;">Rincian Material</h4>
             <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 6px;">
               <thead>
@@ -206,16 +217,22 @@ function DashboardChecklistPage() {
                 </tr>
               </thead>
               <tbody>
-                ${materials.map((m, i) => `
+                ${materials
+                  .map(
+                    (m, i) => `
                   <tr>
                     <td style="padding: 6px; border: 1px solid #e2e8f0;">${i + 1}</td>
                     <td style="padding: 6px; border: 1px solid #e2e8f0;">${m.nama}</td>
                     <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: right;">${m.qty} kg</td>
                   </tr>
-                `).join("")}
+                `,
+                  )
+                  .join("")}
               </tbody>
             </table>
-          ` : ""}
+          `
+              : ""
+          }
         </div>
       `;
     } else if (isGrinding) {
@@ -286,12 +303,16 @@ function DashboardChecklistPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight">Dashboard Checklist</h1>
-            <Badge variant="outline" className="text-xs font-mono bg-primary/10 text-primary border-primary/20">
+            <Badge
+              variant="outline"
+              className="text-xs font-mono bg-primary/10 text-primary border-primary/20"
+            >
               {ROLE_LABELS[userRole]}
             </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Pusat monitoring, input, dan audit checklist operasional untuk seluruh lini produksi kopi.
+            Pusat monitoring, input, dan audit checklist operasional untuk seluruh lini produksi
+            kopi.
           </p>
         </div>
       </div>
@@ -343,7 +364,10 @@ function DashboardChecklistPage() {
             </div>
             <div className="mt-4 pt-3 border-t border-border flex items-center justify-between gap-2">
               <Link to="/formulasi" search={{ action: "new" }} className="flex-1">
-                <Button size="sm" className="w-full h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white gap-1.5">
+                <Button
+                  size="sm"
+                  className="w-full h-8 text-xs bg-amber-600 hover:bg-amber-700 text-white gap-1.5"
+                >
                   <Plus className="size-3.5" />
                   <span>Checklist Baru</span>
                 </Button>
@@ -373,7 +397,10 @@ function DashboardChecklistPage() {
             </div>
             <div className="mt-4 pt-3 border-t border-border flex items-center justify-between gap-2">
               <Link to="/grinding" search={{ action: "new" }} className="flex-1">
-                <Button size="sm" className="w-full h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1.5">
+                <Button
+                  size="sm"
+                  className="w-full h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
+                >
                   <Plus className="size-3.5" />
                   <span>Checklist Baru</span>
                 </Button>
@@ -403,7 +430,10 @@ function DashboardChecklistPage() {
             </div>
             <div className="mt-4 pt-3 border-t border-border flex items-center justify-between gap-2">
               <Link to="/roasting" search={{ action: "new" }} className="flex-1">
-                <Button size="sm" className="w-full h-8 text-xs bg-orange-600 hover:bg-orange-700 text-white gap-1.5">
+                <Button
+                  size="sm"
+                  className="w-full h-8 text-xs bg-orange-600 hover:bg-orange-700 text-white gap-1.5"
+                >
                   <Plus className="size-3.5" />
                   <span>Checklist Baru</span>
                 </Button>
@@ -440,10 +470,11 @@ function DashboardChecklistPage() {
                     key={t.key}
                     type="button"
                     onClick={() => setActiveTab(t.key as any)}
-                    className={`text-xs px-2.5 py-1 rounded transition-colors ${activeTab === t.key
+                    className={`text-xs px-2.5 py-1 rounded transition-colors ${
+                      activeTab === t.key
                         ? "bg-background font-semibold text-foreground shadow-xs"
                         : "text-muted-foreground hover:text-foreground"
-                      }`}
+                    }`}
                   >
                     {t.label}
                   </button>
@@ -517,7 +548,9 @@ function DashboardChecklistPage() {
                     </td>
                     <td className="px-5 py-3">
                       <div className="font-medium text-foreground">{a.label}</div>
-                      {a.sub && <div className="text-[10px] text-muted-foreground font-mono">{a.sub}</div>}
+                      {a.sub && (
+                        <div className="text-[10px] text-muted-foreground font-mono">{a.sub}</div>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-xs text-muted-foreground">
                       <div className="font-medium text-foreground">{a.shift}</div>

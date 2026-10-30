@@ -33,7 +33,14 @@ import {
   type GrindingItem,
   type GrindingRow,
 } from "@/lib/queries";
-import { SHIFTS, formatDate, formatNumber, hoursBetween, num, organoleptikSesuai } from "@/lib/domain";
+import {
+  SHIFTS,
+  formatDate,
+  formatNumber,
+  hoursBetween,
+  num,
+  organoleptikSesuai,
+} from "@/lib/domain";
 import { useCurrentUser } from "@/hooks/useAuth";
 import { TimePickerDialog } from "@/components/TimePickerDialog";
 
@@ -207,13 +214,20 @@ function GrindingPage() {
         <table className="w-full min-w-[900px] text-sm">
           <thead>
             <tr className="border-b border-border">
-              {["Tanggal", "Shift", "Grinder", "Produk", "No. Batch", "Raw Material", "Status", ""].map(
-                (h) => (
-                  <th key={h} className="label-caps px-4 py-2 text-left whitespace-nowrap">
-                    {h}
-                  </th>
-                ),
-              )}
+              {[
+                "Tanggal",
+                "Shift",
+                "Grinder",
+                "Produk",
+                "No. Batch",
+                "Raw Material",
+                "Status",
+                "",
+              ].map((h) => (
+                <th key={h} className="label-caps px-4 py-2 text-left whitespace-nowrap">
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -232,7 +246,10 @@ function GrindingPage() {
               </tr>
             )}
             {data.map((row) => (
-              <tr key={row.id} className="border-b border-border last:border-0 hover:bg-surface-muted">
+              <tr
+                key={row.id}
+                className="border-b border-border last:border-0 hover:bg-surface-muted"
+              >
                 <td className="px-4 py-3 font-mono text-xs">{formatDate(row.hari_tanggal)}</td>
                 <td className="px-4 py-3">{row.shift}</td>
                 <td className="px-4 py-3">{row.no_grinder || "—"}</td>
@@ -272,7 +289,10 @@ function GrindingPage() {
               />
             </Field>
             <Field label="Shift">
-              <Select value={header.shift} onValueChange={(v) => setHeader({ ...header, shift: v })}>
+              <Select
+                value={header.shift}
+                onValueChange={(v) => setHeader({ ...header, shift: v })}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -429,7 +449,11 @@ function GrindingPage() {
                         />
                       </Field>
                       <Field label="Waste (kg)">
-                        <Input readOnly className="bg-surface font-mono" value={formatNumber(waste, 2)} />
+                        <Input
+                          readOnly
+                          className="bg-surface font-mono"
+                          value={formatNumber(waste, 2)}
+                        />
                       </Field>
                       <Field label="Kehalusan Mesin">
                         <Input
@@ -447,7 +471,10 @@ function GrindingPage() {
                         />
                       </Field>
                       <Field label="Aroma">
-                        <Select value={it.aroma} onValueChange={(v) => patchItem(idx, { aroma: v })}>
+                        <Select
+                          value={it.aroma}
+                          onValueChange={(v) => patchItem(idx, { aroma: v })}
+                        >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
@@ -519,13 +546,22 @@ function GrindingPage() {
             <table className="w-full min-w-[900px] text-sm">
               <thead>
                 <tr className="border-b border-border">
-                  {["#", "Start", "Finish", "Jam", "Total Qty", "Aktual", "Waste", "Density", "pH", "MC%"].map(
-                    (h) => (
-                      <th key={h} className="label-caps px-3 py-2 text-left">
-                        {h}
-                      </th>
-                    ),
-                  )}
+                  {[
+                    "#",
+                    "Start",
+                    "Finish",
+                    "Jam",
+                    "Total Qty",
+                    "Aktual",
+                    "Waste",
+                    "Density",
+                    "pH",
+                    "MC%",
+                  ].map((h) => (
+                    <th key={h} className="label-caps px-3 py-2 text-left">
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>

@@ -140,13 +140,7 @@ export function AppShell({
 
   const isNavAllowed = (path: string) => {
     if (isAdmin) return true;
-    return isRouteAllowedForDept(
-      path,
-      effectiveDept,
-      isAdmin,
-      deptPermissionsQuery.data,
-      roles,
-    );
+    return isRouteAllowedForDept(path, effectiveDept, isAdmin, deptPermissionsQuery.data, roles);
   };
 
   const isCurrentPageAllowed = isAdmin || isNavAllowed(pathname);
@@ -180,7 +174,11 @@ export function AppShell({
     }
     return true;
   }).map((item) => {
-    if (isTeknikUser && item.to === "/products" && (!item.search?.tab || item.search?.tab === "items")) {
+    if (
+      isTeknikUser &&
+      item.to === "/products" &&
+      (!item.search?.tab || item.search?.tab === "items")
+    ) {
       return { ...item, label: "Master barang" };
     }
     return item;
@@ -192,7 +190,9 @@ export function AppShell({
       if (item.to === "/products") {
         const itemTab = item.search?.tab;
         if (itemTab) {
-          active = pathname === "/products" && (currentTab === itemTab || (!currentTab && itemTab === "items"));
+          active =
+            pathname === "/products" &&
+            (currentTab === itemTab || (!currentTab && itemTab === "items"));
         } else {
           active = pathname === "/products";
         }
@@ -294,7 +294,10 @@ export function AppShell({
             )}
           </button>
           {!collapsed && (
-            <Link to="/profile" className="mt-2 flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 transition-colors">
+            <Link
+              to="/profile"
+              className="mt-2 flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 transition-colors"
+            >
               <div className="grid size-8 shrink-0 place-items-center rounded-full bg-blue-900/60 text-blue-200 border border-blue-800/50 font-mono text-xs font-bold">
                 {initials}
               </div>
@@ -364,9 +367,15 @@ export function AppShell({
               <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-destructive/10 text-destructive">
                 <ShieldAlert className="size-8" />
               </div>
-              <h2 className="text-xl font-bold tracking-tight text-foreground">Akses Halaman Ditolak</h2>
+              <h2 className="text-xl font-bold tracking-tight text-foreground">
+                Akses Halaman Ditolak
+              </h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Departemen <strong className="text-foreground">{effectiveDept}</strong> tidak memiliki izin untuk mengakses halaman <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{pathname}</code>. Status hak akses diatur sebagai <strong>Ditolak (Hilang)</strong> oleh Super Admin.
+                Departemen <strong className="text-foreground">{effectiveDept}</strong> tidak
+                memiliki izin untuk mengakses halaman{" "}
+                <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{pathname}</code>
+                . Status hak akses diatur sebagai <strong>Ditolak (Hilang)</strong> oleh Super
+                Admin.
               </p>
               <div className="mt-6 flex flex-col sm:flex-row gap-2 justify-center">
                 <Button

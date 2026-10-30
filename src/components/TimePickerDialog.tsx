@@ -87,7 +87,11 @@ function ScrollColumn({
   );
 }
 
-export function TimePickerDialog({ value, onChange, label = "Pilih Waktu" }: TimePickerDialogProps) {
+export function TimePickerDialog({
+  value,
+  onChange,
+  label = "Pilih Waktu",
+}: TimePickerDialogProps) {
   const [open, setOpen] = React.useState(false);
   const parsed = parseTime(value);
   const [h, setH] = React.useState(parsed.h);
@@ -119,9 +123,7 @@ export function TimePickerDialog({ value, onChange, label = "Pilih Waktu" }: Tim
         className="flex items-center gap-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono text-left shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
         <Clock className="size-4 text-muted-foreground shrink-0" />
-        <span className={value ? "text-foreground" : "text-muted-foreground"}>
-          {displayValue}
-        </span>
+        <span className={value ? "text-foreground" : "text-muted-foreground"}>{displayValue}</span>
       </button>
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -141,9 +143,13 @@ export function TimePickerDialog({ value, onChange, label = "Pilih Waktu" }: Tim
 
           <div className="flex gap-2 px-1">
             <ScrollColumn items={HOURS} selected={h} onSelect={setH} label="Jam" />
-            <div className="flex items-center pt-8 text-muted-foreground font-bold text-lg select-none">:</div>
+            <div className="flex items-center pt-8 text-muted-foreground font-bold text-lg select-none">
+              :
+            </div>
             <ScrollColumn items={MINUTES} selected={m} onSelect={setM} label="Menit" />
-            <div className="flex items-center pt-8 text-muted-foreground font-bold text-lg select-none">:</div>
+            <div className="flex items-center pt-8 text-muted-foreground font-bold text-lg select-none">
+              :
+            </div>
             <ScrollColumn items={SECONDS} selected={s} onSelect={setS} label="Detik" />
           </div>
 

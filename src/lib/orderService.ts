@@ -61,16 +61,28 @@ export async function fetchSparepartOrders(supabase: SupabaseClient): Promise<Sp
                     product_name: row.product_name,
                     quantity: Number(row.quantity) || 1,
                     unit: row.unit || "PCS",
-                    stock_before: row.stock_before !== null && row.stock_before !== undefined ? Number(row.stock_before) : undefined,
-                    stock_after: row.stock_after !== null && row.stock_after !== undefined ? Number(row.stock_after) : undefined,
+                    stock_before:
+                      row.stock_before !== null && row.stock_before !== undefined
+                        ? Number(row.stock_before)
+                        : undefined,
+                    stock_after:
+                      row.stock_after !== null && row.stock_after !== undefined
+                        ? Number(row.stock_after)
+                        : undefined,
                   },
                 ],
             user_pemohon: row.user_pemohon || row.created_by_name || "-",
             alasan_permintaan: row.alasan_permintaan || "-",
             petugas_shift: row.petugas_shift || "-",
             status: row.status as "PENDING" | "APPROVED" | "REJECTED",
-            stock_before: row.stock_before !== null && row.stock_before !== undefined ? Number(row.stock_before) : undefined,
-            stock_after: row.stock_after !== null && row.stock_after !== undefined ? Number(row.stock_after) : undefined,
+            stock_before:
+              row.stock_before !== null && row.stock_before !== undefined
+                ? Number(row.stock_before)
+                : undefined,
+            stock_after:
+              row.stock_after !== null && row.stock_after !== undefined
+                ? Number(row.stock_after)
+                : undefined,
             approved_by: row.approved_by,
             approved_by_name: row.approved_by_name,
             approved_at: row.approved_at,
@@ -215,7 +227,8 @@ export async function createSparepartOrder(
 
   for (const it of payload.items) {
     if (!it.productId) throw new Error("Pilih barang yang valid untuk diorder");
-    if (it.quantity <= 0) throw new Error(`Kuantitas order untuk "${it.productName}" harus lebih dari 0`);
+    if (it.quantity <= 0)
+      throw new Error(`Kuantitas order untuk "${it.productName}" harus lebih dari 0`);
     if (it.quantity > it.currentStock) {
       throw new Error(
         `Kuantitas order (${it.quantity}) untuk "${it.productName}" melebihi stok yang tersedia (${it.currentStock})`,
@@ -231,7 +244,8 @@ export async function createSparepartOrder(
   }
 
   const orderNumber = await generateOrderNumber(supabase);
-  const orderId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `ord_${Date.now()}`;
+  const orderId =
+    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `ord_${Date.now()}`;
   const nowIso = new Date().toISOString();
 
   const formattedItems: SparepartOrderItem[] = payload.items.map((it) => ({
@@ -317,7 +331,9 @@ export async function approveSparepartOrder(
   approver: { id?: string | undefined; name: string },
 ): Promise<SparepartOrder> {
   if (order.status !== "PENDING") {
-    throw new Error(`Order ${order.order_number} sudah berstatus ${order.status} dan tidak dapat disetujui lagi.`);
+    throw new Error(
+      `Order ${order.order_number} sudah berstatus ${order.status} dan tidak dapat disetujui lagi.`,
+    );
   }
 
   // 1. Validasi stok terkini secara real-time dari database untuk setiap item

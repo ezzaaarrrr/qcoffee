@@ -34,15 +34,15 @@ export const ROLE_TO_DEFAULT_DEPT: Record<AppRole, string> = {
 /** Mapping Relasi Departemen ke Role Sistem */
 export const DEPT_TO_ROLE: Record<string, AppRole> = {
   "super admin": "admin",
-  "sa": "admin",
-  "ci1201": "qc_field",
-  "ci": "qc_field",
-  "ck1201": "admin_process",
-  "ck": "admin_process",
-  "gdsp1201": "prod_process_uh",
-  "gdsp": "prod_process_uh",
-  "teknik": "prod_process_uh",
-  "tkn": "prod_process_uh",
+  sa: "admin",
+  ci1201: "qc_field",
+  ci: "qc_field",
+  ck1201: "admin_process",
+  ck: "admin_process",
+  gdsp1201: "prod_process_uh",
+  gdsp: "prod_process_uh",
+  teknik: "prod_process_uh",
+  tkn: "prod_process_uh",
 };
 
 export type LoginAccessTarget = "CK1201" | "CI1201" | "GDSP1201" | "TEKNIK" | "Super Admin";
@@ -54,11 +54,41 @@ export const LOGIN_ACCESS_TARGETS: {
   department: string;
   description: string;
 }[] = [
-  { id: "CK1201", label: "CK1201", role: "admin_process", department: "CK1201", description: "Operator Admin Ceklis" },
-  { id: "CI1201", label: "CI1201", role: "qc_field", department: "CI1201", description: "Departemen Continuous Improvement" },
-  { id: "GDSP1201", label: "GDSP1201", role: "prod_process_uh", department: "GDSP1201", description: "Admin Gudang & Operasional Sparepart" },
-  { id: "TEKNIK", label: "TEKNIK", role: "prod_process_uh", department: "TEKNIK", description: "Departemen Teknik & Maintenance" },
-  { id: "Super Admin", label: "Super Admin", role: "admin", department: "Super Admin", description: "Super Admin System" },
+  {
+    id: "CK1201",
+    label: "CK1201",
+    role: "admin_process",
+    department: "CK1201",
+    description: "Operator Admin Ceklis",
+  },
+  {
+    id: "CI1201",
+    label: "CI1201",
+    role: "qc_field",
+    department: "CI1201",
+    description: "Departemen Continuous Improvement",
+  },
+  {
+    id: "GDSP1201",
+    label: "GDSP1201",
+    role: "prod_process_uh",
+    department: "GDSP1201",
+    description: "Admin Gudang & Operasional Sparepart",
+  },
+  {
+    id: "TEKNIK",
+    label: "TEKNIK",
+    role: "prod_process_uh",
+    department: "TEKNIK",
+    description: "Departemen Teknik & Maintenance",
+  },
+  {
+    id: "Super Admin",
+    label: "Super Admin",
+    role: "admin",
+    department: "Super Admin",
+    description: "Super Admin System",
+  },
 ];
 
 /** Standar izin bawaan berdasarkan departemen pengguna */
@@ -153,18 +183,38 @@ export function isLegacyDepartment(name?: string | null): boolean {
 }
 
 /** Normalisasi nama departemen untuk kecocokan matriks hak akses */
-export function normalizeDepartmentKey(
-  dept?: string | null,
-  roles?: string[] | AppRole[],
-): string {
+export function normalizeDepartmentKey(dept?: string | null, roles?: string[] | AppRole[]): string {
   if (dept && dept.trim()) {
     const raw = dept.trim();
     const lower = raw.toLowerCase();
     if (lower.includes("super") || lower === "sa" || lower === "admin") return "Super Admin";
-    if (lower.includes("ci1201") || lower.includes("continuous") || lower.includes("improvment") || lower.includes("improvement") || lower === "ci") return "CI1201";
-    if (lower.includes("ck1201") || lower.includes("cheking") || lower.includes("checking") || lower.includes("produksi") || lower === "ck") return "CK1201";
-    if (lower.includes("teknik") || lower === "tkn" || lower.includes("maintenance")) return "TEKNIK";
-    if (lower.includes("gdsp") || lower.includes("wh-sp") || lower.includes("gudang sparepart") || lower.includes("operasional sparepart") || lower.includes("warehouse") || lower.includes("sparepart")) return "GDSP1201";
+    if (
+      lower.includes("ci1201") ||
+      lower.includes("continuous") ||
+      lower.includes("improvment") ||
+      lower.includes("improvement") ||
+      lower === "ci"
+    )
+      return "CI1201";
+    if (
+      lower.includes("ck1201") ||
+      lower.includes("cheking") ||
+      lower.includes("checking") ||
+      lower.includes("produksi") ||
+      lower === "ck"
+    )
+      return "CK1201";
+    if (lower.includes("teknik") || lower === "tkn" || lower.includes("maintenance"))
+      return "TEKNIK";
+    if (
+      lower.includes("gdsp") ||
+      lower.includes("wh-sp") ||
+      lower.includes("gudang sparepart") ||
+      lower.includes("operasional sparepart") ||
+      lower.includes("warehouse") ||
+      lower.includes("sparepart")
+    )
+      return "GDSP1201";
     return raw;
   }
 
@@ -225,7 +275,6 @@ export function checkIsGdspUser(
   );
 }
 
-
 /** Ambil cache izin departemen dari browser localStorage */
 export function getStoredDeptPermissions(): Record<string, Record<string, boolean>> {
   if (typeof window === "undefined") return DEFAULT_DEPARTMENT_PERMISSIONS;
@@ -278,7 +327,9 @@ export async function fetchRemoteDeptPermissions(
         if (item.department && item.route_path) {
           const norm = normalizeDepartmentKey(item.department);
           map[`${norm.toLowerCase()}:${item.route_path}`] = Boolean(item.can_access);
-          map[`${item.department.toLowerCase().trim()}:${item.route_path}`] = Boolean(item.can_access);
+          map[`${item.department.toLowerCase().trim()}:${item.route_path}`] = Boolean(
+            item.can_access,
+          );
         }
       });
     }

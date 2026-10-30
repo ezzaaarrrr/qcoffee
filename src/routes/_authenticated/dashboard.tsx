@@ -711,10 +711,7 @@ function DashboardPage() {
     ].filter((d) => d.value > 0);
 
     return (
-      <div
-        id="diagram-analisis-status-sparepart"
-        className="rise-in scroll-mt-20"
-      >
+      <div id="diagram-analisis-status-sparepart" className="rise-in scroll-mt-20">
         {/* 2 Kolom Komparasi: OBS Sparepart vs All Item Barang */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Sisi Kiri: OBS Sparepart */}
@@ -882,9 +879,7 @@ function DashboardPage() {
                         if (!item) return null;
                         const val = Number(item.value) || 0;
                         const pct =
-                          ca.totalGabungan > 0
-                            ? ((val / ca.totalGabungan) * 100).toFixed(1)
-                            : 0;
+                          ca.totalGabungan > 0 ? ((val / ca.totalGabungan) * 100).toFixed(1) : 0;
                         return (
                           <div className="rounded-lg border border-border bg-surface p-2.5 shadow-xl text-xs space-y-0.5 z-50">
                             <p className="font-semibold text-foreground">{item.name}</p>
@@ -1153,7 +1148,9 @@ function DashboardPage() {
         baseCount = limitOnlyCount;
       } else if (selectedPieStatus === "Habis") {
         const pct =
-          totalActiveProducts > 0 ? ((zeroProductsCount / totalActiveProducts) * 100).toFixed(1) : "0";
+          totalActiveProducts > 0
+            ? ((zeroProductsCount / totalActiveProducts) * 100).toFixed(1)
+            : "0";
         modalTitle = "Daftar Item Stok Habis — OBS Sparepart";
         modalDesc = `Menampilkan ${zeroProductsCount} item barang OBS Sparepart dengan stok kosong (${pct}% dari total ${totalActiveProducts} barang).`;
         modalBadge = `${zeroProductsCount} Item Habis (${pct}%)`;
@@ -1185,7 +1182,8 @@ function DashboardPage() {
         modalIcon = <AlertTriangle className="size-5 text-rose-500" />;
         baseCount = ca.gabunganHabis;
       } else {
-        const allSafePctExact = ca.totalGabungan > 0 ? (ca.gabunganAman / ca.totalGabungan) * 100 : 0;
+        const allSafePctExact =
+          ca.totalGabungan > 0 ? (ca.gabunganAman / ca.totalGabungan) * 100 : 0;
         const g = getGradeInfo(allSafePctExact);
         modalTitle = "Daftar Item Stok Aman — All Item Barang";
         modalDesc = `Menampilkan ${ca.gabunganAman} item barang gabungan OBS & Buffer berstatus Aman (${allSafePctExact.toFixed(1)}%) sesuai persentase KPI diagram [${g.badgeText}] dari total ${ca.totalGabungan} barang.`;
@@ -2761,9 +2759,7 @@ function DashboardPage() {
                     </span>
                     <span className="font-mono font-extrabold text-xl text-rose-600 dark:text-rose-400 mt-1 block">
                       {selectedOutgoingSparepart.totalQtyOut.toLocaleString("id-ID")}{" "}
-                      <span className="text-xs font-normal">
-                        {selectedOutgoingSparepart.unit}
-                      </span>
+                      <span className="text-xs font-normal">{selectedOutgoingSparepart.unit}</span>
                     </span>
                   </div>
 
@@ -2785,9 +2781,7 @@ function DashboardPage() {
                     </span>
                     <span className="font-mono font-extrabold text-base text-muted-foreground mt-1 block">
                       {selectedOutgoingSparepart.minStock.toLocaleString("id-ID")}{" "}
-                      <span className="text-xs font-normal">
-                        {selectedOutgoingSparepart.unit}
-                      </span>
+                      <span className="text-xs font-normal">{selectedOutgoingSparepart.unit}</span>
                     </span>
                   </div>
                 </div>
@@ -2802,11 +2796,7 @@ function DashboardPage() {
                 Lihat Riwayat Mutasi →
               </Button>
             </Link>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedOutgoingSparepart(null)}
-            >
+            <Button variant="outline" size="sm" onClick={() => setSelectedOutgoingSparepart(null)}>
               Tutup
             </Button>
           </DialogFooter>

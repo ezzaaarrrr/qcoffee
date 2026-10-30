@@ -26,12 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  fetchProducts,
-  fetchRoasting,
-  fetchRoastingItems,
-  type RoastingItem,
-} from "@/lib/queries";
+import { fetchProducts, fetchRoasting, fetchRoastingItems, type RoastingItem } from "@/lib/queries";
 import { SHIFTS, formatDate, formatNumber, minutesBetween, num } from "@/lib/domain";
 import { useCurrentUser } from "@/hooks/useAuth";
 import { TimePickerDialog } from "@/components/TimePickerDialog";
@@ -228,7 +223,10 @@ function RoastingPage() {
               </tr>
             )}
             {data.map((row) => (
-              <tr key={row.id} className="border-b border-border last:border-0 hover:bg-surface-muted">
+              <tr
+                key={row.id}
+                className="border-b border-border last:border-0 hover:bg-surface-muted"
+              >
                 <td className="px-4 py-3 font-mono text-xs">{formatDate(row.hari_tanggal)}</td>
                 <td className="px-4 py-3">{row.shift_regu || "—"}</td>
                 <td className="px-4 py-3">{row.no_roaster || "—"}</td>
@@ -375,7 +373,11 @@ function RoastingPage() {
                         />
                       </Field>
                       <Field label="Waste (kg)">
-                        <Input readOnly className="bg-surface font-mono" value={formatNumber(waste, 2)} />
+                        <Input
+                          readOnly
+                          className="bg-surface font-mono"
+                          value={formatNumber(waste, 2)}
+                        />
                       </Field>
                       <Field label="Waste (%)">
                         <Input
@@ -403,7 +405,10 @@ function RoastingPage() {
                         <Input
                           readOnly
                           className="bg-surface font-mono"
-                          value={formatNumber(minutesBetween(it.roasting_start, it.roasting_finish), 0)}
+                          value={formatNumber(
+                            minutesBetween(it.roasting_start, it.roasting_finish),
+                            0,
+                          )}
                         />
                       </Field>
                       <Field label="Temp Roasting (°C)">
@@ -432,7 +437,10 @@ function RoastingPage() {
                         <Input
                           readOnly
                           className="bg-surface font-mono"
-                          value={formatNumber(minutesBetween(it.cooling_start, it.cooling_finish), 0)}
+                          value={formatNumber(
+                            minutesBetween(it.cooling_start, it.cooling_finish),
+                            0,
+                          )}
                         />
                       </Field>
                       <Field label="Temp Cooling (°C)">
@@ -535,9 +543,13 @@ function RoastingPage() {
                     <td className="px-3 py-2 font-mono">{formatNumber(it.jumlah_mentah_kg, 2)}</td>
                     <td className="px-3 py-2 font-mono">{formatNumber(it.jumlah_matang_kg, 2)}</td>
                     <td className="px-3 py-2 font-mono">{formatNumber(it.waste, 2)}</td>
-                    <td className="px-3 py-2 font-mono">{formatNumber(it.waktu_roasting_menit, 0)}</td>
+                    <td className="px-3 py-2 font-mono">
+                      {formatNumber(it.waktu_roasting_menit, 0)}
+                    </td>
                     <td className="px-3 py-2 font-mono">{formatNumber(it.temp_roasting_c, 1)}</td>
-                    <td className="px-3 py-2 font-mono">{formatNumber(it.waktu_cooling_menit, 0)}</td>
+                    <td className="px-3 py-2 font-mono">
+                      {formatNumber(it.waktu_cooling_menit, 0)}
+                    </td>
                     <td className="px-3 py-2 font-mono">{formatNumber(it.temp_cooling_c, 1)}</td>
                     <td className="px-3 py-2 font-mono">{formatNumber(it.ph, 2)}</td>
                     <td className="px-3 py-2 font-mono">{formatNumber(it.mc_percent, 2)}</td>
