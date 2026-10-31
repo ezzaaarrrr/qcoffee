@@ -1798,6 +1798,7 @@ function WarehouseAndProductsPage() {
       }
 
       // Simpan metadata saldo OBS ke localStorage cache agar seketika tersedia di tabel & export
+      if (typeof window === "undefined") return;
       try {
         const obsMap = JSON.parse(localStorage.getItem("obs_stock_balances_map") || "{}");
         for (const item of importPreview) {
@@ -2485,6 +2486,7 @@ function WarehouseAndProductsPage() {
       } as any);
 
       // Simpan juga ke cache localStorage
+      if (typeof window === "undefined") return;
       try {
         const obsMap = JSON.parse(localStorage.getItem("obs_stock_balances_map") || "{}");
         const mCode = formData.code ? formData.code.trim().toLowerCase() : "";
