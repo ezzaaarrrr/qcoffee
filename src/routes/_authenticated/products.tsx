@@ -549,7 +549,7 @@ function ProductSearchCombobox({
           <ChevronsUpDown className="ml-2 size-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[340px] sm:w-[420px] p-0 shadow-lg" align="start">
+      <PopoverContent className="w-340px sm:w-420px p-0 shadow-lg" align="start">
         <div className="flex items-center border-b px-3 py-2">
           <Search className="mr-2 size-4 shrink-0 text-muted-foreground" />
           <input
@@ -590,7 +590,7 @@ function ProductSearchCombobox({
                 >
                   <div className="min-w-0 pr-2">
                     <div className="font-medium text-foreground truncate">{p.name}</div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mt-0.5">
+                    <div className="flex items-center gap-1.5 text-10px text-muted-foreground mt-0.5">
                       {p.code && (
                         <span className="font-mono bg-surface-muted px-1 rounded">{p.code}</span>
                       )}
@@ -4309,7 +4309,7 @@ function WarehouseAndProductsPage() {
               });
               setIsOrderModalOpen(true);
             }}
-            className="gap-1.5 bg-[#0f274a] hover:bg-[#183a6b] text-white font-semibold shadow-sm h-8 px-3 text-xs rounded-md transition-all flex items-center border border-blue-900/40 select-none cursor-pointer"
+            className="gap-1.5 bg-custom-table-header hover:bg-custom-table-hover-2 text-white font-semibold shadow-sm h-8 px-3 text-xs rounded-md transition-all flex items-center border border-blue-900/40 select-none cursor-pointer"
             title="Buka Formulir Sistem Order Sparepart"
           >
             <ShoppingCart className="size-3.5 text-blue-300" />
@@ -4326,7 +4326,7 @@ function WarehouseAndProductsPage() {
             <span className="hidden sm:inline">Monitoring Stok Order</span>
             <span className="sm:hidden">Monitoring</span>
             {pendingOrdersCount > 0 && (
-              <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-amber-500 text-white px-1.5 py-0.2 text-[10px] font-bold animate-pulse">
+              <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-amber-500 text-white px-1.5 py-0.2 text-10px font-bold animate-pulse">
                 {pendingOrdersCount}
               </span>
             )}
@@ -4429,7 +4429,7 @@ function WarehouseAndProductsPage() {
                         setTxType("IN");
                         setIsTxOpen(true);
                       }}
-                      className="gap-1.5 bg-emerald-600 font-medium text-white shadow-sm hover:bg-emerald-700 active:scale-[0.98] transition-all h-8 text-xs px-3"
+                      className="gap-1.5 bg-emerald-600 font-medium text-white shadow-sm hover:bg-emerald-700 active:scale-98 transition-all h-8 text-xs px-3"
                     >
                       <ArrowDownLeft className="size-3.5" />
                       Catat Masuk
@@ -4440,7 +4440,7 @@ function WarehouseAndProductsPage() {
                         setTxType("OUT");
                         setIsTxOpen(true);
                       }}
-                      className="gap-1.5 bg-rose-600 font-medium text-white shadow-sm hover:bg-rose-700 active:scale-[0.98] transition-all h-8 text-xs px-3"
+                      className="gap-1.5 bg-rose-600 font-medium text-white shadow-sm hover:bg-rose-700 active:scale-98 transition-all h-8 text-xs px-3"
                     >
                       <ArrowUpRight className="size-3.5" />
                       Catat Keluar
@@ -4451,7 +4451,7 @@ function WarehouseAndProductsPage() {
                 <Button
                   size="sm"
                   onClick={exportToExcel}
-                  className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3"
+                  className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-98 transition-all h-8 text-xs px-3"
                   title="Unduh Laporan Stok Sparepart (.xls Excel resmi & tanda tangan)"
                 >
                   <FileSpreadsheet className="size-3.5 text-emerald-400" />
@@ -4470,7 +4470,7 @@ function WarehouseAndProductsPage() {
                         setTxType("IN");
                         setIsTxOpen(true);
                       }}
-                      className="gap-1.5 bg-emerald-600 font-medium text-white shadow-sm hover:bg-emerald-700 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[130px]"
+                      className="gap-1.5 bg-emerald-600 font-medium text-white shadow-sm hover:bg-emerald-700 active:scale-98 transition-all h-8 text-xs px-3 justify-start min-w-130px"
                     >
                       <ArrowDownLeft className="size-3.5" />
                       Catat Masuk
@@ -4483,7 +4483,7 @@ function WarehouseAndProductsPage() {
                         setTxType("OUT");
                         setIsTxOpen(true);
                       }}
-                      className="gap-1.5 bg-rose-600 font-medium text-white shadow-sm hover:bg-rose-700 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[130px]"
+                      className="gap-1.5 bg-rose-600 font-medium text-white shadow-sm hover:bg-rose-700 active:scale-98 transition-all h-8 text-xs px-3 justify-start min-w-130px"
                     >
                       <ArrowUpRight className="size-3.5" />
                       Catat Keluar
@@ -4518,7 +4518,7 @@ function WarehouseAndProductsPage() {
                           setIsAddOpen(true);
                         }
                       }}
-                      className="gap-1.5 bg-white text-slate-900 font-semibold shadow-sm hover:bg-slate-100 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[155px]"
+                      className="gap-1.5 bg-white text-slate-900 font-semibold shadow-sm hover:bg-slate-100 active:scale-98 transition-all h-8 text-xs px-3 justify-start min-w-155px"
                     >
                       <Plus className="size-3.5 text-slate-900" />
                       {activeTab === "buffer_stock" ? "Tambah Barang Buffer" : "Tambah Barang OBS"}
@@ -4528,7 +4528,7 @@ function WarehouseAndProductsPage() {
                   <Button
                     size="sm"
                     onClick={exportToExcel}
-                    className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-[0.98] transition-all h-8 text-xs px-3 justify-start min-w-[155px]"
+                    className="gap-1.5 bg-slate-900 dark:bg-slate-800 text-white font-medium shadow-sm hover:bg-slate-800 active:scale-98 transition-all h-8 text-xs px-3 justify-start min-w-155px"
                     title="Unduh Laporan Stok Sparepart (.xls Excel resmi & tanda tangan)"
                   >
                     <FileSpreadsheet className="size-3.5 text-emerald-400" />
@@ -4671,9 +4671,9 @@ function WarehouseAndProductsPage() {
                 {/* Card 1: Total Item OBS */}
                 <div
                   className={cn(
-                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-98 select-none",
                     stockStatusFilter === "ALL" && !searchQuery && !productDateFilter
-                      ? "border-blue-400 bg-blue-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                      ? "border-blue-400 bg-blue-600 ring-2 ring-white-90 shadow-lg scale-1-01"
                       : "border-blue-500 bg-blue-600 hover:bg-blue-700 hover:shadow-lg opacity-95 hover:opacity-100",
                   )}
                   onClick={() => {
@@ -4703,9 +4703,9 @@ function WarehouseAndProductsPage() {
                     {loadingProducts ? "—" : totalActiveItemsObs}
                   </div>
 
-                  <div className="mt-1 flex items-center justify-between text-[10px] text-blue-100">
+                  <div className="mt-1 flex items-center justify-between text-10px text-blue-100">
                     <span>Barang aktif terdaftar</span>
-                    <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                    <span className="text-9px opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
                       Lihat Semua
                     </span>
                   </div>
@@ -4714,9 +4714,9 @@ function WarehouseAndProductsPage() {
                 {/* Card 2: Total Stok Qty */}
                 <div
                   className={cn(
-                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-98 select-none",
                     sortOption === "STOCK_DESC" || sortOption === "STOCK_ASC"
-                      ? "ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                      ? "ring-2 ring-white-90 shadow-lg scale-1-01"
                       : "hover:shadow-lg opacity-95 hover:opacity-100",
                   )}
                   style={{
@@ -4744,7 +4744,7 @@ function WarehouseAndProductsPage() {
                     </div>
 
                     {(sortOption === "STOCK_DESC" || sortOption === "STOCK_ASC") && (
-                      <span className="flex items-center gap-1 bg-black/25 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded backdrop-blur-xs">
+                      <span className="flex items-center gap-1 bg-black-25 text-white text-9px font-semibold px-1.5 py-0.5 rounded backdrop-blur-xs">
                         <ArrowUpDown className="size-2.5" />
                         {sortOption === "STOCK_DESC" ? "Terbanyak" : "Tersedikit"}
                       </span>
@@ -4755,9 +4755,9 @@ function WarehouseAndProductsPage() {
                     {loadingProducts ? "—" : totalStockQtyObs.toLocaleString("id-ID")}
                   </div>
 
-                  <div className="mt-1 flex items-center justify-between text-[10px] text-cyan-100">
+                  <div className="mt-1 flex items-center justify-between text-10px text-cyan-100">
                     <span>Jumlah seluruh pcs/unit</span>
-                    <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                    <span className="text-9px opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
                       Urut Stok
                     </span>
                   </div>
@@ -4766,9 +4766,9 @@ function WarehouseAndProductsPage() {
                 {/* Card 3: ORDER — Perlu Restock */}
                 <div
                   className={cn(
-                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-98 select-none",
                     stockStatusFilter === "ORDER"
-                      ? "border-rose-400 bg-red-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                      ? "border-rose-400 bg-red-600 ring-2 ring-white-90 shadow-lg scale-1-01"
                       : "border-red-500 bg-red-600 hover:bg-red-700 hover:shadow-lg opacity-95 hover:opacity-100",
                   )}
                   style={{ animationDelay: "100ms" }}
@@ -4797,9 +4797,9 @@ function WarehouseAndProductsPage() {
                     {loadingProducts ? "—" : obsOrderCount}
                   </div>
 
-                  <div className="mt-1 flex items-center justify-between text-[10px] text-rose-100">
+                  <div className="mt-1 flex items-center justify-between text-10px text-rose-100">
                     <span>Stok ≤ batas minimum</span>
-                    <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                    <span className="text-9px opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
                       {stockStatusFilter === "ORDER" ? "Reset" : "Filter"}
                     </span>
                   </div>
@@ -4808,9 +4808,9 @@ function WarehouseAndProductsPage() {
                 {/* Card 4: SAFETY STOK */}
                 <div
                   className={cn(
-                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-98 select-none",
                     stockStatusFilter === "SAFETY"
-                      ? "border-emerald-400 bg-green-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                      ? "border-emerald-400 bg-green-600 ring-2 ring-white-90 shadow-lg scale-1-01"
                       : "border-green-500 bg-green-600 hover:bg-green-700 hover:shadow-lg opacity-95 hover:opacity-100",
                   )}
                   style={{ animationDelay: "150ms" }}
@@ -4839,9 +4839,9 @@ function WarehouseAndProductsPage() {
                     {loadingProducts ? "—" : obsSafetyCount}
                   </div>
 
-                  <div className="mt-1 flex items-center justify-between text-[10px] text-emerald-100">
+                  <div className="mt-1 flex items-center justify-between text-10px text-emerald-100">
                     <span>Stok aman &gt; minimum</span>
-                    <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                    <span className="text-9px opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
                       {stockStatusFilter === "SAFETY" ? "Reset" : "Filter"}
                     </span>
                   </div>
@@ -4850,9 +4850,9 @@ function WarehouseAndProductsPage() {
                 {/* Card 5: OUT OF STOK */}
                 <div
                   className={cn(
-                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                    "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-98 select-none",
                     stockStatusFilter === "OUT_OF_STOCK"
-                      ? "border-amber-400 bg-amber-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                      ? "border-amber-400 bg-amber-600 ring-2 ring-white-90 shadow-lg scale-1-01"
                       : "border-amber-500 bg-amber-600 hover:bg-amber-700 hover:shadow-lg opacity-95 hover:opacity-100",
                   )}
                   style={{ animationDelay: "200ms" }}
@@ -4883,9 +4883,9 @@ function WarehouseAndProductsPage() {
                     {loadingProducts ? "—" : obsOutOfStockCount}
                   </div>
 
-                  <div className="mt-1 flex items-center justify-between text-[10px] text-amber-100">
+                  <div className="mt-1 flex items-center justify-between text-10px text-amber-100">
                     <span>Melebihi maks. stok</span>
-                    <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                    <span className="text-9px opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
                       {stockStatusFilter === "OUT_OF_STOCK" ? "Reset" : "Filter"}
                     </span>
                   </div>
@@ -4900,7 +4900,7 @@ function WarehouseAndProductsPage() {
                 >
                   <div className="flex items-center justify-between mb-2.5">
                     <span className="label-caps">Distribusi Kondisi Stok</span>
-                    <span className="text-[10px] font-mono text-muted-foreground">
+                    <span className="text-10px font-mono text-muted-foreground">
                       {totalActiveItemsObs} item aktif
                     </span>
                   </div>
@@ -4952,7 +4952,7 @@ function WarehouseAndProductsPage() {
                       title="Klik untuk memfilter barang Safety Stok"
                     >
                       <div className="size-2.5 rounded-full bg-emerald-500" />
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-10px text-muted-foreground">
                         Safety{" "}
                         <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
                           {obsSafetyPct}%
@@ -4972,7 +4972,7 @@ function WarehouseAndProductsPage() {
                       title="Klik untuk memfilter barang Order"
                     >
                       <div className="size-2.5 rounded-full bg-rose-500" />
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-10px text-muted-foreground">
                         Order{" "}
                         <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">
                           {obsOrderPct}%
@@ -4994,7 +4994,7 @@ function WarehouseAndProductsPage() {
                       title="Klik untuk memfilter barang Out of Stok"
                     >
                       <div className="size-2.5 rounded-full bg-amber-500" />
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-10px text-muted-foreground">
                         Out of Stok{" "}
                         <span className="font-mono font-semibold text-amber-600 dark:text-amber-400">
                           {obsOutOfStockPct}%
@@ -5025,7 +5025,7 @@ function WarehouseAndProductsPage() {
               <>
                 <table className="w-full text-xs border-collapse border border-slate-300 dark:border-slate-700">
                   <thead>
-                    <tr className="bg-[#0f274a] text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
+                    <tr className="bg-custom-table-header text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
                       <th
                         className={cn(
                           "label-caps px-2.5 text-center w-12 whitespace-nowrap text-white font-semibold",
@@ -5044,7 +5044,7 @@ function WarehouseAndProductsPage() {
                       </th>
                       <th
                         className={cn(
-                          "label-caps px-2.5 text-left min-w-[200px] text-white font-semibold",
+                          "label-caps px-2.5 text-left min-w-200px text-white font-semibold",
                           isTeknikUser ? "py-2" : "py-3",
                         )}
                       >
@@ -5052,7 +5052,7 @@ function WarehouseAndProductsPage() {
                       </th>
                       <th
                         className={cn(
-                          "label-caps px-2.5 text-center w-[75px] whitespace-nowrap text-white font-semibold",
+                          "label-caps px-2.5 text-center w-75px whitespace-nowrap text-white font-semibold",
                           isTeknikUser ? "py-2" : "py-3",
                         )}
                       >
@@ -5212,7 +5212,7 @@ function WarehouseAndProductsPage() {
                           {/* 3. Material */}
                           <td
                             className={cn(
-                              "px-2.5 text-left min-w-[200px]",
+                              "px-2.5 text-left min-w-200px",
                               isTeknikUser ? "py-1.5" : "py-2.5",
                             )}
                           >
@@ -5425,9 +5425,9 @@ function WarehouseAndProductsPage() {
                               variant={pItem === currentSafeProductPage ? "default" : "outline"}
                               size="sm"
                               className={cn(
-                                "h-8 min-w-[32px] px-2 text-xs font-medium",
+                                "h-8 min-w-32px px-2 text-xs font-medium",
                                 pItem === currentSafeProductPage &&
-                                  "bg-[#0f274a] text-white hover:bg-[#0f274a]/90 dark:bg-blue-600 dark:hover:bg-blue-700",
+                                  "bg-custom-table-header text-white hover:bg-custom-table-header/90 dark:bg-blue-600 dark:hover:bg-blue-700",
                               )}
                               onClick={() => {
                                 setProductCurrentPage(Number(pItem));
@@ -5483,7 +5483,7 @@ function WarehouseAndProductsPage() {
                 setTxFilterType("ALL");
                 setTxDateFilter(getTodayDateStr());
               }}
-              className="border border-border bg-surface p-4 flex flex-col justify-between cursor-pointer hover:border-blue-500/60 hover:shadow-md transition-all active:scale-[0.99] group"
+              className="border border-border bg-surface p-4 flex flex-col justify-between cursor-pointer hover:border-blue-500-60 hover:shadow-md transition-all active:scale-99 group"
               title="Klik untuk melihat riwayat transaksi mutasi hari ini"
             >
               <div>
@@ -5514,7 +5514,7 @@ function WarehouseAndProductsPage() {
                 >
                   <ArrowDownLeft className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-[10px] uppercase font-semibold text-emerald-700 dark:text-emerald-300 leading-none">
+                    <p className="text-10px uppercase font-semibold text-emerald-700 dark:text-emerald-300 leading-none">
                       Mutasi Masuk
                     </p>
                     <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
@@ -5534,7 +5534,7 @@ function WarehouseAndProductsPage() {
                 >
                   <ArrowUpRight className="size-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-[10px] uppercase font-semibold text-rose-700 dark:text-rose-300 leading-none">
+                    <p className="text-10px uppercase font-semibold text-rose-700 dark:text-rose-300 leading-none">
                       Mutasi Keluar
                     </p>
                     <p className="text-xs font-bold text-rose-600 dark:text-rose-400 mt-0.5">
@@ -5551,7 +5551,7 @@ function WarehouseAndProductsPage() {
                 setTxFilterType("ALL");
                 setTxDateFilter("ALL");
               }}
-              className="border border-border bg-surface p-4 flex flex-col justify-between cursor-pointer hover:border-indigo-500/60 hover:shadow-md transition-all active:scale-[0.99] group"
+              className="border border-border bg-surface p-4 flex flex-col justify-between cursor-pointer hover:border-indigo-500-60 hover:shadow-md transition-all active:scale-99 group"
               title="Klik untuk melihat seluruh akumulasi riwayat mutasi di tabel"
             >
               <div>
@@ -5562,7 +5562,7 @@ function WarehouseAndProductsPage() {
                   </span>
                   <Badge
                     variant="secondary"
-                    className="text-[10px] px-1.5 py-0 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
+                    className="text-10px px-1.5 py-0 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
                   >
                     Akumulasi Keseluruhan
                   </Badge>
@@ -5582,7 +5582,7 @@ function WarehouseAndProductsPage() {
                 <div className="flex items-center gap-1.5 bg-emerald-500/10 px-2 py-1.5 rounded-sm">
                   <ArrowDownLeft className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-[10px] uppercase font-semibold text-emerald-700 dark:text-emerald-300 leading-none">
+                    <p className="text-10px uppercase font-semibold text-emerald-700 dark:text-emerald-300 leading-none">
                       Masuk ({globalMutasiStats.inCount})
                     </p>
                     <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
@@ -5593,7 +5593,7 @@ function WarehouseAndProductsPage() {
                 <div className="flex items-center gap-1.5 bg-rose-500/10 px-2 py-1.5 rounded-sm">
                   <ArrowUpRight className="size-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-[10px] uppercase font-semibold text-rose-700 dark:text-rose-300 leading-none">
+                    <p className="text-10px uppercase font-semibold text-rose-700 dark:text-rose-300 leading-none">
                       Keluar ({globalMutasiStats.outCount})
                     </p>
                     <p className="text-xs font-bold text-rose-600 dark:text-rose-400 mt-0.5">
@@ -5682,7 +5682,7 @@ function WarehouseAndProductsPage() {
                 {txDateFilter === "ALL" ? (
                   <Badge
                     variant="outline"
-                    className="text-[10px] px-1 py-0 cursor-pointer hover:bg-surface text-indigo-600 dark:text-indigo-400"
+                    className="text-10px px-1 py-0 cursor-pointer hover:bg-surface text-indigo-600 dark:text-indigo-400"
                     onClick={() => setTxDateFilter(getTodayDateStr())}
                     title="Klik untuk kembali ke filter hari ini"
                   >
@@ -5698,7 +5698,7 @@ function WarehouseAndProductsPage() {
                     <X className="size-3.5" />
                   </button>
                 ) : (
-                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold px-1">
+                  <span className="text-10px text-blue-600 dark:text-blue-400 font-semibold px-1">
                     Hari Ini
                   </span>
                 )}
@@ -5749,33 +5749,33 @@ function WarehouseAndProductsPage() {
             ) : (
               <table className="w-full text-xs text-left border-collapse border border-slate-200 dark:border-slate-800">
                 <thead>
-                  <tr className="border-b border-border bg-[#0f274a] text-white text-[11px] tracking-wider font-semibold divide-x divide-slate-600/60 text-center">
+                  <tr className="border-b border-border bg-custom-table-header text-white text-[11px] tracking-wider font-semibold divide-x divide-slate-600/60 text-center">
                     <th className="px-3 py-3 whitespace-nowrap text-white text-center">Tanggal</th>
                     <th className="px-3 py-3 whitespace-nowrap text-white w-28 text-center">
                       (Tipe Mutasi)
                     </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[120px] text-center">
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-120px text-center">
                       KODE
                     </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[220px] text-center">
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-220px text-center">
                       MATERIAL
                     </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[110px] text-center">
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-110px text-center">
                       QTY
                     </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-140px text-center">
                       Vendor
                     </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-140px text-center">
                       User
                     </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-140px text-center">
                       Alasan Permintaan Barang
                     </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[130px] text-center">
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-130px text-center">
                       NO. PO
                     </th>
-                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-[140px] text-center">
+                    <th className="px-3 py-3 whitespace-nowrap text-white min-w-140px text-center">
                       Petugas Shift
                     </th>
                     <th className="px-3 py-3 whitespace-nowrap text-white text-center w-28">
@@ -5858,7 +5858,7 @@ function WarehouseAndProductsPage() {
                               </div>
                             ))}
                             {tx.items.length > 1 && (
-                              <p className="text-[10px] text-muted-foreground px-1 font-medium">
+                              <p className="text-10px text-muted-foreground px-1 font-medium">
                                 Total {tx.items.length} material dalam transaksi ini
                               </p>
                             )}
@@ -6093,7 +6093,7 @@ function WarehouseAndProductsPage() {
                           <tr className="border-b border-border bg-surface-muted/30 text-muted-foreground">
                             <th className="px-3.5 py-2 text-left font-medium w-10">No</th>
                             <th className="px-3.5 py-2 text-left font-medium w-32">Kode SKU</th>
-                            <th className="px-3.5 py-2 text-left font-medium min-w-[320px] md:min-w-[420px]">
+                            <th className="px-3.5 py-2 text-left font-medium min-w-320px md:min-w-420px">
                               Nama Sparepart
                             </th>
                             <th className="px-3.5 py-2 text-center font-medium w-20">Satuan</th>
@@ -6116,7 +6116,7 @@ function WarehouseAndProductsPage() {
                                 <td className="px-3.5 py-2 font-mono font-medium text-foreground">
                                   {item.code || "—"}
                                 </td>
-                                <td className="px-3.5 py-2 font-medium text-foreground min-w-[320px] md:min-w-[420px]">
+                                <td className="px-3.5 py-2 font-medium text-foreground min-w-320px md:min-w-420px">
                                   {item.name}
                                 </td>
                                 <td className="px-3.5 py-2 text-center font-mono text-muted-foreground">
@@ -6140,14 +6140,14 @@ function WarehouseAndProductsPage() {
                                   {isLimit ? (
                                     <Badge
                                       variant="destructive"
-                                      className="text-[10px] px-1.5 py-0 h-5"
+                                      className="text-10px px-1.5 py-0 h-5"
                                     >
                                       Limit
                                     </Badge>
                                   ) : (
                                     <Badge
                                       variant="outline"
-                                      className="text-[10px] px-1.5 py-0 h-5 text-emerald-600 border-emerald-500/30 bg-emerald-500/10"
+                                      className="text-10px px-1.5 py-0 h-5 text-emerald-600 border-emerald-500/30 bg-emerald-500/10"
                                     >
                                       Aman
                                     </Badge>
@@ -6316,24 +6316,24 @@ function WarehouseAndProductsPage() {
                     <div
                       key={log.id}
                       onClick={() => setSelectedLog(log)}
-                      className="group flex items-center justify-between gap-4 px-4 sm:px-5 py-3.5 hover:bg-muted/40 cursor-pointer active:scale-[0.998] transition-all select-none"
+                      className="group flex items-center justify-between gap-4 px-4 sm:px-5 py-3.5 hover:bg-muted-40 cursor-pointer active:scale-998 transition-all select-none"
                       title="Klik untuk melihat rincian identitas & perubahan aktivitas"
                     >
                       {/* Left: Icon, Title, Subtitle, Meta */}
                       <div className="flex items-start gap-3.5 min-w-0">
                         <div className="mt-0.5 shrink-0 text-foreground group-hover:scale-105 transition-transform">
                           {parsed.type === "IN" ? (
-                            <ArrowDownToLine className="size-5 text-emerald-600 dark:text-emerald-400 stroke-[1.8]" />
+                            <ArrowDownToLine className="size-5 text-emerald-600 dark:text-emerald-400 stroke-1-8" />
                           ) : parsed.type === "OUT" ? (
-                            <ArrowUpFromLine className="size-5 text-rose-600 dark:text-rose-400 stroke-[1.8]" />
+                            <ArrowUpFromLine className="size-5 text-rose-600 dark:text-rose-400 stroke-1-8" />
                           ) : parsed.type === "EDIT" ? (
-                            <Pencil className="size-5 text-foreground stroke-[1.8]" />
+                            <Pencil className="size-5 text-foreground stroke-1-8" />
                           ) : parsed.type === "ADD" ? (
-                            <Plus className="size-5 text-foreground stroke-[1.8]" />
+                            <Plus className="size-5 text-foreground stroke-1-8" />
                           ) : parsed.type === "DELETE" ? (
-                            <Trash2 className="size-5 text-rose-500 stroke-[1.8]" />
+                            <Trash2 className="size-5 text-rose-500 stroke-1-8" />
                           ) : (
-                            <FileText className="size-5 text-muted-foreground stroke-[1.8]" />
+                            <FileText className="size-5 text-muted-foreground stroke-1-8" />
                           )}
                         </div>
 
@@ -6568,9 +6568,9 @@ function WarehouseAndProductsPage() {
                   {/* Card 1: Total Item Buffer */}
                   <div
                     className={cn(
-                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-98 select-none",
                       bufferStatusFilter === "ALL" && !bufferSearchQuery && !bufferDateFilter
-                        ? "border-blue-400 bg-blue-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                        ? "border-blue-400 bg-blue-600 ring-2 ring-white-90 shadow-lg scale-1-01"
                         : "border-blue-500 bg-blue-600 hover:bg-blue-700 hover:shadow-lg opacity-95 hover:opacity-100",
                     )}
                     onClick={() => {
@@ -6600,9 +6600,9 @@ function WarehouseAndProductsPage() {
                       {loadingBuffer ? "—" : totalBufferItems}
                     </div>
 
-                    <div className="mt-1 flex items-center justify-between text-[10px] text-blue-100">
+                    <div className="mt-1 flex items-center justify-between text-10px text-blue-100">
                       <span>Item buffer aktif</span>
-                      <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                      <span className="text-9px opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
                         Lihat Semua
                       </span>
                     </div>
@@ -6611,9 +6611,9 @@ function WarehouseAndProductsPage() {
                   {/* Card 2: Total Stok Qty */}
                   <div
                     className={cn(
-                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-98 select-none",
                       bufferSortOption === "STOCK_DESC" || bufferSortOption === "STOCK_ASC"
-                        ? "ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                        ? "ring-2 ring-white-90 shadow-lg scale-1-01"
                         : "hover:shadow-lg opacity-95 hover:opacity-100",
                     )}
                     style={{
@@ -6643,7 +6643,7 @@ function WarehouseAndProductsPage() {
                       </div>
 
                       {(bufferSortOption === "STOCK_DESC" || bufferSortOption === "STOCK_ASC") && (
-                        <span className="flex items-center gap-1 bg-black/25 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded backdrop-blur-xs">
+                        <span className="flex items-center gap-1 bg-black-25 text-white text-9px font-semibold px-1.5 py-0.5 rounded backdrop-blur-xs">
                           <ArrowUpDown className="size-2.5" />
                           {bufferSortOption === "STOCK_DESC" ? "Terbanyak" : "Tersedikit"}
                         </span>
@@ -6654,9 +6654,9 @@ function WarehouseAndProductsPage() {
                       {loadingBuffer ? "—" : totalBufferQty.toLocaleString("id-ID")}
                     </div>
 
-                    <div className="mt-1 flex items-center justify-between text-[10px] text-cyan-100">
+                    <div className="mt-1 flex items-center justify-between text-10px text-cyan-100">
                       <span>Jumlah seluruh pcs/unit</span>
-                      <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                      <span className="text-9px opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
                         Urut Stok
                       </span>
                     </div>
@@ -6665,9 +6665,9 @@ function WarehouseAndProductsPage() {
                   {/* Card 3: ORDER */}
                   <div
                     className={cn(
-                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-98 select-none",
                       bufferStatusFilter === "ORDER"
-                        ? "border-rose-400 bg-red-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                        ? "border-rose-400 bg-red-600 ring-2 ring-white-90 shadow-lg scale-1-01"
                         : "border-red-500 bg-red-600 hover:bg-red-700 hover:shadow-lg opacity-95 hover:opacity-100",
                     )}
                     style={{ animationDelay: "100ms" }}
@@ -6696,9 +6696,9 @@ function WarehouseAndProductsPage() {
                       {loadingBuffer ? "—" : bufOrderCount}
                     </div>
 
-                    <div className="mt-1 flex items-center justify-between text-[10px] text-rose-100">
+                    <div className="mt-1 flex items-center justify-between text-10px text-rose-100">
                       <span>Stok ≤ batas minimum</span>
-                      <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                      <span className="text-9px opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
                         {bufferStatusFilter === "ORDER" ? "Reset" : "Filter"}
                       </span>
                     </div>
@@ -6707,9 +6707,9 @@ function WarehouseAndProductsPage() {
                   {/* Card 4: SAFETY STOK */}
                   <div
                     className={cn(
-                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-98 select-none",
                       bufferStatusFilter === "SAFETY"
-                        ? "border-emerald-400 bg-green-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                        ? "border-emerald-400 bg-green-600 ring-2 ring-white-90 shadow-lg scale-1-01"
                         : "border-green-500 bg-green-600 hover:bg-green-700 hover:shadow-lg opacity-95 hover:opacity-100",
                     )}
                     style={{ animationDelay: "150ms" }}
@@ -6738,9 +6738,9 @@ function WarehouseAndProductsPage() {
                       {loadingBuffer ? "—" : bufSafetyCount}
                     </div>
 
-                    <div className="mt-1 flex items-center justify-between text-[10px] text-emerald-100">
+                    <div className="mt-1 flex items-center justify-between text-10px text-emerald-100">
                       <span>Stok aman &gt; minimum</span>
-                      <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                      <span className="text-9px opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
                         {bufferStatusFilter === "SAFETY" ? "Reset" : "Filter"}
                       </span>
                     </div>
@@ -6749,9 +6749,9 @@ function WarehouseAndProductsPage() {
                   {/* Card 5: OUT OF STOK */}
                   <div
                     className={cn(
-                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
+                      "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-98 select-none",
                       bufferStatusFilter === "OUT_OF_STOCK"
-                        ? "border-amber-400 bg-amber-600 ring-2 ring-white/90 shadow-lg scale-[1.01]"
+                        ? "border-amber-400 bg-amber-600 ring-2 ring-white-90 shadow-lg scale-1-01"
                         : "border-amber-500 bg-amber-600 hover:bg-amber-700 hover:shadow-lg opacity-95 hover:opacity-100",
                     )}
                     style={{ animationDelay: "200ms" }}
@@ -6782,9 +6782,9 @@ function WarehouseAndProductsPage() {
                       {loadingBuffer ? "—" : bufOutOfStockCount}
                     </div>
 
-                    <div className="mt-1 flex items-center justify-between text-[10px] text-amber-100">
+                    <div className="mt-1 flex items-center justify-between text-10px text-amber-100">
                       <span>Melebihi maks. stok</span>
-                      <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
+                      <span className="text-9px opacity-0 group-hover:opacity-100 transition-opacity underline underline-offset-2">
                         {bufferStatusFilter === "OUT_OF_STOCK" ? "Reset" : "Filter"}
                       </span>
                     </div>
@@ -6799,7 +6799,7 @@ function WarehouseAndProductsPage() {
                   >
                     <div className="flex items-center justify-between mb-2.5">
                       <span className="label-caps">Distribusi Kondisi Buffer Stok</span>
-                      <span className="text-[10px] font-mono text-muted-foreground">
+                      <span className="text-10px font-mono text-muted-foreground">
                         {totalBufferItems} item aktif
                       </span>
                     </div>
@@ -6829,7 +6829,7 @@ function WarehouseAndProductsPage() {
                     <div className="flex items-center gap-4 mt-2.5 flex-wrap">
                       <div className="flex items-center gap-1.5">
                         <div className="size-2.5 rounded-full bg-emerald-500" />
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-10px text-muted-foreground">
                           Safety{" "}
                           <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
                             {bufSafetyPct}%
@@ -6838,7 +6838,7 @@ function WarehouseAndProductsPage() {
                       </div>
                       <div className="flex items-center gap-1.5">
                         <div className="size-2.5 rounded-full bg-rose-500" />
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-10px text-muted-foreground">
                           Order{" "}
                           <span className="font-mono font-semibold text-rose-600 dark:text-rose-400">
                             {bufOrderPct}%
@@ -6847,7 +6847,7 @@ function WarehouseAndProductsPage() {
                       </div>
                       <div className="flex items-center gap-1.5">
                         <div className="size-2.5 rounded-full bg-amber-500" />
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-10px text-muted-foreground">
                           Out of Stok{" "}
                           <span className="font-mono font-semibold text-amber-600 dark:text-amber-400">
                             {bufOutOfStockPct}%
@@ -7015,14 +7015,14 @@ function WarehouseAndProductsPage() {
                   <>
                     <table className="w-full text-xs border-collapse border border-slate-300 dark:border-slate-700">
                       <thead>
-                        <tr className="bg-[#0f274a] text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
+                        <tr className="bg-custom-table-header text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
                           <th className="label-caps px-2.5 py-3 text-center w-10 text-white font-semibold">
                             No
                           </th>
                           <th className="label-caps px-2.5 py-3 text-left w-[110px] text-white font-semibold">
                             Kode
                           </th>
-                          <th className="label-caps px-2.5 py-3 text-left min-w-[200px] text-white font-semibold">
+                          <th className="label-caps px-2.5 py-3 text-left min-w-200px text-white font-semibold">
                             Nama Barang
                           </th>
                           <th className="label-caps px-2.5 py-3 text-center w-[90px] text-white font-semibold">
@@ -7034,10 +7034,10 @@ function WarehouseAndProductsPage() {
                           <th className="label-caps px-2.5 py-3 text-center w-[90px] text-white font-semibold">
                             Maks Stok
                           </th>
-                          <th className="label-caps px-2.5 py-3 text-right w-[100px] text-white font-semibold">
+                          <th className="label-caps px-2.5 py-3 text-right w-100px text-white font-semibold">
                             Stok Saat Ini
                           </th>
-                          <th className="label-caps px-2.5 py-3 text-center w-[100px] text-white font-semibold">
+                          <th className="label-caps px-2.5 py-3 text-center w-100px text-white font-semibold">
                             Kondisi
                           </th>
                           <th className="label-caps px-2.5 py-3 text-center w-[90px] text-white font-semibold">
@@ -7082,7 +7082,7 @@ function WarehouseAndProductsPage() {
                                   {item.code || "—"}
                                 </span>
                               </td>
-                              <td className="px-2.5 py-2.5 font-semibold text-foreground min-w-[200px]">
+                              <td className="px-2.5 py-2.5 font-semibold text-foreground min-w-200px">
                                 {item.name}
                               </td>
                               <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground">
@@ -7224,9 +7224,9 @@ function WarehouseAndProductsPage() {
                                   variant={pItem === currentSafeBufferPage ? "default" : "outline"}
                                   size="sm"
                                   className={cn(
-                                    "h-8 min-w-[32px] px-2 text-xs font-medium",
+                                    "h-8 min-w-32px px-2 text-xs font-medium",
                                     pItem === currentSafeBufferPage &&
-                                      "bg-[#0f274a] text-white hover:bg-[#0f274a]/90 dark:bg-blue-600 dark:hover:bg-blue-700",
+                                      "bg-custom-table-header text-white hover:bg-custom-table-header/90 dark:bg-blue-600 dark:hover:bg-blue-700",
                                   )}
                                   onClick={() => {
                                     setBufferCurrentPage(Number(pItem));
@@ -7277,7 +7277,7 @@ function WarehouseAndProductsPage() {
 
       {/* ── MODAL DIALOG: TAMBAH BARANG BUFFER STOK (INDEPENDEN) ─────────────── */}
       <Dialog open={isBufferAddOpen && !isTeknikUser} onOpenChange={setIsBufferAddOpen}>
-        <DialogContent className="sm:max-w-4xl w-full max-h-[90vh] flex flex-col p-6 overflow-hidden">
+        <DialogContent className="sm:max-w-4xl w-full max-h-90vh flex flex-col p-6 overflow-hidden">
           <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
             <DialogTitle className="text-lg font-bold">Tambah Data Barang Buffer Stok</DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
@@ -7417,7 +7417,7 @@ function WarehouseAndProductsPage() {
                         Batas Minimum Stok{!isAdmin && " (Terkunci)"}
                       </Label>
                       {!isAdmin && (
-                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                        <span className="text-10px text-amber-600 dark:text-amber-400 font-medium">
                           (Hanya Super Admin)
                         </span>
                       )}
@@ -7441,7 +7441,7 @@ function WarehouseAndProductsPage() {
                           : "Batas reminder agar segera di-order"
                       }
                     />
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-10px text-muted-foreground">
                       Batas reminder agar segera di-order
                     </p>
                   </div>
@@ -7454,7 +7454,7 @@ function WarehouseAndProductsPage() {
                         Minimal Stok{!isAdmin && " (Terkunci)"}
                       </Label>
                       {!isAdmin && (
-                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                        <span className="text-10px text-amber-600 dark:text-amber-400 font-medium">
                           (Hanya Super Admin)
                         </span>
                       )}
@@ -7478,7 +7478,7 @@ function WarehouseAndProductsPage() {
                           : "Batas stok agar barang tidak habis"
                       }
                     />
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-10px text-muted-foreground">
                       Batas stok agar barang tidak habis
                     </p>
                   </div>
@@ -7491,7 +7491,7 @@ function WarehouseAndProductsPage() {
                         Maksimal Stok{!isAdmin && " (Terkunci)"}
                       </Label>
                       {!isAdmin && (
-                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                        <span className="text-10px text-amber-600 dark:text-amber-400 font-medium">
                           (Hanya Super Admin)
                         </span>
                       )}
@@ -7713,7 +7713,7 @@ function WarehouseAndProductsPage() {
                         }
                       }}
                     >
-                      <SelectTrigger className="h-8 text-xs min-w-[240px] bg-background">
+                      <SelectTrigger className="h-8 text-xs min-w-240px bg-background">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="max-h-60">
@@ -7751,7 +7751,7 @@ function WarehouseAndProductsPage() {
                           value={bufferImportSortOption}
                           onValueChange={setBufferImportSortOption}
                         >
-                          <SelectTrigger className="h-8 text-xs min-w-[220px] bg-background font-medium">
+                          <SelectTrigger className="h-8 text-xs min-w-220px bg-background font-medium">
                             <SelectValue placeholder="Urutkan..." />
                           </SelectTrigger>
                           <SelectContent>
@@ -7781,7 +7781,7 @@ function WarehouseAndProductsPage() {
                       </div>
                     </div>
                     <div className="max-h-72 overflow-x-auto overflow-y-auto rounded-lg border border-border text-xs bg-background">
-                      <table className="w-full text-left border-collapse min-w-[600px]">
+                      <table className="w-full text-left border-collapse min-w-600px">
                         <thead className="bg-surface-muted text-[11px] font-semibold text-muted-foreground sticky top-0 z-10 border-b border-border">
                           <tr>
                             <th
@@ -7808,7 +7808,7 @@ function WarehouseAndProductsPage() {
                               </div>
                             </th>
                             <th
-                              className="p-2.5 min-w-[200px] cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
+                              className="p-2.5 min-w-200px cursor-pointer hover:bg-surface-muted/80 transition-colors select-none"
                               onClick={() =>
                                 setBufferImportSortOption(
                                   bufferImportSortOption === "NAME_ASC" ? "NAME_DESC" : "NAME_ASC",
@@ -7930,7 +7930,7 @@ function WarehouseAndProductsPage() {
           if (!o) setEditingBufferItem(null);
         }}
       >
-        <DialogContent className="sm:max-w-2xl w-full max-h-[90vh] flex flex-col p-6 overflow-hidden">
+        <DialogContent className="sm:max-w-2xl w-full max-h-90vh flex flex-col p-6 overflow-hidden">
           <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
             <DialogTitle className="text-lg font-bold">Edit Data Buffer Stok</DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
@@ -8056,7 +8056,7 @@ function WarehouseAndProductsPage() {
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-semibold">Minimal Stok</Label>
                     {!isAdmin && (
-                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                      <span className="text-10px text-amber-600 dark:text-amber-400 font-medium">
                         (Hanya Super Admin)
                       </span>
                     )}
@@ -8086,7 +8086,7 @@ function WarehouseAndProductsPage() {
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-semibold">Maksimal Stok</Label>
                     {!isAdmin && (
-                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                      <span className="text-10px text-amber-600 dark:text-amber-400 font-medium">
                         (Hanya Super Admin)
                       </span>
                     )}
@@ -8171,7 +8171,7 @@ function WarehouseAndProductsPage() {
 
       {/* ── MODAL DIALOG: TAMBAH BARANG OBS SPAREPART ────────────────────────── */}
       <Dialog open={isAddOpen && !isTeknikUser} onOpenChange={setIsAddOpen}>
-        <DialogContent className="sm:max-w-4xl w-full max-h-[90vh] flex flex-col p-6 overflow-hidden">
+        <DialogContent className="sm:max-w-4xl w-full max-h-90vh flex flex-col p-6 overflow-hidden">
           <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
             <DialogTitle className="text-lg font-bold">
               Tambah Data Barang OBS Sparepart
@@ -8307,7 +8307,7 @@ function WarehouseAndProductsPage() {
                         Batas Minimum Stok{!isAdmin && " (Terkunci)"}
                       </Label>
                       {!isAdmin && (
-                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                        <span className="text-10px text-amber-600 dark:text-amber-400 font-medium">
                           (Hanya Admin)
                         </span>
                       )}
@@ -8329,7 +8329,7 @@ function WarehouseAndProductsPage() {
                           : undefined
                       }
                     />
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-10px text-muted-foreground">
                       Batas reminder agar segera di-order
                     </p>
                   </div>
@@ -8342,7 +8342,7 @@ function WarehouseAndProductsPage() {
                         Minimal Stok{!isAdmin && " (Terkunci)"}
                       </Label>
                       {!isAdmin && (
-                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                        <span className="text-10px text-amber-600 dark:text-amber-400 font-medium">
                           (Hanya Admin)
                         </span>
                       )}
@@ -8364,7 +8364,7 @@ function WarehouseAndProductsPage() {
                           : undefined
                       }
                     />
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-10px text-muted-foreground">
                       Batas stok agar barang tidak habis
                     </p>
                   </div>
@@ -8561,7 +8561,7 @@ function WarehouseAndProductsPage() {
                         }
                       }}
                     >
-                      <SelectTrigger className="h-8 text-xs min-w-[240px] bg-background">
+                      <SelectTrigger className="h-8 text-xs min-w-240px bg-background">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="max-h-60">
@@ -8596,7 +8596,7 @@ function WarehouseAndProductsPage() {
                         <ArrowUpDown className="size-3.5 text-muted-foreground" />
                         <span className="text-xs text-muted-foreground">Urutkan:</span>
                         <Select value={importSortOption} onValueChange={setImportSortOption}>
-                          <SelectTrigger className="h-8 text-xs min-w-[220px] bg-background font-medium">
+                          <SelectTrigger className="h-8 text-xs min-w-220px bg-background font-medium">
                             <SelectValue placeholder="Urutkan..." />
                           </SelectTrigger>
                           <SelectContent>
@@ -8626,18 +8626,18 @@ function WarehouseAndProductsPage() {
                       </div>
                     </div>
                     <div className="max-h-72 overflow-x-auto overflow-y-auto rounded-lg border border-border text-xs bg-background">
-                      <table className="w-full text-left border-collapse min-w-[840px]">
-                        <thead className="bg-[#0f274a] text-white text-[11px] font-semibold sticky top-0 z-10 border-b border-border">
+                      <table className="w-full text-left border-collapse min-w-840px">
+                        <thead className="bg-custom-table-header text-white text-[11px] font-semibold sticky top-0 z-10 border-b border-border">
                           <tr>
                             <th
-                              className="p-2.5 w-12 text-center cursor-pointer hover:bg-[#1a3a66] transition-colors select-none text-white font-semibold"
+                              className="p-2.5 w-12 text-center cursor-pointer hover:bg-custom-table-hover transition-colors select-none text-white font-semibold"
                               onClick={() => setImportSortOption("DEFAULT")}
                               title="Reset ke urutan asli file"
                             >
                               No
                             </th>
                             <th
-                              className="p-2.5 w-36 text-center cursor-pointer hover:bg-[#1a3a66] transition-colors select-none text-white font-semibold"
+                              className="p-2.5 w-36 text-center cursor-pointer hover:bg-custom-table-hover transition-colors select-none text-white font-semibold"
                               onClick={() =>
                                 setImportSortOption(
                                   importSortOption === "CODE_ASC" ? "CODE_DESC" : "CODE_ASC",
@@ -8653,7 +8653,7 @@ function WarehouseAndProductsPage() {
                               </div>
                             </th>
                             <th
-                              className="p-2.5 min-w-[200px] cursor-pointer hover:bg-[#1a3a66] transition-colors select-none text-white font-semibold"
+                              className="p-2.5 min-w-200px cursor-pointer hover:bg-custom-table-hover transition-colors select-none text-white font-semibold"
                               onClick={() =>
                                 setImportSortOption(
                                   importSortOption === "NAME_ASC" ? "NAME_DESC" : "NAME_ASC",
@@ -8681,7 +8681,7 @@ function WarehouseAndProductsPage() {
                               ISSUED
                             </th>
                             <th
-                              className="p-2.5 text-center w-36 cursor-pointer hover:bg-[#1a3a66] transition-colors select-none text-white font-semibold"
+                              className="p-2.5 text-center w-36 cursor-pointer hover:bg-custom-table-hover transition-colors select-none text-white font-semibold"
                               onClick={() =>
                                 setImportSortOption(
                                   importSortOption === "STOCK_ASC" ? "STOCK_DESC" : "STOCK_ASC",
@@ -8856,7 +8856,7 @@ function WarehouseAndProductsPage() {
                 <div className="flex items-center justify-between">
                   <Label>Batas Minimum Stok</Label>
                   {!isAdmin && (
-                    <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                    <span className="text-10px text-amber-600 dark:text-amber-400 font-medium">
                       (Hanya Super Admin)
                     </span>
                   )}
@@ -8881,7 +8881,7 @@ function WarehouseAndProductsPage() {
                 <div className="flex items-center justify-between">
                   <Label>Maksimal Stok</Label>
                   {!isAdmin && (
-                    <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                    <span className="text-10px text-amber-600 dark:text-amber-400 font-medium">
                       (Hanya Super Admin)
                     </span>
                   )}
@@ -8914,7 +8914,7 @@ function WarehouseAndProductsPage() {
             <Button
               onClick={() => updateProduct.mutate()}
               disabled={updateProduct.isPending}
-              className="bg-primary hover:bg-primary/90 min-w-[80px]"
+              className="bg-primary hover:bg-primary/90 min-w-80px"
             >
               {updateProduct.isPending ? "Saving..." : "Save"}
             </Button>
@@ -8924,7 +8924,7 @@ function WarehouseAndProductsPage() {
 
       {/* ── MODAL DIALOG: PENCATATAN TRANSAKSI MASUK / KELUAR ─────────────────── */}
       <Dialog open={isTxOpen && !isTeknikUser} onOpenChange={setIsTxOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-90vh overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {txType === "IN" ? "Catat Barang Masuk (Inbound)" : "Catat Barang Keluar (Outbound)"}
@@ -8970,7 +8970,7 @@ function WarehouseAndProductsPage() {
                     >
                       {/* Nomor Urut Item */}
                       <div className="flex items-center gap-1 sm:hidden">
-                        <Badge variant="outline" className="text-[10px]">
+                        <Badge variant="outline" className="text-10px">
                           Barang #{idx + 1}
                         </Badge>
                       </div>
@@ -9073,7 +9073,7 @@ function WarehouseAndProductsPage() {
                 <Label className="flex items-center justify-between">
                   <span>{txType === "IN" ? "No. PO / Referensi" : "User"}</span>
                   {txType === "IN" && (
-                    <span className="text-[10px] text-muted-foreground font-normal">
+                    <span className="text-10px text-muted-foreground font-normal">
                       (Harus unik / tidak boleh sama)
                     </span>
                   )}
@@ -9471,7 +9471,7 @@ function WarehouseAndProductsPage() {
                 !orderHeader.supplierOrDest.trim() ||
                 !orderHeader.referenceNo.trim()
               }
-              className="gap-1.5 bg-[#0f274a] hover:bg-[#1a3c70] text-white font-semibold text-xs h-8.5 px-4"
+              className="gap-1.5 bg-custom-table-header hover:bg-custom-table-hover-3 text-white font-semibold text-xs h-8.5 px-4"
             >
               {isOrdering ? (
                 <>
@@ -9522,7 +9522,7 @@ function WarehouseAndProductsPage() {
                   });
                   setIsOrderModalOpen(true);
                 }}
-                className="gap-1.5 bg-[#0f274a] hover:bg-[#183a6b] text-white font-semibold text-xs h-8 px-3 shrink-0"
+                className="gap-1.5 bg-custom-table-header hover:bg-custom-table-hover-2 text-white font-semibold text-xs h-8 px-3 shrink-0"
               >
                 <Plus className="size-3.5" />
                 <span>Buat Order Baru</span>
@@ -9670,7 +9670,7 @@ function WarehouseAndProductsPage() {
                             <span className="font-bold text-foreground text-xs block">
                               {ord.order_number}
                             </span>
-                            <span className="text-[10px] text-muted-foreground mt-0.5 block">
+                            <span className="text-10px text-muted-foreground mt-0.5 block">
                               {new Date(ord.created_at).toLocaleString("id-ID", {
                                 day: "2-digit",
                                 month: "short",
@@ -9689,7 +9689,7 @@ function WarehouseAndProductsPage() {
                                 <div key={idx} className="font-medium text-foreground">
                                   <span>{it.product_name}</span>{" "}
                                   {it.product_code && (
-                                    <span className="font-mono text-[10px] text-muted-foreground bg-muted px-1 rounded">
+                                    <span className="font-mono text-10px text-muted-foreground bg-muted px-1 rounded">
                                       {it.product_code}
                                     </span>
                                   )}
@@ -9755,7 +9755,7 @@ function WarehouseAndProductsPage() {
                               {ord.alasan_permintaan}
                             </div>
                             {ord.petugas_shift && ord.petugas_shift !== "-" && (
-                              <div className="text-[10px] text-muted-foreground/80 mt-0.5 font-mono">
+                              <div className="text-10px text-muted-foreground/80 mt-0.5 font-mono">
                                 Shift/Catatan: {ord.petugas_shift}
                               </div>
                             )}
@@ -9769,7 +9769,7 @@ function WarehouseAndProductsPage() {
                                   {ord.approved_by_name || "Petugas GDSP"}
                                 </span>
                                 {ord.approved_at && (
-                                  <span className="text-[10px] text-muted-foreground font-mono block">
+                                  <span className="text-10px text-muted-foreground font-mono block">
                                     {new Date(ord.approved_at).toLocaleString("id-ID", {
                                       day: "2-digit",
                                       month: "short",
@@ -9786,7 +9786,7 @@ function WarehouseAndProductsPage() {
                                   {ord.approved_by_name || "Admin GDSP"} (Ditolak)
                                 </span>
                                 {ord.rejection_reason && (
-                                  <span className="text-[10px] text-rose-700 dark:text-rose-300 block italic">
+                                  <span className="text-10px text-rose-700 dark:text-rose-300 block italic">
                                     &ldquo;{ord.rejection_reason}&rdquo;
                                   </span>
                                 )}
@@ -9801,17 +9801,17 @@ function WarehouseAndProductsPage() {
                           {/* 8. Status */}
                           <td className="py-3 px-3 align-top text-center">
                             {isPending && (
-                              <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 text-[10px] font-semibold whitespace-nowrap animate-pulse">
+                              <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 text-10px font-semibold whitespace-nowrap animate-pulse">
                                 ⏳ Menunggu Approval
                               </Badge>
                             )}
                             {isApproved && (
-                              <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 text-[10px] font-semibold whitespace-nowrap">
+                              <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 text-10px font-semibold whitespace-nowrap">
                                 ✓ APPROVAL
                               </Badge>
                             )}
                             {isRejected && (
-                              <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 text-[10px] font-semibold whitespace-nowrap">
+                              <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 text-10px font-semibold whitespace-nowrap">
                                 ✕ Ditolak
                               </Badge>
                             )}
@@ -9940,7 +9940,7 @@ function WarehouseAndProductsPage() {
                   <Badge
                     variant={selectedTx.tx_type === "IN" ? "default" : "destructive"}
                     className={cn(
-                      "text-[10px] font-mono uppercase",
+                      "text-10px font-mono uppercase",
                       selectedTx.tx_type === "IN"
                         ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                         : "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20",
@@ -10169,7 +10169,7 @@ function WarehouseAndProductsPage() {
                         </span>
                         <div className="mt-1">
                           <Badge
-                            className={cn("text-[10px] font-bold uppercase", kondisiBadgeClass)}
+                            className={cn("text-10px font-bold uppercase", kondisiBadgeClass)}
                           >
                             {kondisiText}
                           </Badge>
@@ -10183,7 +10183,7 @@ function WarehouseAndProductsPage() {
                     <div className="font-semibold text-foreground">Parameter OBS Sparepart:</div>
                     <div className="grid grid-cols-3 gap-2 text-center">
                       <div className="p-2 rounded border border-rose-500/30 bg-rose-500/5">
-                        <div className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">
+                        <div className="text-10px text-rose-600 dark:text-rose-400 font-medium">
                           Min. Stok (Order)
                         </div>
                         <div className="font-mono font-bold text-sm text-rose-600 dark:text-rose-400 mt-0.5">
@@ -10191,7 +10191,7 @@ function WarehouseAndProductsPage() {
                         </div>
                       </div>
                       <div className="p-2 rounded border border-border bg-surface">
-                        <div className="text-[10px] text-muted-foreground">Maks. Stok</div>
+                        <div className="text-10px text-muted-foreground">Maks. Stok</div>
                         <div className="font-mono font-bold text-sm text-foreground mt-0.5">
                           {maxStock !== null && !isNaN(maxStock)
                             ? `${maxStock} ${formatUnit(selectedProduct.unit)}`
@@ -10204,7 +10204,7 @@ function WarehouseAndProductsPage() {
                           stokSaatIniBoxClass,
                         )}
                       >
-                        <div className="text-[10px] font-medium">Stok Saat Ini</div>
+                        <div className="text-10px font-medium">Stok Saat Ini</div>
                         <div className="font-mono font-bold text-sm mt-0.5">
                           {current} {formatUnit(selectedProduct.unit)}
                         </div>
@@ -10360,7 +10360,7 @@ function WarehouseAndProductsPage() {
                         </span>
                         <div className="mt-1">
                           <Badge
-                            className={cn("text-[10px] font-bold uppercase", kondisiBadgeClass)}
+                            className={cn("text-10px font-bold uppercase", kondisiBadgeClass)}
                           >
                             {kondisiText}
                           </Badge>
@@ -10374,13 +10374,13 @@ function WarehouseAndProductsPage() {
                     <div className="font-semibold text-foreground">Parameter Buffer Stok:</div>
                     <div className="grid grid-cols-4 gap-2 text-center">
                       <div className="p-2 rounded border border-border bg-surface">
-                        <div className="text-[10px] text-muted-foreground">Batas Min.</div>
+                        <div className="text-10px text-muted-foreground">Batas Min.</div>
                         <div className="font-mono font-bold text-sm text-foreground mt-0.5">
                           {safeStock} {selectedBufferItem.unit || "pcs"}
                         </div>
                       </div>
                       <div className="p-2 rounded border border-rose-500/30 bg-rose-500/5">
-                        <div className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">
+                        <div className="text-10px text-rose-600 dark:text-rose-400 font-medium">
                           Min. Stok (Order)
                         </div>
                         <div className="font-mono font-bold text-sm text-rose-600 dark:text-rose-400 mt-0.5">
@@ -10388,7 +10388,7 @@ function WarehouseAndProductsPage() {
                         </div>
                       </div>
                       <div className="p-2 rounded border border-border bg-surface">
-                        <div className="text-[10px] text-muted-foreground">Maks. Stok</div>
+                        <div className="text-10px text-muted-foreground">Maks. Stok</div>
                         <div className="font-mono font-bold text-sm text-foreground mt-0.5">
                           {maxStock !== null && !isNaN(maxStock)
                             ? `${maxStock} ${selectedBufferItem.unit || "pcs"}`
@@ -10401,7 +10401,7 @@ function WarehouseAndProductsPage() {
                           stokSaatIniBoxClass,
                         )}
                       >
-                        <div className="text-[10px] font-medium">Stok Saat Ini</div>
+                        <div className="text-10px font-medium">Stok Saat Ini</div>
                         <div className="font-mono font-bold text-sm mt-0.5">
                           {current} {selectedBufferItem.unit || "pcs"}
                         </div>
@@ -10526,17 +10526,17 @@ function WarehouseAndProductsPage() {
                           )}
                         >
                           {parsed.type === "IN" ? (
-                            <ArrowDownToLine className="size-5 stroke-[2]" />
+                            <ArrowDownToLine className="size-5 stroke-2" />
                           ) : parsed.type === "OUT" ? (
-                            <ArrowUpFromLine className="size-5 stroke-[2]" />
+                            <ArrowUpFromLine className="size-5 stroke-2" />
                           ) : parsed.type === "EDIT" ? (
-                            <Pencil className="size-5 stroke-[2]" />
+                            <Pencil className="size-5 stroke-2" />
                           ) : parsed.type === "ADD" ? (
-                            <Plus className="size-5 stroke-[2]" />
+                            <Plus className="size-5 stroke-2" />
                           ) : parsed.type === "DELETE" ? (
-                            <Trash2 className="size-5 stroke-[2]" />
+                            <Trash2 className="size-5 stroke-2" />
                           ) : (
-                            <FileText className="size-5 stroke-[2]" />
+                            <FileText className="size-5 stroke-2" />
                           )}
                         </div>
                         <div>
@@ -10547,7 +10547,7 @@ function WarehouseAndProductsPage() {
                             <Badge
                               variant="outline"
                               className={cn(
-                                "text-[10px] font-semibold px-2 py-0.5 rounded-full border",
+                                "text-10px font-semibold px-2 py-0.5 rounded-full border",
                                 parsed.type === "IN" &&
                                   "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
                                 parsed.type === "OUT" &&
@@ -10586,7 +10586,7 @@ function WarehouseAndProductsPage() {
                   </div>
 
                   {/* Body Content */}
-                  <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+                  <div className="p-5 space-y-4 max-h-70vh overflow-y-auto">
                     {/* Box 1: Identitas Barang (+ Kode Material) & Nilai Mutasi */}
                     <div className="rounded-xl border border-border/80 bg-surface p-4 space-y-3">
                       <div className="flex items-start justify-between gap-3">
@@ -10635,14 +10635,14 @@ function WarehouseAndProductsPage() {
                         )}
                       >
                         <div className="space-y-0.5">
-                          <span className="text-[10px] text-muted-foreground block">Tanggal</span>
+                          <span className="text-10px text-muted-foreground block">Tanggal</span>
                           <span className="font-semibold text-foreground flex items-center gap-1">
                             <CalendarIcon className="size-3 text-muted-foreground shrink-0" />
                             {parsed.dateFormatted || "-"}
                           </span>
                         </div>
                         <div className="space-y-0.5">
-                          <span className="text-[10px] text-muted-foreground block">
+                          <span className="text-10px text-muted-foreground block">
                             Waktu / Jam
                           </span>
                           <span className="font-semibold text-foreground flex items-center gap-1">
@@ -10652,7 +10652,7 @@ function WarehouseAndProductsPage() {
                         </div>
                         {parsed.type !== "EDIT" && !isExportActivity && (
                           <div className="space-y-0.5">
-                            <span className="text-[10px] text-muted-foreground block">
+                            <span className="text-10px text-muted-foreground block">
                               Shift Kerja
                             </span>
                             <span className="font-semibold text-foreground">
@@ -10661,7 +10661,7 @@ function WarehouseAndProductsPage() {
                           </div>
                         )}
                         <div className="space-y-0.5">
-                          <span className="text-[10px] text-muted-foreground block">Petugas</span>
+                          <span className="text-10px text-muted-foreground block">Petugas</span>
                           <span
                             className="font-semibold text-foreground truncate block"
                             title={

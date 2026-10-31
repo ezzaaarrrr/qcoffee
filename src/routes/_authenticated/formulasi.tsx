@@ -159,7 +159,7 @@ function FormulasiPage() {
       </div>
 
       <Panel bodyClassName="p-0 overflow-x-auto">
-        <table className="w-full min-w-[1000px] text-sm">
+        <table className="w-full min-w-1000px text-sm">
           <thead>
             <tr className="border-b border-border">
               {[
@@ -208,7 +208,7 @@ function FormulasiPage() {
                 <td className="px-4 py-3 font-mono text-xs">{row.no_urut_batch || "—"}</td>
                 <td className="px-4 py-3">{row.shift_regu || "—"}</td>
                 <td className="px-4 py-3">{row.line || "—"}</td>
-                <td className="px-4 py-3 max-w-[180px]">
+                <td className="px-4 py-3 max-w-180px">
                   {(() => {
                     try {
                       const parsed = JSON.parse(row.material ?? "[]") as {
@@ -251,7 +251,7 @@ function FormulasiPage() {
       </Panel>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogContent className="max-h-90vh max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Checklist Formulasi Baru</DialogTitle>
             <DialogDescription>

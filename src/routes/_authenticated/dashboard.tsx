@@ -472,11 +472,11 @@ function DashboardPage() {
   // D = ≥ 85% Oren
   // E = < 85% Merah
   const GRADE_THRESHOLDS = [
-    { grade: "A", range: "≥ 92%", colorName: "Hijau", dotClass: "bg-[#03ff28]" },
-    { grade: "B", range: "≥ 90%", colorName: "Biru", dotClass: "bg-[#37deff]" },
-    { grade: "C", range: "≥ 88%", colorName: "Kuning", dotClass: "bg-[#ffc929]" },
-    { grade: "D", range: "≥ 85%", colorName: "Oren", dotClass: "bg-[#ff9100]" },
-    { grade: "E", range: "< 85%", colorName: "Merah", dotClass: "bg-[#ef4444]" },
+    { grade: "A", range: "≥ 92%", colorName: "Hijau", dotClass: "bg-grade-a" },
+    { grade: "B", range: "≥ 90%", colorName: "Biru", dotClass: "bg-grade-b" },
+    { grade: "C", range: "≥ 88%", colorName: "Kuning", dotClass: "bg-grade-c" },
+    { grade: "D", range: "≥ 85%", colorName: "Oren", dotClass: "bg-grade-d" },
+    { grade: "E", range: "< 85%", colorName: "Merah", dotClass: "bg-grade-e" },
   ];
 
   const getGradeInfo = (pct: number) => {
@@ -487,7 +487,7 @@ function DashboardPage() {
         color: "#03ff28ffff", // Hijau
         badgeClass:
           "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
-        dotClass: "bg-[#03ff28]",
+        dotClass: "bg-grade-a",
       };
     }
     if (pct >= 90.0) {
@@ -496,7 +496,7 @@ function DashboardPage() {
         badgeText: "POINT B",
         color: "#37deffff", // Biru
         badgeClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
-        dotClass: "bg-[#37deff]",
+        dotClass: "bg-grade-b",
       };
     }
     if (pct >= 88.0) {
@@ -505,7 +505,7 @@ function DashboardPage() {
         badgeText: "POINT C",
         color: "#ffc929ff", // Kuning
         badgeClass: "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/30",
-        dotClass: "bg-[#ffc929]",
+        dotClass: "bg-grade-c",
       };
     }
     if (pct >= 85.0) {
@@ -514,7 +514,7 @@ function DashboardPage() {
         badgeText: "POINT D",
         color: "#ff9100ff", // Oren
         badgeClass: "bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30",
-        dotClass: "bg-[#ff9100]",
+        dotClass: "bg-grade-d",
       };
     }
     return {
@@ -589,7 +589,7 @@ function DashboardPage() {
           width={size}
           height={size}
           viewBox="0 0 100 100"
-          className="transform -rotate-90 filter drop-shadow-[0_2px_8px_rgba(0,0,0,0.06)] dark:drop-shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
+          className="transform -rotate-90 filter drop-shadow-grade dark:drop-shadow-grade-dark"
         >
           <circle
             cx="50"
@@ -649,14 +649,14 @@ function DashboardPage() {
           </span>
           <span
             className={cn(
-              "text-[9.5px] sm:text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider mt-1.5 border shadow-xs",
+              "text-9-5px sm:text-10px font-black px-2 py-0.5 rounded-full uppercase tracking-wider mt-1.5 border shadow-xs",
               badgeClass,
             )}
           >
             {centerBadge}
           </span>
           {subText && (
-            <span className="text-[8px] font-semibold text-muted-foreground uppercase tracking-wider mt-1">
+            <span className="text-8px font-semibold text-muted-foreground uppercase tracking-wider mt-1">
               {subText}
             </span>
           )}
@@ -723,7 +723,7 @@ function DashboardPage() {
                   OBS Sparepart
                 </span>
               </div>
-              <span className="text-[10px] text-muted-foreground font-medium">
+              <span className="text-10px text-muted-foreground font-medium">
                 {nonLimitProductsCount} dari {totalActiveProducts} item
               </span>
             </div>
@@ -782,7 +782,7 @@ function DashboardPage() {
                             <p className="font-mono text-primary font-bold">
                               {val} item ({pct}%)
                             </p>
-                            <p className="text-[10px] text-muted-foreground pt-0.5">
+                            <p className="text-10px text-muted-foreground pt-0.5">
                               Klik irisan untuk melihat rincian barang
                             </p>
                           </div>
@@ -810,7 +810,7 @@ function DashboardPage() {
                     {obsKpiPctStr}
                   </span>
                   <span
-                    className="text-[10px] font-bold uppercase tracking-wider mt-1"
+                    className="text-10px font-bold uppercase tracking-wider mt-1"
                     style={{ color: obsSafeColor }}
                   >
                     POINT
@@ -829,7 +829,7 @@ function DashboardPage() {
                   All Item Barang
                 </span>
               </div>
-              <span className="text-[10px] text-muted-foreground font-medium">
+              <span className="text-10px text-muted-foreground font-medium">
                 {ca.gabunganAman} dari {ca.totalGabungan} item
               </span>
             </div>
@@ -886,7 +886,7 @@ function DashboardPage() {
                             <p className="font-mono text-primary font-bold">
                               {val} item ({pct}%)
                             </p>
-                            <p className="text-[10px] text-muted-foreground pt-0.5">
+                            <p className="text-10px text-muted-foreground pt-0.5">
                               Klik irisan untuk melihat rincian barang
                             </p>
                           </div>
@@ -914,7 +914,7 @@ function DashboardPage() {
                     {allItemKpiPctStr}
                   </span>
                   <span
-                    className="text-[10px] font-bold uppercase tracking-wider mt-1"
+                    className="text-10px font-bold uppercase tracking-wider mt-1"
                     style={{ color: allItemSafeColor }}
                   >
                     POINT
@@ -951,11 +951,11 @@ function DashboardPage() {
               setMetricStatusFilter("all");
               setMetricSearchQuery("");
             }}
-            className="cursor-pointer bg-blue-600 hover:bg-blue-600/90 active:scale-[0.99] border border-blue-400/40 rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none"
+            className="cursor-pointer bg-blue-600 hover:bg-blue-600-90 active:scale-99-active border border-blue-400-40 rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none"
             title="Klik untuk melihat daftar seluruh item barang"
           >
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-blue-100">
+              <div className="flex items-center gap-1.5 text-11px font-bold uppercase tracking-wider text-blue-100">
                 <BoxIcon className="size-3.5 text-blue-200" />
                 Total Item Gabungan
               </div>
@@ -964,11 +964,11 @@ function DashboardPage() {
             <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">
               {ca.totalGabungan}
             </div>
-            <div className="flex items-center justify-between text-[11px] text-blue-100/90 font-medium">
+            <div className="flex items-center justify-between text-11px text-blue-100-90 font-medium">
               <span>
                 OBS: {ca.totalOBS} · Buffer: {ca.totalBuffer}
               </span>
-              <span className="text-[10px] text-blue-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="text-10px text-blue-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 Lihat Barang
               </span>
             </div>
@@ -982,11 +982,11 @@ function DashboardPage() {
               setMetricStatusFilter("all");
               setMetricSearchQuery("");
             }}
-            className="cursor-pointer bg-cyan-600 hover:bg-cyan-600/90 active:scale-[0.99] border border-cyan-400/40 rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none"
+            className="cursor-pointer bg-cyan-600 hover:bg-cyan-600-90 active:scale-99-active border border-cyan-400-40 rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none"
             title="Klik untuk melihat daftar stok fisik barang"
           >
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-cyan-100">
+              <div className="flex items-center gap-1.5 text-11px font-bold uppercase tracking-wider text-cyan-100">
                 <Activity className="size-3.5 text-cyan-200" />
                 Total Stok Fisik
               </div>
@@ -995,12 +995,12 @@ function DashboardPage() {
             <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">
               {ca.totalStokGabungan.toLocaleString("id-ID")}
             </div>
-            <div className="flex items-center justify-between text-[11px] text-cyan-100/90 font-medium">
+            <div className="flex items-center justify-between text-11px text-cyan-100-90 font-medium">
               <span>
                 OBS: {ca.totalStokOBS.toLocaleString("id-ID")} · Buffer:{" "}
                 {ca.totalStokBuffer.toLocaleString("id-ID")}
               </span>
-              <span className="text-[10px] text-cyan-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="text-10px text-cyan-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 Lihat Barang
               </span>
             </div>
@@ -1015,7 +1015,7 @@ function DashboardPage() {
               setMetricSearchQuery("");
             }}
             className={cn(
-              "cursor-pointer active:scale-[0.99] rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none",
+              "cursor-pointer active:scale-99-active rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none",
               ca.pctAman >= 95
                 ? "bg-emerald-600 hover:bg-emerald-600/90 border border-emerald-400/40"
                 : "bg-rose-600 hover:bg-rose-600/90 border border-rose-400/40",
@@ -1025,7 +1025,7 @@ function DashboardPage() {
             <div className="flex items-center justify-between">
               <div
                 className={cn(
-                  "flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider",
+                  "flex items-center gap-1.5 text-11px font-bold uppercase tracking-wider",
                   ca.pctAman >= 95 ? "text-emerald-100" : "text-rose-100",
                 )}
               >
@@ -1048,7 +1048,7 @@ function DashboardPage() {
             </div>
             <div
               className={cn(
-                "flex items-center justify-between text-[11px] font-medium",
+                "flex items-center justify-between text-11px font-medium",
                 ca.pctAman >= 95 ? "text-emerald-100/90" : "text-rose-100/90",
               )}
             >
@@ -1057,7 +1057,7 @@ function DashboardPage() {
               </span>
               <span
                 className={cn(
-                  "text-[10px] underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity",
+                  "text-10px underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity",
                   ca.pctAman >= 95 ? "text-emerald-200" : "text-rose-200",
                 )}
               >
@@ -1074,11 +1074,11 @@ function DashboardPage() {
               setMetricStatusFilter("all");
               setMetricSearchQuery("");
             }}
-            className="cursor-pointer bg-amber-600 hover:bg-amber-600/90 active:scale-[0.99] border border-amber-400/40 rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none"
+            className="cursor-pointer bg-amber-600 hover:bg-amber-600-90 active:scale-99-active border border-amber-400-40 rounded-lg p-4 space-y-1.5 shadow-md hover:shadow-lg transition-all text-white group select-none"
             title="Klik untuk melihat daftar barang yang perlu perhatian"
           >
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-100">
+              <div className="flex items-center gap-1.5 text-11px font-bold uppercase tracking-wider text-amber-100">
                 <AlertTriangle className="size-3.5 text-amber-200" />
                 Perlu Perhatian (Limit & Habis)
               </div>
@@ -1087,12 +1087,12 @@ function DashboardPage() {
             <div className="text-2xl sm:text-3xl font-mono font-extrabold text-white tracking-tight">
               {ca.pctLimit + ca.pctHabis}%
             </div>
-            <div className="flex items-center justify-between text-[11px] text-amber-100/90 font-medium">
+            <div className="flex items-center justify-between text-11px text-amber-100-90 font-medium">
               <span>
                 {ca.gabunganLimit + ca.gabunganHabis} item ({ca.gabunganLimit} limit +{" "}
                 {ca.gabunganHabis} habis)
               </span>
-              <span className="text-[10px] text-amber-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="text-10px text-amber-200 underline underline-offset-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 Lihat Barang
               </span>
             </div>
@@ -1212,7 +1212,7 @@ function DashboardPage() {
           }
         }}
       >
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-surface border border-border shadow-2xl">
+        <DialogContent className="max-w-4xl max-h-90vh flex flex-col p-0 gap-0 overflow-hidden bg-surface border border-border shadow-2xl">
           {/* Header Modal */}
           <DialogHeader className="p-5 pb-4 border-b border-border bg-surface-muted/40">
             <div className="flex items-start justify-between gap-4">
@@ -1348,7 +1348,7 @@ function DashboardPage() {
           </DialogHeader>
 
           {/* Table Container */}
-          <div className="flex-1 overflow-y-auto max-h-[55vh] p-0 divide-y divide-border">
+          <div className="flex-1 overflow-y-auto max-h-55vh p-0 divide-y divide-border">
             {filteredModalItems.length === 0 ? (
               <div className="p-10 text-center text-muted-foreground space-y-2">
                 <Package className="size-8 mx-auto text-muted-foreground/50" />
@@ -1398,7 +1398,7 @@ function DashboardPage() {
                         </td>
                         <td className="py-2.5 px-3">
                           {item.code ? (
-                            <span className="font-mono text-[11px] font-semibold bg-surface-muted px-1.5 py-0.5 rounded border border-border/70 text-foreground">
+                            <span className="font-mono text-11px font-semibold bg-surface-muted px-1.5 py-0.5 rounded border border-border/70 text-foreground">
                               {item.code}
                             </span>
                           ) : (
@@ -1411,7 +1411,7 @@ function DashboardPage() {
                         <td className="py-2.5 px-3 text-center">
                           <span
                             className={cn(
-                              "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                              "text-10px font-bold px-2 py-0.5 rounded-full border",
                               item.category === "OBS Sparepart"
                                 ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25"
                                 : "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/25",
@@ -1422,7 +1422,7 @@ function DashboardPage() {
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono font-bold text-foreground">
                           {item.current_stock.toLocaleString("id-ID")}{" "}
-                          <span className="text-[10px] font-normal text-muted-foreground">
+                          <span className="text-10px font-normal text-muted-foreground">
                             {item.unit}
                           </span>
                         </td>
@@ -1432,19 +1432,19 @@ function DashboardPage() {
                         {!hideStatusCol && (
                           <td className="py-2.5 px-3 text-center">
                             {isSafe && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                              <span className="inline-flex items-center gap-1 text-10px font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                                 <span className="size-1.5 rounded-full bg-emerald-500" />
                                 Aman
                               </span>
                             )}
                             {isLimit && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                              <span className="inline-flex items-center gap-1 text-10px font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
                                 <span className="size-1.5 rounded-full bg-amber-500" />
                                 Limit
                               </span>
                             )}
                             {isEmpty && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
+                              <span className="inline-flex items-center gap-1 text-10px font-bold px-2 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
                                 <span className="size-1.5 rounded-full bg-rose-500" />
                                 Habis
                               </span>
@@ -1645,7 +1645,7 @@ function DashboardPage() {
                       <div className="bg-surface/98 backdrop-blur-md border border-border shadow-2xl rounded-xl p-3.5 max-w-xs sm:max-w-sm space-y-2.5 z-50 text-xs">
                         {/* 1. Material */}
                         <div>
-                          <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider block">
+                          <span className="text-10px text-muted-foreground font-semibold uppercase tracking-wider block">
                             Material
                           </span>
                           <div className="font-bold text-foreground text-xs leading-snug break-words mt-0.5">
@@ -1655,7 +1655,7 @@ function DashboardPage() {
 
                         {/* 2. Kode */}
                         <div>
-                          <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider block">
+                          <span className="text-10px text-muted-foreground font-semibold uppercase tracking-wider block">
                             Kode
                           </span>
                           <div className="font-mono text-xs font-semibold text-foreground mt-0.5">
@@ -1666,7 +1666,7 @@ function DashboardPage() {
                         {/* 3. Frekuensi Keluar & 4. Total Keluar & 5. Stok Saat Ini */}
                         <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/60">
                           <div className="bg-surface-muted/60 rounded-lg p-2 border border-border/50">
-                            <span className="text-[10px] text-muted-foreground font-semibold uppercase block">
+                            <span className="text-10px text-muted-foreground font-semibold uppercase block">
                               Frekuensi Keluar
                             </span>
                             <div className="flex items-baseline gap-1 mt-0.5">
@@ -1674,7 +1674,7 @@ function DashboardPage() {
                                 {data.frequency.toLocaleString("id-ID")}x
                               </span>
                               {data.freqToday > 0 && (
-                                <span className="text-[9.5px] font-medium text-amber-600 dark:text-amber-400">
+                                <span className="text-9-5px font-medium text-amber-600 dark:text-amber-400">
                                   (+{data.freqToday} hr ini)
                                 </span>
                               )}
@@ -1682,17 +1682,17 @@ function DashboardPage() {
                           </div>
 
                           <div className="bg-rose-500/5 dark:bg-rose-500/10 rounded-lg p-2 border border-rose-500/20">
-                            <span className="text-[10px] text-rose-600 dark:text-rose-400 font-semibold uppercase block">
+                            <span className="text-10px text-rose-600 dark:text-rose-400 font-semibold uppercase block">
                               Total Keluar
                             </span>
                             <span className="font-mono font-extrabold text-sm text-rose-600 dark:text-rose-400 mt-0.5 block">
                               {data.totalQtyOut.toLocaleString("id-ID")}{" "}
-                              <span className="text-[10px] font-normal">{data.unit}</span>
+                              <span className="text-10px font-normal">{data.unit}</span>
                             </span>
                           </div>
 
                           <div className="bg-surface-muted/60 rounded-lg p-2 border border-border/50 col-span-2 flex items-center justify-between">
-                            <span className="text-[10px] text-muted-foreground font-semibold uppercase block">
+                            <span className="text-10px text-muted-foreground font-semibold uppercase block">
                               Stok Saat Ini
                             </span>
                             <span className="font-mono font-extrabold text-xs text-foreground">
@@ -2551,8 +2551,8 @@ function DashboardPage() {
                     variant={selectedTx.tx_type === "IN" ? "default" : "destructive"}
                     className={
                       selectedTx.tx_type === "IN"
-                        ? "text-[10px] font-mono bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase"
-                        : "text-[10px] font-mono bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20 uppercase"
+                        ? "text-10px font-mono bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 uppercase"
+                        : "text-10px font-mono bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20 uppercase"
                     }
                   >
                     {selectedTx.tx_type === "IN" ? "Barang Masuk (IN)" : "Barang Keluar (OUT)"}
@@ -2738,7 +2738,7 @@ function DashboardPage() {
 
                 <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-border/60">
                   <div className="bg-surface p-3 rounded-lg border border-border">
-                    <span className="text-[11px] text-muted-foreground font-semibold uppercase block">
+                    <span className="text-11px text-muted-foreground font-semibold uppercase block">
                       Frekuensi Keluar
                     </span>
                     <div className="flex items-baseline gap-1 mt-1">
@@ -2746,7 +2746,7 @@ function DashboardPage() {
                         {selectedOutgoingSparepart.frequency.toLocaleString("id-ID")}x
                       </span>
                       {selectedOutgoingSparepart.freqToday > 0 && (
-                        <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                        <span className="text-10px font-semibold text-amber-600 dark:text-amber-400">
                           (+{selectedOutgoingSparepart.freqToday} hr ini)
                         </span>
                       )}
@@ -2754,7 +2754,7 @@ function DashboardPage() {
                   </div>
 
                   <div className="bg-surface p-3 rounded-lg border border-rose-500/30 bg-rose-500/5">
-                    <span className="text-[11px] text-rose-600 dark:text-rose-400 font-semibold uppercase block">
+                    <span className="text-11px text-rose-600 dark:text-rose-400 font-semibold uppercase block">
                       Total Keluar
                     </span>
                     <span className="font-mono font-extrabold text-xl text-rose-600 dark:text-rose-400 mt-1 block">
@@ -2764,7 +2764,7 @@ function DashboardPage() {
                   </div>
 
                   <div className="bg-surface p-3 rounded-lg border border-border">
-                    <span className="text-[11px] text-muted-foreground font-semibold uppercase block">
+                    <span className="text-11px text-muted-foreground font-semibold uppercase block">
                       Sisa Stok Fisik
                     </span>
                     <span className="font-mono font-extrabold text-base text-foreground mt-1 block">
@@ -2776,7 +2776,7 @@ function DashboardPage() {
                   </div>
 
                   <div className="bg-surface p-3 rounded-lg border border-border">
-                    <span className="text-[11px] text-muted-foreground font-semibold uppercase block">
+                    <span className="text-11px text-muted-foreground font-semibold uppercase block">
                       Batas Buffer (Min)
                     </span>
                     <span className="font-mono font-extrabold text-base text-muted-foreground mt-1 block">

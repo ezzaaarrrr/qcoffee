@@ -211,7 +211,7 @@ function GrindingPage() {
       </div>
 
       <Panel bodyClassName="p-0 overflow-x-auto">
-        <table className="w-full min-w-[900px] text-sm">
+        <table className="w-full min-w-900px text-sm">
           <thead>
             <tr className="border-b border-border">
               {[
@@ -272,7 +272,7 @@ function GrindingPage() {
 
       {/* Create dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto">
+        <DialogContent className="max-h-92vh max-w-6xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Checklist Grinding Baru</DialogTitle>
             <DialogDescription>
@@ -537,13 +537,13 @@ function GrindingPage() {
 
       {/* Detail dialog */}
       <Dialog open={!!detailId} onOpenChange={(v) => !v && setDetailId(null)}>
-        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+        <DialogContent className="max-h-90vh max-w-5xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detail Item Grinding</DialogTitle>
             <DialogDescription>Rincian setiap baris proses pada checklist ini.</DialogDescription>
           </DialogHeader>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-sm">
+            <table className="w-full min-w-900px text-sm">
               <thead>
                 <tr className="border-b border-border">
                   {[

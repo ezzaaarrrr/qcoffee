@@ -12,7 +12,7 @@ export function StatusBadge({ status, className }: { status: FormStatus; classNa
   return (
     <span
       className={cn(
-        "inline-block border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+        "inline-block border px-2 py-0.5 text-10px font-bold uppercase tracking-wide",
         STYLES[status],
         className,
       )}

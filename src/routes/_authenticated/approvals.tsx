@@ -231,7 +231,7 @@ function ApprovalsPage() {
             }
             bodyClassName="p-0 overflow-x-auto"
           >
-            <table className="w-full min-w-[760px] text-sm text-left">
+            <table className="w-full min-w-760px text-sm text-left">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase text-muted-foreground">
@@ -359,7 +359,7 @@ function ApprovalsPage() {
             title="Riwayat & Monitoring Pemotongan Stok Order Sparepart"
             bodyClassName="p-0 overflow-x-auto"
           >
-            <table className="w-full min-w-[760px] text-sm text-left">
+            <table className="w-full min-w-760px text-sm text-left">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase text-muted-foreground">

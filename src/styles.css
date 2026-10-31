@@ -140,6 +140,303 @@
     letter-spacing: 0.08em;
     color: var(--color-muted-foreground);
   }
+
+  /* Utilitas tambahan untuk nilai arbitrary [..] yang Tailwind v3.4.19
+     tidak bisa deteksi via content scanner/safelist di production build. */
+  .shadow-login-card {
+    box-shadow: 0 20px 50px rgba(2, 13, 38, 0.9);
+  }
+  .shadow-login-dialog {
+    box-shadow: 0 20px 50px rgba(2, 13, 38, 0.95);
+  }
+  .drop-shadow-logo {
+    filter: drop-shadow(0 15px 30px rgba(0, 0, 0, 0.7));
+  }
+  .drop-shadow-grade {
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.06));
+  }
+  .text-10px {
+    font-size: 10px;
+  }
+  .text-11px {
+    font-size: 11px;
+  }
+  .text-11-5px {
+    font-size: 11.5px;
+  }
+  .text-13px {
+    font-size: 13px;
+  }
+  .text-8px {
+    font-size: 8px;
+  }
+  .text-9-5px {
+    font-size: 9.5px;
+  }
+  .text-9px {
+    font-size: 9px;
+  }
+  .min-h-300px {
+    min-height: 300px;
+  }
+  .min-h-280px {
+    min-height: 280px;
+  }
+  .md\:min-h-520px {
+    min-height: 520px;
+  }
+  .max-w-360px {
+    max-width: 360px;
+  }
+  .max-w-180px {
+    max-width: 180px;
+  }
+  .min-w-1000px {
+    min-width: 1000px;
+  }
+  .min-w-200px {
+    min-width: 200px;
+  }
+  .w-100px {
+    width: 100px;
+  }
+  .w-110px {
+    width: 110px;
+  }
+  .w-115px {
+    width: 115px;
+  }
+  .w-140px {
+    width: 140px;
+  }
+  .w-340px {
+    width: 340px;
+  }
+  .w-90px {
+    width: 90px;
+  }
+  .w-95px {
+    width: 95px;
+  }
+  .py-84px {
+    padding-top: 84px;
+    padding-bottom: 84px;
+  }
+  .rounded-2px {
+    border-radius: 2px;
+  }
+  .rounded-inherit {
+    border-radius: inherit;
+  }
+  .scale-98 {
+    transform: scale(0.98);
+  }
+  .scale-99 {
+    transform: scale(0.99);
+  }
+  .scale-998 {
+    transform: scale(0.998);
+  }
+  .stroke-1-8 {
+    stroke-width: 1.8;
+  }
+  .stroke-2 {
+    stroke-width: 2;
+  }
+  .top-1px {
+    top: 1px;
+  }
+  .top-60pct {
+    top: 60%;
+  }
+  .tracking-0-5em {
+    letter-spacing: 0.5em;
+  }
+  /* Tambahan utilitas untuk nilai arbitrary yang tersisa */
+  .max-h-85vh {
+    max-height: 85vh;
+  }
+  .max-h-90vh {
+    max-height: 90vh;
+  }
+  .max-h-92vh {
+    max-height: 92vh;
+  }
+  .max-h-55vh {
+    max-height: 55vh;
+  }
+  .max-h-70vh {
+    max-height: 70vh;
+  }
+  .p-1px {
+    padding: 1px;
+  }
+  .h-1px {
+    height: 1px;
+  }
+  .w-1px {
+    width: 1px;
+  }
+  .border-1-5px {
+    border-width: 1.5px;
+  }
+  .ring-3px {
+    --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
+    --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(3px + var(--tw-ring-offset-width)) var(--tw-ring-color);
+    box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
+  }
+  .translate-y-2px {
+    transform: translateY(2px);
+  }
+  .shadow-sidebar-border {
+    box-shadow: 0 0 0 1px var(--sidebar-border);
+  }
+  .shadow-sidebar-accent {
+    box-shadow: 0 0 0 1px var(--sidebar-accent);
+  }
+  .after\:w-2px::after {
+    content: var(--tw-content);
+    width: 2px;
+  }
+  .bg-black-25 {
+    background-color: rgba(0, 0, 0, 0.25);
+  }
+  .text-0-8rem {
+    font-size: 0.8rem;
+  }
+  .min-w-8rem {
+    min-width: 8rem;
+  }
+  .min-w-12rem {
+    min-width: 12rem;
+  }
+  .min-h-60px {
+    min-height: 60px;
+  }
+  .max-h-300px {
+    max-height: 300px;
+  }
+  .rounded-t-10px {
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+  }
+  .w-68px {
+    width: 68px;
+  }
+  .left-50pct {
+    left: 50%;
+  }
+  .top-50pct {
+    top: 50%;
+  }
+  .translate-x-neg-50pct {
+    transform: translateX(-50%);
+  }
+  .translate-y-neg-50pct {
+    transform: translateY(-50%);
+  }
+  .drop-shadow-grade-dark {
+    filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.5));
+  }
+  .scale-99-active {
+    transform: scale(0.99);
+  }
+  /* Opacity modifier utilitas yang Tailwind v3.4.19 tidak deteksi */
+  .bg-blue-600-90 {
+    background-color: rgba(59, 130, 246, 0.9);
+  }
+  .bg-cyan-600-90 {
+    background-color: rgba(6, 182, 212, 0.9);
+  }
+  .bg-amber-600-90 {
+    background-color: rgba(245, 158, 11, 0.9);
+  }
+  .border-blue-400-40 {
+    border-color: rgba(96, 165, 250, 0.4);
+  }
+  .border-cyan-400-40 {
+    border-color: rgba(34, 211, 238, 0.4);
+  }
+  .border-amber-400-40 {
+    border-color: rgba(251, 191, 36, 0.4);
+  }
+  .border-border-70 {
+    border-color: oklch(0.925 0.008 255.5 / 0.7);
+  }
+  .dark .border-border-70 {
+    border-color: oklch(1 0 0 / 0.12);
+  }
+  .text-blue-100-90 {
+    color: rgba(219, 234, 254, 0.9);
+  }
+  .text-cyan-100-90 {
+    color: rgba(207, 253, 255, 0.9);
+  }
+  .text-amber-100-90 {
+    color: rgba(255, 251, 235, 0.9);
+  }
+  .w-420px {
+    width: 420px;
+  }
+  .scale-1-01 {
+    transform: scale(1.01);
+  }
+  .min-w-130px {
+    min-width: 130px;
+  }
+  .min-w-155px {
+    min-width: 155px;
+  }
+  .w-75px {
+    width: 75px;
+  }
+  .min-w-32px {
+    min-width: 32px;
+  }
+  .min-w-110px {
+    min-width: 110px;
+  }
+  .min-w-240px {
+    min-width: 240px;
+  }
+  .min-w-600px {
+    min-width: 600px;
+  }
+  .min-w-840px {
+    min-width: 840px;
+  }
+  .min-w-80px {
+    min-width: 80px;
+  }
+  .min-w-760px {
+    min-width: 760px;
+  }
+  .md\:min-w-420px {
+    min-width: 420px;
+  }
+  .ring-white-90 {
+    --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
+    --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width)) rgba(255,255,255,0.9);
+    box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
+  }
+  .hover\:border-blue-500-60:hover {
+    border-color: rgba(59, 130, 246, 0.6);
+  }
+  .hover\:border-indigo-500-60:hover {
+    border-color: rgba(99, 102, 241, 0.6);
+  }
+  .hover\:bg-muted-40:hover {
+    background-color: oklch(0.968 0.006 247.9 / 0.4);
+  }
+  .border-blue-900-40 {
+    border-color: rgba(30, 58, 138, 0.4);
+  }
+  .bg-primary-90 {
+    background-color: rgba(var(--primary-rgb), 0.9);
+  }
+  .translate-y-neg-3px {
+    transform: translateY(-3px);
+  }
 }
 
 .font-mono {

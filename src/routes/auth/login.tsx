@@ -184,15 +184,21 @@ function getCandidateEmailsForAccess(target: LoginAccessTarget): string[] {
 function LoginPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [selectedAccess, setSelectedAccess] = useState<LoginAccessTarget>(() => {
+  const [selectedAccess, setSelectedAccess] = useState<LoginAccessTarget>("GDSP1201");
+
+  // Sinkronisasi akses terakhir dari localStorage hanya di browser (setelah mount)
+  // agar tidak error localStorage is not defined saat SSR (renderToReadableStream)
+  useEffect(() => {
     const cachedAccess = localStorage.getItem("last_active_access") as LoginAccessTarget;
     if (cachedAccess && LOGIN_ACCESS_TARGETS.some((t) => t.id === cachedAccess)) {
-      return cachedAccess;
+      setSelectedAccess(cachedAccess);
+      return;
     }
     const cachedDept = localStorage.getItem("last_active_dept");
-    if (cachedDept && cachedDept.toUpperCase() === "TEKNIK") return "TEKNIK";
-    return "GDSP1201";
-  });
+    if (cachedDept && cachedDept.toUpperCase() === "TEKNIK") {
+      setSelectedAccess("TEKNIK");
+    }
+  }, []);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [customEmail, setCustomEmail] = useState("");
@@ -465,25 +471,25 @@ function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#030a1a] text-slate-100 p-4 sm:p-6 md:p-8">
-      <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 rounded-2xl overflow-hidden border border-blue-900/40 shadow-[0_20px_50px_rgba(2,13,38,0.9)] bg-[#071633]">
+    <div className="min-h-screen flex items-center justify-center bg-custom-bg text-slate-100 p-4 sm:p-6 md:p-8">
+      <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 rounded-2xl overflow-hidden border border-blue-900/40 shadow-login-card bg-custom-surface">
         {/* Left Side: Uploaded Branding Image */}
-        <div className="relative flex flex-col items-center justify-center p-8 bg-[#041129] border-b md:border-b-0 md:border-r border-blue-900/40 min-h-[300px] md:min-h-[520px] overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-tr from-[#020917] via-transparent to-blue-500/10 pointer-events-none" />
+        <div className="relative flex flex-col items-center justify-center p-8 bg-custom-surface-2 border-b md:border-b-0 md:border-r border-blue-900/40 min-h-300px md:min-h-520px overflow-hidden group">
+          <div className="absolute inset-0 bg-gradient-to-tr from-custom-gradient-from via-transparent to-blue-500/10 pointer-events-none" />
           <img
             src="/logo-sparepart.png"
             alt="GUDANG SPAREPART M2 - Sparepart Management System"
-            className="w-full max-w-[360px] object-contain drop-shadow-[0_15px_30px_rgba(0,0,0,0.7)] transition-all duration-500 group-hover:scale-105"
+            className="w-full max-w-360px object-contain drop-shadow-logo transition-all duration-500 group-hover:scale-105"
           />
         </div>
 
         {/* Right Side: Login Form */}
-        <div className="p-6 sm:p-8 md:p-10 flex flex-col justify-center bg-[#081b3d]">
+        <div className="p-6 sm:p-8 md:p-10 flex flex-col justify-center bg-custom-panel">
           <div className="mb-6 flex items-center gap-3">
             <img
               src="/logo-sparepart-icon.png"
               alt="Logo Small"
-              className="size-11 object-contain rounded-lg border border-blue-500/20 bg-[#041129] p-1 md:hidden shadow-md"
+              className="size-11 object-contain rounded-lg border border-blue-500/20 bg-custom-surface-2 p-1 md:hidden shadow-md"
             />
             <div>
               <h1 className="text-3xl sm:text-4xl font-bold font-Poppins,sans-serif tracking-tight text-white">
@@ -532,11 +538,11 @@ function LoginPage() {
               >
                 <SelectTrigger
                   id="role-select"
-                  className="w-full h-10 text-xs bg-[#05132d] border-blue-900/60 text-white focus:ring-cyan-500 cursor-pointer"
+                  className="w-full h-10 text-xs bg-custom-input border-blue-900/60 text-white focus:ring-cyan-500 cursor-pointer"
                 >
                   <SelectValue placeholder="Pilih User / Hak Akses" />
                 </SelectTrigger>
-                <SelectContent className="bg-[#081b3d] border-blue-900 text-white">
+                <SelectContent className="bg-custom-panel border-blue-900 text-white">
                   {LOGIN_ACCESS_TARGETS.map((target) => (
                     <SelectItem key={target.id} value={target.id}>
                       {target.label}
@@ -559,7 +565,7 @@ function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-300 font-medium transition-colors focus:outline-none cursor-pointer"
+                  className="flex items-center gap-1 text-11px text-cyan-400 hover:text-cyan-300 font-medium transition-colors focus:outline-none cursor-pointer"
                   title={showPassword ? "Sembunyikan kata sandi" : "Tampilkan detail kata sandi"}
                 >
                   {showPassword ? (
@@ -587,7 +593,7 @@ function LoginPage() {
                     setErrorMessage(null);
                   }}
                   placeholder="••••••••"
-                  className="h-10 text-xs bg-[#05132d] border-blue-900/60 text-white placeholder:text-blue-300/40 focus:border-cyan-500 pr-10"
+                  className="h-10 text-xs bg-custom-input border-blue-900/60 text-white placeholder:text-blue-300/40 focus:border-cyan-500 pr-10"
                 />
                 <button
                   type="button"
@@ -634,7 +640,7 @@ function LoginPage() {
 
           {/* Modal Dialog: Lupa Kata Sandi */}
           <Dialog open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
-            <DialogContent className="sm:max-w-md bg-[#071633] border border-blue-900/60 text-white shadow-[0_20px_50px_rgba(2,13,38,0.95)]">
+            <DialogContent className="sm:max-w-md bg-custom-surface border border-blue-900/60 text-white shadow-login-dialog">
               <DialogHeader>
                 <div className="flex items-center gap-2.5 mb-1.5">
                   <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
@@ -695,12 +701,12 @@ function LoginPage() {
                       value={resetEmail}
                       onChange={(e) => setResetEmail(e.target.value)}
                       placeholder="contoh: user@gmail.com"
-                      className="h-10 text-xs bg-[#05132d] border-blue-900/60 text-white placeholder:text-blue-300/40 focus:border-cyan-500"
+                      className="h-10 text-xs bg-custom-input border-blue-900/60 text-white placeholder:text-blue-300/40 focus:border-cyan-500"
                     />
                   </div>
 
                   {/* Informasi Bantuan Internal Super Admin */}
-                  <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-900/50 text-[11px] text-blue-200/80 space-y-1">
+                  <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-900/50 text-11px text-blue-200/80 space-y-1">
                     <p className="font-medium text-cyan-300 flex items-center gap-1.5">
                       <ShieldAlert className="size-3.5 shrink-0 text-cyan-400" />
                       Bantuan Langsung Super Admin

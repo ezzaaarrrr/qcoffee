@@ -197,7 +197,7 @@ function RoastingPage() {
       </div>
 
       <Panel bodyClassName="p-0 overflow-x-auto">
-        <table className="w-full min-w-[800px] text-sm">
+        <table className="w-full min-w-800px text-sm">
           <thead>
             <tr className="border-b border-border">
               {["Tanggal", "Shift", "Roaster", "Produk", "Status", ""].map((h) => (
@@ -246,7 +246,7 @@ function RoastingPage() {
       </Panel>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto">
+        <DialogContent className="max-h-92vh max-w-6xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Checklist Roasting Baru</DialogTitle>
             <DialogDescription>
@@ -509,7 +509,7 @@ function RoastingPage() {
       </Dialog>
 
       <Dialog open={!!detailId} onOpenChange={(v) => !v && setDetailId(null)}>
-        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+        <DialogContent className="max-h-90vh max-w-5xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detail Item Roasting</DialogTitle>
             <DialogDescription>Rincian batch roasting dan cooling.</DialogDescription>

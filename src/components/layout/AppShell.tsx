@@ -217,7 +217,7 @@ export function AppShell({
             <div className="flex flex-1 items-center justify-between min-w-0">
               <span className="truncate">{item.label}</span>
               {isApproval && pendingOrdersCount > 0 && isGdspUser && (
-                <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-0.2 text-[10px] font-bold text-white shrink-0 animate-pulse">
+                <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-0.2 text-10px font-bold text-white shrink-0 animate-pulse">
                   {pendingOrdersCount}
                 </span>
               )}
@@ -231,11 +231,11 @@ export function AppShell({
     <div className="flex h-screen overflow-hidden bg-background font-sans text-foreground">
       <aside
         className={cn(
-          "flex h-screen shrink-0 flex-col border-r border-blue-900/40 bg-[#071633] text-white transition-[width] duration-200 sticky top-0 overflow-y-auto shadow-md",
-          collapsed ? "w-[68px]" : "w-64",
+          "flex h-screen shrink-0 flex-col border-r border-blue-900-40 bg-custom-surface text-white transition-[width] duration-200 sticky top-0 overflow-y-auto shadow-md",
+          collapsed ? "w-68px" : "w-64",
         )}
       >
-        <div className="flex h-16 shrink-0 items-center border-b border-blue-900/40 px-3.5">
+        <div className="flex h-16 shrink-0 items-center border-b border-blue-900-40 px-3.5">
           <div className="flex items-center gap-2.5">
             <div className="flex size-10 shrink-0 items-center justify-center">
               <img
@@ -246,10 +246,10 @@ export function AppShell({
             </div>
             {!collapsed && (
               <div className="flex flex-col justify-center leading-tight">
-                <span className="text-[13px] font-bold uppercase tracking-tight text-white">
+                <span className="text-13px font-bold uppercase tracking-tight text-white">
                   Gudang
                 </span>
-                <span className="text-[13px] font-bold uppercase tracking-tight text-white whitespace-nowrap">
+                <span className="text-13px font-bold uppercase tracking-tight text-white whitespace-nowrap">
                   Sparepart <span className="text-amber-300">M2</span>
                 </span>
               </div>
@@ -265,7 +265,7 @@ export function AppShell({
               {!collapsed && (
                 <div
                   className={cn(
-                    "text-[10px] font-bold uppercase tracking-wider text-blue-300/80 mb-2 px-3",
+                    "text-10px font-bold uppercase tracking-wider text-blue-300/80 mb-2 px-3",
                     visibleOperasional.length > 0 ? "mt-8" : "mt-2",
                   )}
                 >
@@ -273,14 +273,14 @@ export function AppShell({
                 </div>
               )}
               {collapsed && visibleOperasional.length > 0 && (
-                <div className="my-3 border-t border-blue-900/40" />
+                <div className="my-3 border-t border-blue-900-40" />
               )}
               {renderNav(visibleManajemen)}
             </>
           )}
         </nav>
 
-        <div className="border-t border-blue-900/40 p-3 shrink-0">
+        <div className="border-t border-blue-900-40 p-3 shrink-0">
           <button
             onClick={() => setCollapsed((c) => !c)}
             className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
@@ -305,7 +305,7 @@ export function AppShell({
                 <span className="truncate text-xs font-semibold leading-tight text-white">
                   {profile?.full_name || profile?.email || "Pengguna"}
                 </span>
-                <span className="truncate text-[10px] text-blue-300/70">
+                <span className="truncate text-10px text-blue-300/70">
                   {roles.map((r) => ROLE_LABELS[r]).join(", ") || "Tanpa Peran"}
                 </span>
               </div>

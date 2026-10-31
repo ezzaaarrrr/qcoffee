@@ -559,7 +559,7 @@ function UserManagementPage() {
                       <div className="flex items-center gap-2">
                         <span>{p.full_name || "—"}</span>
                         {isCurrentUser && (
-                          <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                          <Badge variant="outline" className="text-10px py-0 px-1.5">
                             Akun Anda
                           </Badge>
                         )}
@@ -738,7 +738,7 @@ function UserManagementPage() {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label>Departemen / Divisi</Label>
-                <span className="text-[11px] text-muted-foreground">Pilih atau ketik</span>
+                <span className="text-11px text-muted-foreground">Pilih atau ketik</span>
               </div>
               <Input
                 value={newDept}
@@ -760,7 +760,7 @@ function UserManagementPage() {
                     type="button"
                     onClick={() => setNewDept(d)}
                     className={cn(
-                      "text-[10px] px-2 py-0.5 rounded border transition-colors cursor-pointer",
+                      "text-10px px-2 py-0.5 rounded border transition-colors cursor-pointer",
                       newDept === d
                         ? "bg-primary text-primary-foreground border-primary font-medium"
                         : "bg-surface-muted hover:bg-surface-muted/80 text-muted-foreground border-border",
@@ -827,7 +827,7 @@ function UserManagementPage() {
                     {passwordUser.full_name || "Tanpa Nama"}
                   </span>
                   {roleOf(passwordUser.id) && (
-                    <Badge variant="outline" className="text-[10px] font-normal py-0">
+                    <Badge variant="outline" className="text-10px font-normal py-0">
                       {ROLE_LABELS[roleOf(passwordUser.id)!]}
                     </Badge>
                   )}
@@ -912,7 +912,7 @@ function UserManagementPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+                <div className="flex items-center justify-between text-11px text-muted-foreground pt-0.5">
                   <span>
                     Panjang: {newPasswordInput.length} karakter{" "}
                     {newPasswordInput.length >= 8 ? "✓" : "(min. 8)"}
@@ -928,7 +928,7 @@ function UserManagementPage() {
               {/* Info Keamanan */}
               <div className="rounded border border-primary/20 bg-primary/5 p-2.5 text-xs text-muted-foreground flex gap-2">
                 <Info className="size-4 text-primary shrink-0 mt-0.5" />
-                <div className="leading-relaxed text-[11.5px]">
+                <div className="leading-relaxed text-11-5px">
                   Kata sandi yang disimpan akan dienkripsi secara aman dengan algoritma bcrypt.
                   Salin kata sandi baru untuk dibagikan kepada pengguna yang bersangkutan.
                 </div>
@@ -983,7 +983,7 @@ function UserManagementPage() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <Label>Departemen / Divisi</Label>
-                  <span className="text-[11px] text-muted-foreground">Pilih atau ketik</span>
+                  <span className="text-11px text-muted-foreground">Pilih atau ketik</span>
                 </div>
                 <Input
                   value={editDept}
@@ -1005,7 +1005,7 @@ function UserManagementPage() {
                       type="button"
                       onClick={() => setEditDept(d)}
                       className={cn(
-                        "text-[10px] px-2 py-0.5 rounded border transition-colors cursor-pointer",
+                        "text-10px px-2 py-0.5 rounded border transition-colors cursor-pointer",
                         editDept === d
                           ? "bg-primary text-primary-foreground border-primary font-medium"
                           : "bg-surface-muted hover:bg-surface-muted/80 text-muted-foreground border-border",

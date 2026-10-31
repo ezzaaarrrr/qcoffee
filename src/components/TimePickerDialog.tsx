@@ -56,7 +56,7 @@ function ScrollColumn({
 
   return (
     <div className="flex flex-col items-center gap-1 flex-1">
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+      <span className="text-10px font-semibold uppercase tracking-widest text-muted-foreground mb-1">
         {label}
       </span>
       <div
@@ -64,7 +64,7 @@ function ScrollColumn({
         className="h-48 overflow-y-auto overscroll-contain w-full rounded-md border border-border bg-background"
         style={{ scrollbarWidth: "thin" }}
       >
-        <div className="py-[84px]">
+        <div className="py-84px">
           {items.map((v) => (
             <button
               key={v}

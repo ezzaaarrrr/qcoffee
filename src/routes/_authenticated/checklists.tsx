@@ -497,7 +497,7 @@ function DashboardChecklistPage() {
             </div>
             <div className="flex items-center gap-2">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="h-8 text-xs w-[140px]">
+                <SelectTrigger className="h-8 text-xs w-140px">
                   <SelectValue placeholder="Status Approval" />
                 </SelectTrigger>
                 <SelectContent>

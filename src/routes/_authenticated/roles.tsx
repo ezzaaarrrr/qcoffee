@@ -453,7 +453,7 @@ function RolesAndDepartmentsPage() {
                   <Shield className="size-3.5" />
                   <span>{dept.name}</span>
                   {dept.code && (
-                    <span className="opacity-70 text-[10px] font-mono">({dept.code})</span>
+                    <span className="opacity-70 text-10px font-mono">({dept.code})</span>
                   )}
                 </Button>
               );
@@ -592,7 +592,7 @@ function RolesAndDepartmentsPage() {
                               <div className="flex items-center gap-2">
                                 <span>{route.label}</span>
                                 {isAdminOnlyRoute && (
-                                  <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono">
+                                  <span className="text-10px bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded font-mono">
                                     Admin Only
                                   </span>
                                 )}
@@ -674,7 +674,7 @@ function RolesAndDepartmentsPage() {
                   <td className="px-4 py-3 font-medium flex items-center gap-2">
                     <span>{d.name}</span>
                     {d.name.toUpperCase() === "TEKNIK" && (
-                      <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded font-mono font-semibold">
+                      <span className="text-10px bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded font-mono font-semibold">
                         Baru
                       </span>
                     )}
@@ -844,7 +844,7 @@ function RolesAndDepartmentsPage() {
 
       {/* MODAL DIALOG: SKRIP SQL MIGRASI SUPABASE */}
       <Dialog open={isSqlModalOpen} onOpenChange={setIsSqlModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+        <DialogContent className="max-w-2xl max-h-85vh flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Database className="size-5 text-blue-500" />
