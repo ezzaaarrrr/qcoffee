@@ -4411,7 +4411,7 @@ function WarehouseAndProductsPage() {
                   ? "Memantau dan mengelola stok cadangan sparepart untuk menjaga ketersediaan dan mendukung kebutuhan operasional."
                   : activeTab === "logs"
                     ? "Rekam jejak seluruh aktivitas gudang"
-                    : "Kelola data master barang, pencatatan masuk/keluar, audit stok."}
+                    : "Kelola data master barang, pencatatan masuk/keluar, audit stok"}
               </p>
             )}
           </div>
@@ -4591,13 +4591,13 @@ function WarehouseAndProductsPage() {
                         ⚠ ORDER (≤ Minimal Stok)
                       </SelectItem>
                       <SelectItem value="SAFETY" className="text-xs font-semibold text-emerald-600">
-                        ✓ SAFETY STOK (&gt; Minimal Stok)
+                        ✓ SAFETY STOCK (&gt; Minimal Stok)
                       </SelectItem>
                       <SelectItem
                         value="OUT_OF_STOCK"
                         className="text-xs font-semibold text-amber-600"
                       >
-                        ⚡ OUT OF STOK (&gt; Maksimal Stok)
+                        ⚡ OUT OF STOCK (&gt; Maksimal Stok)
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -4805,7 +4805,7 @@ function WarehouseAndProductsPage() {
                   </div>
                 </div>
 
-                {/* Card 4: SAFETY STOK */}
+                {/* Card 4: SAFETY STOCK */}
                 <div
                   className={cn(
                     "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
@@ -4817,14 +4817,14 @@ function WarehouseAndProductsPage() {
                   onClick={() =>
                     setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
                   }
-                  title="Klik untuk memfilter barang berstatus SAFETY STOK (Stok aman > minimum)"
+                  title="Klik untuk memfilter barang berstatus SAFETY STOCK (Stok aman > minimum)"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <div className="flex items-center justify-center size-8 rounded-md bg-green-500 text-white border border-green-400 group-hover:scale-105 transition-transform">
                         <ShieldCheck className="size-4" />
                       </div>
-                      <span className="label-caps !text-white">Safety Stok</span>
+                      <span className="label-caps !text-white">Safety Stock</span>
                     </div>
 
                     {stockStatusFilter === "SAFETY" && (
@@ -4847,7 +4847,7 @@ function WarehouseAndProductsPage() {
                   </div>
                 </div>
 
-                {/* Card 5: OUT OF STOK */}
+                {/* Card 5: OUT OF STOCK */}
                 <div
                   className={cn(
                     "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
@@ -4861,20 +4861,20 @@ function WarehouseAndProductsPage() {
                       stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK",
                     )
                   }
-                  title="Klik untuk memfilter barang berstatus OUT OF STOK (Melebihi maks. stok)"
+                  title="Klik untuk memfilter barang berstatus OUT OF STOCK (Melebihi maks. stok)"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <div className="flex items-center justify-center size-8 rounded-md bg-amber-500 text-white border border-amber-400 group-hover:scale-105 transition-transform">
                         <TrendingDown className="size-4" />
                       </div>
-                      <span className="label-caps !text-white">Out of Stok</span>
+                      <span className="label-caps !text-white">Out of Stock</span>
                     </div>
 
                     {stockStatusFilter === "OUT_OF_STOCK" && (
                       <div
                         className="size-2 rounded-full bg-white animate-pulse"
-                        title="Filter Out of Stok Aktif"
+                        title="Filter Out of Stock Aktif"
                       />
                     )}
                   </div>
@@ -4912,7 +4912,7 @@ function WarehouseAndProductsPage() {
                         onClick={() =>
                           setStockStatusFilter(stockStatusFilter === "SAFETY" ? "ALL" : "SAFETY")
                         }
-                        title={`Safety Stok: ${obsSafetyCount} item (${obsSafetyPct}%) — Klik untuk filter`}
+                        title={`Safety Stock: ${obsSafetyCount} item (${obsSafetyPct}%) — Klik untuk filter`}
                       />
                     )}
                     {obsOrderPct > 0 && (
@@ -4934,7 +4934,7 @@ function WarehouseAndProductsPage() {
                             stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK",
                           )
                         }
-                        title={`Out of Stok: ${obsOutOfStockCount} item (${obsOutOfStockPct}%) — Klik untuk filter`}
+                        title={`Out of Stock: ${obsOutOfStockCount} item (${obsOutOfStockPct}%) — Klik untuk filter`}
                       />
                     )}
                   </div>
@@ -4991,11 +4991,11 @@ function WarehouseAndProductsPage() {
                           stockStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK",
                         )
                       }
-                      title="Klik untuk memfilter barang Out of Stok"
+                      title="Klik untuk memfilter barang Out of Stock"
                     >
                       <div className="size-2.5 rounded-full bg-amber-500" />
                       <span className="text-[10px] text-muted-foreground">
-                        Out of Stok{" "}
+                        Out of Stock{" "}
                         <span className="font-mono font-semibold text-amber-600 dark:text-amber-400">
                           {obsOutOfStockPct}%
                         </span>
@@ -5164,13 +5164,13 @@ function WarehouseAndProductsPage() {
                       // Logika Kondisi:
                       // 1. Order warna merah (endingBalance <= minStock)
                       // 2. Safety stok warna hijau (endingBalance > minStock dan <= maxStock)
-                      // 3. Out of stok warna kuning (endingBalance > maxStock)
-                      let kondisiText = "SAFETY STOK";
+                      // 3. Out of stock warna kuning (endingBalance > maxStock)
+                      let kondisiText = "SAFETY STOCK";
                       let kondisiStyle =
                         "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
 
                       if (maxStock !== null && !isNaN(maxStock) && endingBalance > maxStock) {
-                        kondisiText = "OUT OF STOK";
+                        kondisiText = "OUT OF STOCK";
                         kondisiStyle =
                           "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
                       } else if (endingBalance <= minStock) {
@@ -6445,13 +6445,13 @@ function WarehouseAndProductsPage() {
                       ⚠ ORDER (≤ Minimal Stok)
                     </SelectItem>
                     <SelectItem value="SAFETY" className="text-xs font-semibold text-emerald-600">
-                      ✓ SAFETY STOK (&gt; Minimal Stok)
+                      ✓ SAFETY STOCK (&gt; Minimal Stok)
                     </SelectItem>
                     <SelectItem
                       value="OUT_OF_STOCK"
                       className="text-xs font-semibold text-amber-600"
                     >
-                      ⚡ OUT OF STOK (&gt; Maksimal Stok)
+                      ⚡ OUT OF STOCK (&gt; Maksimal Stok)
                     </SelectItem>
                   </SelectContent>
                 </Select>
@@ -6723,7 +6723,7 @@ function WarehouseAndProductsPage() {
                         <div className="flex items-center justify-center size-8 rounded-md bg-green-500 text-white border border-green-400 group-hover:scale-105 transition-transform">
                           <ShieldCheck className="size-4" />
                         </div>
-                        <span className="label-caps !text-white">Safety Stok</span>
+                        <span className="label-caps !text-white">Safety Stock</span>
                       </div>
 
                       {bufferStatusFilter === "SAFETY" && (
@@ -6746,7 +6746,7 @@ function WarehouseAndProductsPage() {
                     </div>
                   </div>
 
-                  {/* Card 5: OUT OF STOK */}
+                  {/* Card 5: OUT OF STOCK */}
                   <div
                     className={cn(
                       "rise-in group relative overflow-hidden rounded-lg border p-4 text-white shadow-md transition-all duration-200 cursor-pointer active:scale-[0.98] select-none",
@@ -6760,20 +6760,20 @@ function WarehouseAndProductsPage() {
                         bufferStatusFilter === "OUT_OF_STOCK" ? "ALL" : "OUT_OF_STOCK",
                       )
                     }
-                    title="Klik untuk memfilter barang buffer berstatus OUT OF STOK (Melebihi maks. stok)"
+                    title="Klik untuk memfilter barang buffer berstatus OUT OF STOCK (Melebihi maks. stok)"
                   >
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <div className="flex items-center justify-center size-8 rounded-md bg-amber-500 text-white border border-amber-400 group-hover:scale-105 transition-transform">
                           <TrendingDown className="size-4" />
                         </div>
-                        <span className="label-caps !text-white">Out of Stok</span>
+                        <span className="label-caps !text-white">Out of Stock</span>
                       </div>
 
                       {bufferStatusFilter === "OUT_OF_STOCK" && (
                         <div
                           className="size-2 rounded-full bg-white animate-pulse"
-                          title="Filter Out of Stok Aktif"
+                          title="Filter Out of Stock Aktif"
                         />
                       )}
                     </div>
@@ -6808,7 +6808,7 @@ function WarehouseAndProductsPage() {
                         <div
                           className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-700 ease-out"
                           style={{ width: `${bufSafetyPct}%` }}
-                          title={`Safety Stok: ${bufSafetyCount} item (${bufSafetyPct}%)`}
+                          title={`Safety Stock: ${bufSafetyCount} item (${bufSafetyPct}%)`}
                         />
                       )}
                       {bufOrderPct > 0 && (
@@ -6822,7 +6822,7 @@ function WarehouseAndProductsPage() {
                         <div
                           className="h-full bg-gradient-to-r from-amber-500 to-amber-400 transition-all duration-700 ease-out"
                           style={{ width: `${bufOutOfStockPct}%` }}
-                          title={`Out of Stok: ${bufOutOfStockCount} item (${bufOutOfStockPct}%)`}
+                          title={`Out of Stock: ${bufOutOfStockCount} item (${bufOutOfStockPct}%)`}
                         />
                       )}
                     </div>
@@ -6848,7 +6848,7 @@ function WarehouseAndProductsPage() {
                       <div className="flex items-center gap-1.5">
                         <div className="size-2.5 rounded-full bg-amber-500" />
                         <span className="text-[10px] text-muted-foreground">
-                          Out of Stok{" "}
+                          Out of Stock{" "}
                           <span className="font-mono font-semibold text-amber-600 dark:text-amber-400">
                             {bufOutOfStockPct}%
                           </span>
@@ -7058,7 +7058,7 @@ function WarehouseAndProductsPage() {
                           let kondisiStyle =
                             "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
                           if (isOutOfStock) {
-                            kondisiText = "OUT OF STOK";
+                            kondisiText = "OUT OF STOCK";
                             kondisiStyle =
                               "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
                           } else if (isOrder) {
@@ -10100,14 +10100,14 @@ function WarehouseAndProductsPage() {
               const maxStock =
                 rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
 
-              let kondisiText = "SAFETY STOK";
+              let kondisiText = "SAFETY STOCK";
               let kondisiBadgeClass =
                 "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30";
               let stokSaatIniBoxClass =
                 "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
 
               if (maxStock !== null && !isNaN(maxStock) && current > maxStock) {
-                kondisiText = "OUT OF STOK";
+                kondisiText = "OUT OF STOCK";
                 kondisiBadgeClass =
                   "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30";
                 stokSaatIniBoxClass =
@@ -10291,14 +10291,14 @@ function WarehouseAndProductsPage() {
               const maxStock =
                 rawMax !== null && rawMax !== undefined && rawMax !== "" ? Number(rawMax) : null;
 
-              let kondisiText = "SAFETY STOK";
+              let kondisiText = "SAFETY STOCK";
               let kondisiBadgeClass =
                 "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30";
               let stokSaatIniBoxClass =
                 "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
 
               if (maxStock !== null && !isNaN(maxStock) && current > maxStock) {
-                kondisiText = "OUT OF STOK";
+                kondisiText = "OUT OF STOCK";
                 kondisiBadgeClass =
                   "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30";
                 stokSaatIniBoxClass =

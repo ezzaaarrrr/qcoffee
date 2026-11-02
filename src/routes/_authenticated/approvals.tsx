@@ -301,15 +301,6 @@ function ApprovalsPage() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="checklists" className="text-xs gap-1.5 font-medium">
-              <ClipboardList className="size-3.5" />
-              <span>Checklist Produksi</span>
-              {checklistQueue.length > 0 && (
-                <span className="ml-1 rounded-full bg-amber-500 text-white px-1.5 py-0.2 text-[10px] font-bold">
-                  {checklistQueue.length}
-                </span>
-              )}
-            </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -493,7 +484,7 @@ function ApprovalsPage() {
                     No. Order & Waktu Transaksi
                   </th>
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase text-muted-foreground">
-                    Barang & Kuantitas Digunakan
+                    KETERANGAN
                   </th>
                   <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase text-muted-foreground">
                     Stok Sebelum
@@ -502,10 +493,10 @@ function ApprovalsPage() {
                     Stok Sesudah
                   </th>
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase text-muted-foreground">
-                    Pemohon (Teknik)
+                    USER Teknik
                   </th>
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase text-muted-foreground">
-                    User Pemotong Stok (GDSP)
+                    User GDSP
                   </th>
                   <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase text-muted-foreground">
                     Status
@@ -615,7 +606,7 @@ function ApprovalsPage() {
                       <td className="px-4 py-3 align-top text-center">
                         {isApproved ? (
                           <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 text-[10px] font-semibold whitespace-nowrap">
-                            ✓ AAPPROVAL
+                            ✓ APPROVAL
                           </Badge>
                         ) : (
                           <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 text-[10px] font-semibold whitespace-nowrap">
