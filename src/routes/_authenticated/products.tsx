@@ -53,7 +53,9 @@ import {
   CheckCircle2,
   XCircle,
   Info,
+  RotateCcw,
 } from "lucide-react";
+import { OBS_DEFAULT_ITEMS } from "@/data/obsDefaultItems";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
@@ -141,22 +143,26 @@ export const Route = createFileRoute("/_authenticated/products")({
   head: ({ match }: any) => {
     const tab = match?.search?.tab;
     const title =
-      tab === "buffer_stock"
-        ? "Buffer Stok"
-        : tab === "transactions"
-          ? "Riwayat Mutasi"
-          : tab === "logs"
-            ? "Activity Log"
-            : "OBS Sparepart";
+      tab === "master"
+        ? "Master Barang"
+        : tab === "buffer_stock"
+          ? "Buffer Stok"
+          : tab === "transactions"
+            ? "Riwayat Mutasi"
+            : tab === "logs"
+              ? "Activity Log"
+              : "OBS Sparepart";
 
     const description =
-      tab === "buffer_stock"
-        ? "Memantau stok cadangan untuk menjaga ketersediaan barang dan mengantisipasi kebutuhan yang tidak terduga."
-        : tab === "transactions"
-          ? "Riwayat mutasi keluar dan masuk inventaris sparepart."
-          : tab === "logs"
-            ? "Rekam jejak seluruh aktivitas gudang sparepart."
-            : "Kelola data master barang dan inventaris OBS Sparepart.";
+      tab === "master"
+        ? "Kelola data master barang dan inventaris sparepart."
+        : tab === "buffer_stock"
+          ? "Memantau stok cadangan untuk menjaga ketersediaan barang dan mengantisipasi kebutuhan yang tidak terduga."
+          : tab === "transactions"
+            ? "Riwayat mutasi keluar dan masuk inventaris sparepart."
+            : tab === "logs"
+              ? "Rekam jejak seluruh aktivitas gudang sparepart."
+              : "Kelola data master barang dan inventaris OBS Sparepart.";
 
     return {
       meta: [
@@ -1107,6 +1113,32 @@ function getPaginationPages(currentPage: number, totalPages: number): (number | 
   return [1, "...", currentPage - 1, currentPage, currentPage + 1, "...", totalPages];
 }
 
+// ── HELPER PEMISAHAN DATA: BARANG OBS SPAREPART VS MASTER BARANG ────────────
+export function isObsProduct(p?: ProductItem | null): boolean {
+  if (!p) return false;
+  // Jika secara eksplisit ditandai independen Master Barang (bukan OBS Sparepart)
+  if ((p as any).is_obs === false || (p as any).is_master_only === true) return false;
+  if ((p as any).source === "master_barang" || (p as any).source === "master") return false;
+  if (p.category === "Master Barang") return false;
+
+  if (p.description) {
+    try {
+      const meta = JSON.parse(p.description);
+      if (meta && typeof meta === "object") {
+        if (
+          meta.is_obs === false ||
+          meta.is_master_only === true ||
+          meta.source === "master_barang" ||
+          meta.source === "master"
+        ) {
+          return false;
+        }
+      }
+    } catch {}
+  }
+  return true;
+}
+
 function WarehouseAndProductsPage() {
   const { profile, roles, isAdmin } = useCurrentUser();
   const queryClient = useQueryClient();
@@ -1144,6 +1176,10 @@ function WarehouseAndProductsPage() {
   const [importSortOption, setImportSortOption] = useState<string>("DEFAULT");
   const [isImporting, setIsImporting] = useState(false);
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
+
+  // State Dialog Kosongkan & Pulihkan Tabel OBS Sparepart (207 Item Standar)
+  const [isClearObsDialogOpen, setIsClearObsDialogOpen] = useState(false);
+  const [isRestoreObsDialogOpen, setIsRestoreObsDialogOpen] = useState(false);
 
   // State Modal Buffer Stok (tabel sendiri, independen)
   const [isBufferAddOpen, setIsBufferAddOpen] = useState(false);
@@ -1388,6 +1424,47 @@ function WarehouseAndProductsPage() {
 
     XLSX.writeFile(workbook, "template_import_barang_obs.xlsx");
     toast.success("Template Excel OBS berhasil diunduh");
+  };
+
+  // Unduh Template Resmi Excel/CSV Master Barang (Terpisah & Independen dari OBS)
+  const downloadMasterImportTemplate = () => {
+    const templateData = [
+      [
+        "No",
+        "Kode Material",
+        "Nama Barang / Material",
+        "Kategori",
+        "Satuan",
+        "Minimal Stok",
+        "Maksimal Stok",
+        "Stok Saat Ini",
+        "Lokasi Gudang",
+        "Posisi Rak",
+      ],
+      [1, "7100115031", "ADAPTER SLEEVES HA 311", "Master Barang", "PCS", 1, 10, 5, "Gudang Utama", "Rak A-1"],
+      [2, "7100521472", "BELT CONVEYOR 2 PLY 1530 X 330 MM", "Master Barang", "PCS", 1, 5, 2, "Gudang Utama", "Rak A-2"],
+      [3, "7100913162", "BUTTERFLY VALVE CAST IRON Z011-A 4\"", "Master Barang", "PCS", 1, 8, 3, "Gudang Utama", "Rak B-1"],
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(templateData);
+    worksheet["!cols"] = [
+      { wch: 6 },
+      { wch: 18 },
+      { wch: 38 },
+      { wch: 16 },
+      { wch: 10 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 16 },
+      { wch: 14 },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Template Master Barang");
+
+    XLSX.writeFile(workbook, "template_import_master_barang.xlsx");
+    toast.success("Template Excel Master Barang berhasil diunduh");
   };
 
   // ── IMPORT FILE BUFFER STOK (EXCEL / CSV) ─────────────────────────────────────
@@ -1677,13 +1754,15 @@ function WarehouseAndProductsPage() {
       const { data: existingProducts, error: fetchErr } = await supabase
         .from("products")
         .select(
-          "id, name, code, category, unit, location, shelf, min_stock, safe_stock, max_stock, current_stock",
+          "id, name, code, category, unit, location, shelf, min_stock, safe_stock, max_stock, current_stock, description",
         )
         .range(0, 4999);
 
       if (fetchErr) {
         console.warn("Could not fetch existing products:", fetchErr.message);
       }
+
+      const isMasterTab = activeTab === "master";
 
       const normStr = (s: any) =>
         String(s || "")
@@ -1696,10 +1775,14 @@ function WarehouseAndProductsPage() {
       const existingByCode = new Map<string, any>();
 
       (existingProducts || []).forEach((p: any) => {
-        const nName = normStr(p.name);
-        const nCode = normStr(p.code);
-        if (nName) existingByName.set(nName, p);
-        if (nCode) existingByCode.set(nCode, p);
+        const isObs = isObsProduct(p);
+        // Pemisahan ketat: import pada OBS hanya mencocokkan barang OBS, import Master hanya mencocokkan barang Master
+        if (isMasterTab ? !isObs : isObs) {
+          const nName = normStr(p.name);
+          const nCode = normStr(p.code);
+          if (nName) existingByName.set(nName, p);
+          if (nCode) existingByCode.set(nCode, p);
+        }
       });
 
       const toUpdate: any[] = [];
@@ -1741,13 +1824,25 @@ function WarehouseAndProductsPage() {
         const hasMaxInFile = item.max_stock !== null && item.max_stock !== undefined;
         const hasMinInFile = item.min_stock !== null && item.min_stock !== undefined;
 
-        // Metadata OBS untuk kolom BEGINNING BALANCE, RECEIPT, ISSUED, ENDING BALANCE
-        const obsMeta = {
-          beginning_balance: item.beginning_balance !== undefined ? item.beginning_balance : null,
-          receipt: item.receipt !== undefined ? item.receipt : null,
-          issued: item.issued !== undefined ? item.issued : null,
-          ending_balance: item.ending_balance !== undefined ? item.ending_balance : null,
-        };
+        // Metadata OBS / Master Barang untuk kolom BEGINNING BALANCE, RECEIPT, ISSUED, ENDING BALANCE
+        const obsMeta = isMasterTab
+          ? {
+              source: "master_barang",
+              is_obs: false,
+              is_master_only: true,
+              beginning_balance: item.beginning_balance !== undefined ? item.beginning_balance : null,
+              receipt: item.receipt !== undefined ? item.receipt : null,
+              issued: item.issued !== undefined ? item.issued : null,
+              ending_balance: item.ending_balance !== undefined ? item.ending_balance : null,
+            }
+          : {
+              source: "obs",
+              is_obs: true,
+              beginning_balance: item.beginning_balance !== undefined ? item.beginning_balance : null,
+              receipt: item.receipt !== undefined ? item.receipt : null,
+              issued: item.issued !== undefined ? item.issued : null,
+              ending_balance: item.ending_balance !== undefined ? item.ending_balance : null,
+            };
         const hasObsData =
           obsMeta.beginning_balance !== null ||
           obsMeta.receipt !== null ||
@@ -1761,7 +1856,9 @@ function WarehouseAndProductsPage() {
             id: found.id,
             name: found.name || finalName,
             code: cleanCode || found.code || null,
-            category: found.category || item.category || "Sparepart & Tools",
+            category: isMasterTab
+              ? (found.category || item.category || "Master Barang")
+              : (found.category || item.category || "Sparepart & Tools"),
             unit: item.unit || found.unit || "pcs",
             location: item.location || found.location || "Gudang Utama",
             shelf: item.shelf || found.shelf || "Rak A-1",
@@ -1781,7 +1878,7 @@ function WarehouseAndProductsPage() {
           toInsert.push({
             name: finalName,
             code: cleanCode || null,
-            category: item.category || "Sparepart & Tools",
+            category: isMasterTab ? (item.category || "Master Barang") : (item.category || "Sparepart & Tools"),
             unit: item.unit || "pcs",
             location: item.location || "Gudang Utama",
             shelf: item.shelf || "Rak A-1",
@@ -1797,24 +1894,26 @@ function WarehouseAndProductsPage() {
         }
       }
 
-      // Simpan metadata saldo OBS ke localStorage cache agar seketika tersedia di tabel & export
-      try {
-        const obsMap = JSON.parse(localStorage.getItem("obs_stock_balances_map") || "{}");
-        for (const item of importPreview) {
-          const mCode = item.code ? String(item.code).trim().toLowerCase() : "";
-          const mName = item.name ? String(item.name).trim().toLowerCase() : "";
-          const mData = {
-            beginning_balance: item.beginning_balance !== undefined ? item.beginning_balance : null,
-            receipt: item.receipt !== undefined ? item.receipt : null,
-            issued: item.issued !== undefined ? item.issued : null,
-            ending_balance: item.ending_balance !== undefined ? item.ending_balance : null,
-          };
-          if (mCode) obsMap[mCode] = mData;
-          if (mName) obsMap[mName] = mData;
+      // Simpan metadata saldo OBS ke localStorage cache hanya jika BUKAN dari tab Master Barang
+      if (!isMasterTab) {
+        try {
+          const obsMap = JSON.parse(localStorage.getItem("obs_stock_balances_map") || "{}");
+          for (const item of importPreview) {
+            const mCode = item.code ? String(item.code).trim().toLowerCase() : "";
+            const mName = item.name ? String(item.name).trim().toLowerCase() : "";
+            const mData = {
+              beginning_balance: item.beginning_balance !== undefined ? item.beginning_balance : null,
+              receipt: item.receipt !== undefined ? item.receipt : null,
+              issued: item.issued !== undefined ? item.issued : null,
+              ending_balance: item.ending_balance !== undefined ? item.ending_balance : null,
+            };
+            if (mCode) obsMap[mCode] = mData;
+            if (mName) obsMap[mName] = mData;
+          }
+          localStorage.setItem("obs_stock_balances_map", JSON.stringify(obsMap));
+        } catch (e) {
+          console.warn("Could not save to localStorage obs_stock_balances_map:", e);
         }
-        localStorage.setItem("obs_stock_balances_map", JSON.stringify(obsMap));
-      } catch (e) {
-        console.warn("Could not save to localStorage obs_stock_balances_map:", e);
       }
 
       const CHUNK_SIZE = 100;
@@ -1974,6 +2073,7 @@ function WarehouseAndProductsPage() {
   useEffect(() => {
     const tabTitleMap: Record<string, string> = {
       items: isTeknikUser ? "Master barang" : "OBS Sparepart",
+      master: "Master Barang",
       buffer_stock: "Buffer Stok",
       transactions: "Riwayat Mutasi",
       logs: "Activity Log",
@@ -2453,23 +2553,41 @@ function WarehouseAndProductsPage() {
       if (!formData.name.trim()) throw new Error("Nama barang wajib diisi");
 
       const initialStock = Number(formData.current_stock) || 0;
+      const isMasterTab = activeTab === "master";
 
-      // Metadata OBS untuk input manual barang baru agar Ending Balance tercatat independen
-      const obsMeta = {
-        beginning_balance: initialStock,
-        receipt: 0,
-        issued: 0,
-        ending_balance: initialStock,
-      };
+      // Metadata OBS vs Master Barang independen: barang dari menu Master Barang tidak mempengaruhi OBS Sparepart
+      const itemMeta = isMasterTab
+        ? {
+            source: "master_barang",
+            is_obs: false,
+            is_master_only: true,
+            beginning_balance: initialStock,
+            receipt: 0,
+            issued: 0,
+            ending_balance: initialStock,
+            user_note: formData.description.trim() || undefined,
+          }
+        : {
+            beginning_balance: initialStock,
+            receipt: 0,
+            issued: 0,
+            ending_balance: initialStock,
+            is_obs: true,
+          };
+
       let productDescription = formData.description.trim() || null;
       try {
-        productDescription = JSON.stringify(obsMeta);
+        productDescription = JSON.stringify(itemMeta);
       } catch {}
 
       const { error } = await supabase.from("products").insert({
         name: formData.name.trim(),
         code: formData.code.trim() || null,
-        category: formData.category,
+        category: isMasterTab
+          ? formData.category && formData.category !== "Sparepart & Tools"
+            ? formData.category
+            : "Master Barang"
+          : formData.category,
         unit: formData.unit,
         location: formData.location,
         shelf: formData.shelf,
@@ -2484,21 +2602,23 @@ function WarehouseAndProductsPage() {
         is_active: true,
       } as any);
 
-      // Simpan juga ke cache localStorage
-      try {
-        const obsMap = JSON.parse(localStorage.getItem("obs_stock_balances_map") || "{}");
-        const mCode = formData.code ? formData.code.trim().toLowerCase() : "";
-        const mName = formData.name ? formData.name.trim().toLowerCase() : "";
-        if (mCode) obsMap[mCode] = obsMeta;
-        if (mName) obsMap[mName] = obsMeta;
-        localStorage.setItem("obs_stock_balances_map", JSON.stringify(obsMap));
-      } catch {}
+      // Simpan ke cache localStorage HANYA jika bukan master tab (agar data OBS tidak terpengaruh)
+      if (!isMasterTab) {
+        try {
+          const obsMap = JSON.parse(localStorage.getItem("obs_stock_balances_map") || "{}");
+          const mCode = formData.code ? formData.code.trim().toLowerCase() : "";
+          const mName = formData.name ? formData.name.trim().toLowerCase() : "";
+          if (mCode) obsMap[mCode] = itemMeta;
+          if (mName) obsMap[mName] = itemMeta;
+          localStorage.setItem("obs_stock_balances_map", JSON.stringify(obsMap));
+        } catch {}
+      }
 
       if (error) throw error;
 
       await recordActivity(
         "TAMBAH_BARANG",
-        `Menambahkan master barang baru: "${formData.name.trim()}" (${formData.category})${initialStock > 0 ? ` — Stok awal: ${initialStock} ${formData.unit}` : ""}`,
+        `Menambahkan ${isMasterTab ? "master barang baru" : "barang OBS baru"}: "${formData.name.trim()}" (${isMasterTab ? "Master Barang" : formData.category})${initialStock > 0 ? ` — Stok awal: ${initialStock} ${formData.unit}` : ""}`,
       );
     },
     onSuccess: () => {
@@ -2582,8 +2702,8 @@ function WarehouseAndProductsPage() {
         updatedDescription = JSON.stringify(parsedObs);
       }
 
-      // Perbarui juga cache localStorage obs_stock_balances_map
-      if (typeof window !== "undefined" && window.localStorage) {
+      // Perbarui juga cache localStorage obs_stock_balances_map HANYA untuk barang OBS
+      if (typeof window !== "undefined" && window.localStorage && isObsProduct(originalProduct || editingItem)) {
         try {
           const rawMap = window.localStorage.getItem("obs_stock_balances_map");
           const map = rawMap ? JSON.parse(rawMap) : {};
@@ -2771,6 +2891,126 @@ function WarehouseAndProductsPage() {
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
     },
     onError: (e: Error) => toast.error("Gagal menghapus barang", { description: e.message }),
+  });
+
+  // ── MUTATION: KOSONGKAN SELURUH TABEL BARANG OBS SPAREPART ────────────────────
+  const clearObsProducts = useMutation({
+    mutationFn: async () => {
+      // Ambil seluruh ID produk yang tergolong OBS
+      const obsItems = products.filter((p) => isObsProduct(p));
+      if (obsItems.length === 0) {
+        throw new Error("Tabel OBS Sparepart saat ini sudah kosong.");
+      }
+
+      const ids = obsItems.map((p) => p.id);
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+        const chunk = ids.slice(i, i + CHUNK_SIZE);
+        const { error } = await supabase.from("products").delete().in("id", chunk);
+        if (error) throw error;
+      }
+
+      // Bersihkan juga cache saldo OBS di localStorage
+      if (typeof window !== "undefined" && window.localStorage) {
+        try {
+          window.localStorage.removeItem("obs_stock_balances_map");
+        } catch {}
+      }
+
+      await recordActivity(
+        "KOSONGKAN_TABEL_OBS",
+        `Mengosongkan seluruh tabel OBS Sparepart (menghapus ${ids.length} item barang)`,
+      );
+    },
+    onSuccess: () => {
+      toast.success("Seluruh data barang pada tabel OBS Sparepart berhasil dikosongkan");
+      setIsClearObsDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
+    },
+    onError: (e: Error) =>
+      toast.error("Gagal mengosongkan tabel OBS", { description: e.message }),
+  });
+
+  // ── MUTATION: PULIHKAN 207 DATA MASTER BARANG DATABASE OBS STANDAR ────────────
+  const restoreObs207 = useMutation({
+    mutationFn: async () => {
+      // 1. Bersihkan data OBS yang mungkin rusak atau tercampur
+      const existingObs = products.filter((p) => isObsProduct(p));
+      if (existingObs.length > 0) {
+        const ids = existingObs.map((p) => p.id);
+        const CHUNK_SIZE = 100;
+        for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+          const chunk = ids.slice(i, i + CHUNK_SIZE);
+          await supabase.from("products").delete().in("id", chunk);
+        }
+      }
+
+      // 2. Siapkan 207 item standar OBS dari file master database
+      const obsMap: Record<string, any> = {};
+      const payload = OBS_DEFAULT_ITEMS.map((it) => {
+        const meta = {
+          source: "obs",
+          is_obs: true,
+          beginning_balance: it.current_stock,
+          receipt: 0,
+          issued: 0,
+          ending_balance: it.current_stock,
+        };
+        const cCode = it.code ? it.code.trim().toLowerCase() : "";
+        const cName = it.name ? it.name.trim().toLowerCase() : "";
+        if (cCode) obsMap[cCode] = meta;
+        if (cName) obsMap[cName] = meta;
+
+        return {
+          name: it.name.trim(),
+          code: it.code ? it.code.trim() : null,
+          category: "Sparepart & Tools",
+          unit: it.unit || "pcs",
+          location: it.location || "Gudang Utama",
+          shelf: it.shelf || "Rak A-1",
+          safe_stock: it.safe_stock || 1,
+          min_stock: it.min_stock || 1,
+          max_stock: it.max_stock,
+          current_stock: it.current_stock,
+          description: JSON.stringify(meta),
+          is_active: true,
+        };
+      });
+
+      // 3. Masukkan ke database Supabase
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < payload.length; i += CHUNK_SIZE) {
+        const chunk = payload.slice(i, i + CHUNK_SIZE);
+        const { error: insErr } = await supabase.from("products").insert(chunk as any);
+        if (insErr) {
+          console.warn("Insert fallback to upsert:", insErr.message);
+          await supabase.from("products").upsert(chunk as any, { onConflict: "name" });
+        }
+      }
+
+      // 4. Update cache localStorage
+      if (typeof window !== "undefined" && window.localStorage) {
+        try {
+          window.localStorage.setItem("obs_stock_balances_map", JSON.stringify(obsMap));
+        } catch {}
+      }
+
+      await recordActivity(
+        "RESTORE_DATABASE_OBS",
+        `Memulihkan database default 207 item barang OBS Sparepart`,
+      );
+    },
+    onSuccess: () => {
+      toast.success("Berhasil memulihkan 207 item data standar OBS Sparepart ke database!");
+      setIsRestoreObsDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
+    },
+    onError: (e: Error) =>
+      toast.error("Gagal memulihkan 207 data OBS", { description: e.message }),
   });
 
   // ── CREATE TRANSACTION (MASUK / KELUAR) - MULTI ITEM (S.D 6 BARANG) ─────────────
@@ -3243,7 +3483,12 @@ function WarehouseAndProductsPage() {
 
   // ── EXPORT DATA LAPORAN INVENTARIS & STOK SPAREPART (.XLS EXCEL RESMI) ────────
   const exportToExcel = () => {
-    const dataToExport = filteredProducts.length > 0 ? filteredProducts : products;
+    const dataToExport =
+      filteredProducts.length > 0
+        ? filteredProducts
+        : activeTab === "items" || (!activeTab && !isTeknikUser)
+          ? products.filter((p) => isObsProduct(p))
+          : products;
     if (dataToExport.length === 0) {
       toast.error("Tidak ada data untuk diekspor");
       return;
@@ -3282,7 +3527,12 @@ function WarehouseAndProductsPage() {
 
   // ── EXPORT DATA LAPORAN INVENTARIS SPAREPART RESMI (.CSV) ──────────────────────
   const exportToCSV = () => {
-    const dataToExport = filteredProducts.length > 0 ? filteredProducts : products;
+    const dataToExport =
+      filteredProducts.length > 0
+        ? filteredProducts
+        : activeTab === "items" || (!activeTab && !isTeknikUser)
+          ? products.filter((p) => isObsProduct(p))
+          : products;
     if (dataToExport.length === 0) {
       toast.error("Tidak ada data untuk diekspor");
       return;
@@ -4121,7 +4371,13 @@ function WarehouseAndProductsPage() {
 
   // Filter & Search Logic with Sorting
   const filteredProducts = useMemo(() => {
-    const list = products.filter((p) => {
+    // Pada tab OBS Sparepart ("items"), barang yang bukan OBS (misal ditambahkan dari menu Master Barang) tidak dimasukkan
+    const baseList =
+      activeTab === "items" || (!activeTab && !isTeknikUser)
+        ? products.filter((p) => isObsProduct(p))
+        : products;
+
+    const list = baseList.filter((p) => {
       const q = searchQuery.toLowerCase().trim();
       const matchSearch =
         !q ||
@@ -4210,7 +4466,7 @@ function WarehouseAndProductsPage() {
       }
       return 0;
     });
-  }, [products, searchQuery, stockStatusFilter, productDateFilter, sortOption, latestInTxMap]);
+  }, [products, activeTab, isTeknikUser, searchQuery, stockStatusFilter, productDateFilter, sortOption, latestInTxMap]);
 
   // Pagination untuk Master Barang OBS (10 item per page)
   const totalProductPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCT_PAGE_SIZE));
@@ -4228,7 +4484,8 @@ function WarehouseAndProductsPage() {
   );
 
   // ── OBS MONITORING CARD STATS ─────────────────────────────────────────────────
-  const activeProductsObs = products.filter((p) => p.is_active);
+  // Hanya menghitung produk OBS murni (barang baru dari Master Barang independen tidak mempengaruhi card stats OBS)
+  const activeProductsObs = products.filter((p) => p.is_active && isObsProduct(p));
   const totalActiveItemsObs = activeProductsObs.length;
   const totalStockQtyObs = activeProductsObs.reduce((acc, p) => acc + (p.current_stock ?? 0), 0);
 
@@ -4286,15 +4543,17 @@ function WarehouseAndProductsPage() {
   return (
     <AppShell
       breadcrumb={
-        activeTab === "buffer_stock"
-          ? "Buffer Stock"
-          : activeTab === "transactions"
-            ? "Riwayat Mutasi"
-            : activeTab === "logs"
-              ? "Riwayat Aktivitas"
-              : isTeknikUser
-                ? "Master barang"
-                : "Manajemen Master Barang"
+        activeTab === "master"
+          ? "Master Barang"
+          : activeTab === "buffer_stock"
+            ? "Buffer Stock"
+            : activeTab === "transactions"
+              ? "Riwayat Mutasi"
+              : activeTab === "logs"
+                ? "Riwayat Aktivitas"
+                : isTeknikUser
+                  ? "Master barang"
+                  : "Manajemen Master Barang"
       }
       actions={
         <div className="flex items-center gap-2">
@@ -4382,7 +4641,10 @@ function WarehouseAndProductsPage() {
         isTeknikUser &&
         (activeTab === "items" ||
           !activeTab ||
-          (activeTab !== "buffer_stock" && activeTab !== "transactions" && activeTab !== "logs"))
+          (activeTab !== "buffer_stock" &&
+            activeTab !== "transactions" &&
+            activeTab !== "logs" &&
+            activeTab !== "master"))
       ) && (
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -4394,30 +4656,34 @@ function WarehouseAndProductsPage() {
                 letterSpacing: "0.5em",
               }}
             >
-              {activeTab === "buffer_stock"
-                ? "Buffer Stock"
-                : activeTab === "transactions"
-                  ? "Riwayat Mutasi"
-                  : activeTab === "logs"
-                    ? "Aktivitas Seluruh Kegiatan"
-                    : "Manajemen Master Barang"}
+              {activeTab === "master"
+                ? "Master Barang"
+                : activeTab === "buffer_stock"
+                  ? "Buffer Stock"
+                  : activeTab === "transactions"
+                    ? "Riwayat Mutasi"
+                    : activeTab === "logs"
+                      ? "Aktivitas Seluruh Kegiatan"
+                      : "Manajemen Master Barang"}
             </h1>
             {activeTab !== "transactions" && (
               <p
                 className="mt-1 text-sm text-black/80"
                 style={{ fontFamily: "'Inter', sans-serif" }}
               >
-                {activeTab === "buffer_stock"
-                  ? "Memantau dan mengelola stok cadangan sparepart untuk menjaga ketersediaan dan mendukung kebutuhan operasional."
-                  : activeTab === "logs"
-                    ? "Rekam jejak seluruh aktivitas gudang"
-                    : "Kelola data master barang, pencatatan masuk/keluar, audit stok"}
+                {activeTab === "master"
+                  ? "Kelola data master barang dan inventaris sparepart gudang."
+                  : activeTab === "buffer_stock"
+                    ? "Memantau dan mengelola stok cadangan sparepart untuk menjaga ketersediaan dan mendukung kebutuhan operasional."
+                    : activeTab === "logs"
+                      ? "Rekam jejak seluruh aktivitas gudang"
+                      : "Kelola data master barang, pencatatan masuk/keluar, audit stok"}
               </p>
             )}
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
-            {activeTab === "logs" || isTeknikUser ? null : activeTab === "transactions" ||
+            {activeTab === "master" ? null : activeTab === "logs" || isTeknikUser ? null : activeTab === "transactions" ||
               search.tab === "transactions" ? (
               /* Layout Sejajar Horizontal 1 Baris khusus Riwayat Mutasi */
               <div className="flex items-center gap-2">
@@ -4552,6 +4818,463 @@ function WarehouseAndProductsPage() {
         }}
         className={cn("space-y-4", isTeknikUser && "space-y-2")}
       >
+        {/* ── TAB MASTER BARANG (KHUSUS ROLE GDSP & ADMIN: HANYA TOOLS TABEL & TAMBAH BARANG) ── */}
+        <TabsContent value="master" className="space-y-4">
+          {/* Tools Tabel: Search, Filter Kondisi, Filter Kalender, Urutkan, & Tambah Barang */}
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between bg-surface border border-border p-3 rounded-lg shadow-2xs">
+            <div className="relative flex-1 lg:max-w-md">
+              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+              <Input
+                placeholder="Cari nama barang, kode material..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 text-xs sm:text-sm h-9"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Filter Kondisi Stok */}
+              <div className="flex items-center gap-1.5">
+                <Filter className="size-3.5 text-muted-foreground" />
+                <Select value={stockStatusFilter} onValueChange={setStockStatusFilter}>
+                  <SelectTrigger className="w-48 h-9 text-xs">
+                    <SelectValue placeholder="Kondisi Stok" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL" className="text-xs">
+                      Semua Kondisi
+                    </SelectItem>
+                    <SelectItem value="ORDER" className="text-xs font-semibold text-rose-600">
+                      ⚠ ORDER (≤ Minimal Stok)
+                    </SelectItem>
+                    <SelectItem value="SAFETY" className="text-xs font-semibold text-emerald-600">
+                      ✓ SAFETY STOCK (&gt; Minimal Stok)
+                    </SelectItem>
+                    <SelectItem
+                      value="OUT_OF_STOCK"
+                      className="text-xs font-semibold text-amber-600"
+                    >
+                      ⚡ OUT OF STOCK (&gt; Maksimal Stok)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Filter Kalender Tanggal Tarik Data */}
+              <div className="flex items-center gap-1.5 bg-background border border-input rounded-md px-2.5 h-9 text-xs shadow-sm hover:border-primary/50 transition-colors">
+                <CalendarIcon className="size-3.5 text-muted-foreground shrink-0" />
+                <input
+                  type="date"
+                  value={productDateFilter}
+                  onChange={(e) => setProductDateFilter(e.target.value)}
+                  className="bg-transparent text-xs text-foreground focus:outline-none cursor-pointer font-medium"
+                  title="Tarik data berdasarkan tanggal kalender"
+                />
+                {productDateFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setProductDateFilter("")}
+                    className="text-muted-foreground hover:text-foreground p-0.5 rounded-full hover:bg-muted transition-colors"
+                    title="Reset filter tanggal"
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* Urutan List Barang */}
+              <div className="flex items-center gap-1.5">
+                <ArrowUpDown className="size-3.5 text-muted-foreground" />
+                <Select value={sortOption} onValueChange={setSortOption}>
+                  <SelectTrigger className="w-48 h-9 text-xs font-medium">
+                    <SelectValue placeholder="Urutkan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem
+                      value="RECENT_MUTATION"
+                      className="text-xs font-semibold text-primary"
+                    >
+                      ✦ Baru Ditambah / Mutasi
+                    </SelectItem>
+                    <SelectItem value="CODE_ASC" className="text-xs">
+                      Kode Barang (Angka Terkecil ke Terbesar)
+                    </SelectItem>
+                    <SelectItem value="CODE_DESC" className="text-xs">
+                      Kode Barang (Angka Terbesar ke Terkecil)
+                    </SelectItem>
+                    <SelectItem value="NAME_ASC" className="text-xs">
+                      Nama Barang (A - Z)
+                    </SelectItem>
+                    <SelectItem value="NAME_DESC" className="text-xs">
+                      Nama Barang (Z - A)
+                    </SelectItem>
+                    <SelectItem value="STOCK_DESC" className="text-xs">
+                      Stok Terbanyak
+                    </SelectItem>
+                    <SelectItem value="STOCK_ASC" className="text-xs">
+                      Stok Paling Sedikit
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Tombol Tambah Barang */}
+              {canManageWarehouse && (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setFormData((prev) => ({ ...prev, category: "Sparepart & Tools" }));
+                    setIsAddOpen(true);
+                  }}
+                  className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm active:scale-[0.98] transition-all h-9 text-xs px-3.5 rounded-md cursor-pointer shrink-0"
+                >
+                  <Plus className="size-4 text-white" />
+                  <span>Tambah Barang</span>
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Tabel Master Barang */}
+          <div className="border border-border bg-surface overflow-x-auto rounded-lg shadow-2xs">
+            {loadingProducts ? (
+              <div className="flex items-center justify-center py-20 text-sm text-muted-foreground">
+                Memuat data master barang...
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <PackageSearch className="mb-3 size-10 text-muted-foreground/40" />
+                <p className="text-sm font-medium">Tidak ada data master barang yang cocok dengan filter</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Coba ubah kata kunci pencarian atau sesuaikan opsi filter kondisi stok.
+                </p>
+                {canManageWarehouse && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setFormData((prev) => ({ ...prev, category: "Sparepart & Tools" }));
+                      setIsAddOpen(true);
+                    }}
+                    className="mt-4 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-8"
+                  >
+                    <Plus className="size-3.5" />
+                    Tambah Barang Sekarang
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <>
+                <table className="w-full text-xs border-collapse border border-slate-300 dark:border-slate-700">
+                  <thead>
+                    <tr className="bg-[#0f274a] text-white border-b border-slate-300 dark:border-slate-700 divide-x divide-slate-600/60">
+                      <th className="label-caps px-2.5 py-3 text-center w-12 whitespace-nowrap text-white font-semibold">
+                        No
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-left w-[120px] whitespace-nowrap text-white font-semibold">
+                        Kode Material
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-left min-w-[220px] text-white font-semibold">
+                        Nama Barang / Material
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-center w-[85px] whitespace-nowrap text-white font-semibold">
+                        Satuan
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-center w-[95px] whitespace-nowrap text-white font-semibold">
+                        Minimal Stok
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-center w-[95px] whitespace-nowrap text-white font-semibold">
+                        Maksimal Stok
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-center w-[120px] whitespace-nowrap text-white font-semibold">
+                        Stok Saat Ini
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-center w-[120px] whitespace-nowrap text-white font-semibold">
+                        Kondisi
+                      </th>
+                      <th className="label-caps px-2.5 py-3 text-center w-[110px] whitespace-nowrap text-white font-semibold">
+                        Aksi
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                    {paginatedProducts.map((p, index) => {
+                      const itemNumber =
+                        (currentSafeProductPage - 1) * PRODUCT_PAGE_SIZE + index + 1;
+                      const current = p.current_stock ?? 0;
+                      const minStock = p.min_stock ?? 10;
+                      const rawMax = (p as any).max_stock;
+                      const maxStock =
+                        rawMax !== null && rawMax !== undefined && rawMax !== ""
+                          ? Number(rawMax)
+                          : null;
+
+                      const obsMeta = getProductObsMeta(p);
+                      const baseEnding =
+                        obsMeta &&
+                        obsMeta.ending_balance !== null &&
+                        obsMeta.ending_balance !== undefined
+                          ? Number(obsMeta.ending_balance)
+                          : current;
+                      const effectiveStock = current !== baseEnding ? current : baseEnding;
+
+                      let kondisiText = "SAFETY STOCK";
+                      let kondisiStyle =
+                        "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800";
+
+                      if (maxStock !== null && !isNaN(maxStock) && effectiveStock > maxStock) {
+                        kondisiText = "OUT OF STOCK";
+                        kondisiStyle =
+                          "bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700";
+                      } else if (effectiveStock <= minStock) {
+                        kondisiText = "ORDER";
+                        kondisiStyle =
+                          "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800";
+                      }
+
+                      return (
+                        <tr
+                          key={`master-${p.id}`}
+                          className={cn(
+                            "group transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50 divide-x divide-slate-200 dark:divide-slate-700",
+                            !p.is_active && "opacity-55 bg-surface-muted/20",
+                          )}
+                        >
+                          {/* 1. No */}
+                          <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground w-12 bg-slate-50/40 dark:bg-slate-900/20">
+                            {itemNumber}
+                          </td>
+
+                          {/* 2. Kode Material */}
+                          <td className="px-2.5 py-2.5 text-left whitespace-nowrap font-mono font-medium">
+                            <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                              {p.code || "—"}
+                            </span>
+                          </td>
+
+                          {/* 3. Material */}
+                          <td className="px-2.5 py-2.5 text-left min-w-[220px]">
+                            <div className="flex items-center gap-2">
+                              {p.image_url ? (
+                                <a
+                                  href={p.image_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title="Lihat Gambar"
+                                  className="shrink-0"
+                                >
+                                  <img
+                                    src={p.image_url}
+                                    alt={p.name}
+                                    className="size-7 rounded object-cover border border-border hover:scale-105 transition-transform"
+                                  />
+                                </a>
+                              ) : null}
+                              <span className="font-semibold text-foreground break-words leading-tight">
+                                {p.name}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* 4. Satuan */}
+                          <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 uppercase">
+                              {formatUnit(p.unit)}
+                            </span>
+                          </td>
+
+                          {/* 5. Minimal Stok */}
+                          <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
+                            {minStock.toLocaleString("id-ID")}
+                          </td>
+
+                          {/* 6. Maksimal Stok */}
+                          <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
+                            {maxStock !== null && !isNaN(maxStock)
+                              ? maxStock.toLocaleString("id-ID")
+                              : "—"}
+                          </td>
+
+                          {/* 7. Stok Saat Ini */}
+                          <td className="px-2.5 py-2.5 text-center font-mono font-bold whitespace-nowrap">
+                            <span
+                              className={cn(
+                                "tabular-nums text-sm",
+                                effectiveStock <= 0
+                                  ? "text-rose-600 dark:text-rose-400 font-extrabold"
+                                  : effectiveStock <= minStock
+                                    ? "text-rose-600 dark:text-rose-400"
+                                    : "text-emerald-600 dark:text-emerald-400",
+                              )}
+                            >
+                              {Number(effectiveStock).toLocaleString("id-ID")}
+                            </span>
+                          </td>
+
+                          {/* 8. Kondisi */}
+                          <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                            <span
+                              className={cn(
+                                "inline-flex items-center justify-center w-28 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs",
+                                kondisiStyle,
+                              )}
+                            >
+                              {kondisiText}
+                            </span>
+                          </td>
+
+                          {/* 9. Aksi */}
+                          <td className="px-2.5 py-2.5 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2.5 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+                                onClick={() => setSelectedProduct(p)}
+                                title="Lihat Detail & Edit Master Barang"
+                              >
+                                <Eye className="size-3 text-primary" />
+                                <span>Detail</span>
+                              </Button>
+
+                              {canDeleteMaster && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                  onClick={() => setDeletingItem(p)}
+                                  title="Hapus Master Barang"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                {/* Baris Navigasi Pagination Halaman */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 text-xs text-muted-foreground select-none px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span>
+                      Menampilkan{" "}
+                      <strong className="text-foreground">
+                        {(currentSafeProductPage - 1) * PRODUCT_PAGE_SIZE + 1}
+                      </strong>{" "}
+                      –{" "}
+                      <strong className="text-foreground">
+                        {Math.min(
+                          currentSafeProductPage * PRODUCT_PAGE_SIZE,
+                          filteredProducts.length,
+                        )}
+                      </strong>{" "}
+                      dari{" "}
+                      <strong className="text-foreground">
+                        {filteredProducts.length.toLocaleString("id-ID")}
+                      </strong>{" "}
+                      master barang
+                    </span>
+                    {totalProductPages > 1 && (
+                      <span className="text-muted-foreground/70 hidden md:inline">
+                        • Halaman {currentSafeProductPage} dari {totalProductPages}
+                      </span>
+                    )}
+                  </div>
+
+                  {totalProductPages > 1 && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => {
+                          setProductCurrentPage(1);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        disabled={currentSafeProductPage === 1}
+                        title="Halaman Pertama"
+                      >
+                        <ChevronsLeft className="size-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2.5 text-xs gap-1"
+                        onClick={() => {
+                          setProductCurrentPage((prev) => Math.max(1, prev - 1));
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        disabled={currentSafeProductPage === 1}
+                      >
+                        <ChevronLeft className="size-3.5" />
+                        <span className="hidden sm:inline">Sebelumnya</span>
+                      </Button>
+
+                      {getPaginationPages(currentSafeProductPage, totalProductPages).map(
+                        (pItem, idx) =>
+                          pItem === "..." ? (
+                            <span
+                              key={`ellipsis-master-${idx}`}
+                              className="px-1.5 py-1 text-muted-foreground select-none"
+                            >
+                              ...
+                            </span>
+                          ) : (
+                            <Button
+                              key={`page-master-${pItem}`}
+                              variant={pItem === currentSafeProductPage ? "default" : "outline"}
+                              size="sm"
+                              className={cn(
+                                "h-8 min-w-[32px] px-2 text-xs font-medium",
+                                pItem === currentSafeProductPage &&
+                                  "bg-[#0f274a] text-white hover:bg-[#0f274a]/90 dark:bg-blue-600 dark:hover:bg-blue-700",
+                              )}
+                              onClick={() => {
+                                setProductCurrentPage(Number(pItem));
+                                window.scrollTo({ top: 0, behavior: "smooth" });
+                              }}
+                            >
+                              {pItem}
+                            </Button>
+                          ),
+                      )}
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2.5 text-xs gap-1"
+                        onClick={() => {
+                          setProductCurrentPage((prev) => Math.min(totalProductPages, prev + 1));
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        disabled={currentSafeProductPage === totalProductPages}
+                      >
+                        <span className="hidden sm:inline">Selanjutnya</span>
+                        <ChevronRight className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => {
+                          setProductCurrentPage(totalProductPages);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        disabled={currentSafeProductPage === totalProductPages}
+                        title="Halaman Terakhir"
+                      >
+                        <ChevronsRight className="size-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </TabsContent>
+
         {/* ── TAB 1: MASTER & STOK BARANG ─────────────────────────────────────── */}
         <TabsContent value="items" className={cn("space-y-4", isTeknikUser && "space-y-2")}>
           {/* Filter & Search Bar */}
@@ -4660,6 +5383,34 @@ function WarehouseAndProductsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* Aksi Database OBS: Kosongkan Tabel & Pulihkan 207 Data */}
+                {canManageWarehouse && (
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsClearObsDialogOpen(true)}
+                      className="h-9 px-2.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 dark:border-rose-900/60 dark:hover:bg-rose-950/40 gap-1.5 font-medium shadow-2xs"
+                      title="Hapus dan kosongkan seluruh item barang pada tabel OBS Sparepart"
+                    >
+                      <Trash2 className="size-3.5" />
+                      Kosongkan Tabel
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsRestoreObsDialogOpen(true)}
+                      className="h-9 px-2.5 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200 dark:border-blue-900/60 dark:hover:bg-blue-950/40 gap-1.5 font-medium shadow-2xs"
+                      title="Pulihkan database ke 207 item barang standar OBS Sparepart"
+                    >
+                      <RotateCcw className="size-3.5" />
+                      Pulihkan 207 Data
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -8169,16 +8920,19 @@ function WarehouseAndProductsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── MODAL DIALOG: TAMBAH BARANG OBS SPAREPART ────────────────────────── */}
+      {/* ── MODAL DIALOG: TAMBAH & IMPORT DATA BARANG (OBS ATAU MASTER) ────── */}
       <Dialog open={isAddOpen && !isTeknikUser} onOpenChange={setIsAddOpen}>
         <DialogContent className="sm:max-w-4xl w-full max-h-[90vh] flex flex-col p-6 overflow-hidden">
           <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
             <DialogTitle className="text-lg font-bold">
-              Tambah Data Barang OBS Sparepart
+              {activeTab === "master"
+                ? "Tambah & Import Master Barang"
+                : "Tambah & Import Barang OBS Sparepart"}
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Tambahkan data master inventaris secara manual atau upload file Excel / CSV (khusus
-              kategori Sparepart & Tools).
+              {activeTab === "master"
+                ? "Kelola master katalog barang secara manual atau import file Excel/CSV independen (tidak mempengaruhi data OBS)."
+                : "Tambahkan data sparepart OBS secara manual atau import file Excel/CSV inventaris & mutasi OBS Sparepart."}
             </DialogDescription>
           </DialogHeader>
 
@@ -8420,18 +9174,45 @@ function WarehouseAndProductsPage() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-foreground">
-                          Pilih File Excel / CSV (.xlsx, .xls, .csv)
+                          {activeTab === "master"
+                            ? "Pilih File Excel / CSV Master Barang (.xlsx, .xls, .csv)"
+                            : "Pilih File Excel / CSV OBS Sparepart (.xlsx, .xls, .csv)"}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Format kolom yang didukung: <strong>Kode</strong>,{" "}
-                          <strong>Material</strong>, <strong>Satuan</strong>,{" "}
-                          <strong>BEGINNING BALANCE</strong>, <strong>RECEIPT</strong>,{" "}
-                          <strong>ISSUED</strong>, <strong>ENDING BALANCE</strong>, dan{" "}
-                          <strong>Maks. Stock</strong>
+                        <p className="text-xs text-muted-foreground mt-1 max-w-lg mx-auto">
+                          {activeTab === "master" ? (
+                            <>
+                              Format kolom Master Barang: <strong>Kode Material</strong>,{" "}
+                              <strong>Nama Barang / Material</strong>, <strong>Kategori</strong>,{" "}
+                              <strong>Satuan</strong>, <strong>Minimal Stok</strong>,{" "}
+                              <strong>Maksimal Stok</strong>, <strong>Stok Saat Ini</strong>
+                            </>
+                          ) : (
+                            <>
+                              Format kolom OBS Sparepart: <strong>Kode</strong>,{" "}
+                              <strong>Material</strong>, <strong>Satuan</strong>,{" "}
+                              <strong>Minimal Stok</strong>, <strong>BEGINNING BALANCE</strong>,{" "}
+                              <strong>RECEIPT</strong>, <strong>ISSUED</strong>,{" "}
+                              <strong>ENDING BALANCE</strong>, dan <strong>Maks. Stock</strong>
+                            </>
+                          )}
                         </p>
                       </div>
 
                       <div className="flex flex-wrap items-center justify-center gap-2.5 mt-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={
+                            activeTab === "master"
+                              ? downloadMasterImportTemplate
+                              : downloadImportTemplate
+                          }
+                          className="gap-1.5 text-xs h-8 font-medium hover:bg-emerald-500/10"
+                        >
+                          <Download className="size-3.5" />
+                          Unduh Template {activeTab === "master" ? "Master Barang" : "OBS Sparepart"}
+                        </Button>
                         <Button
                           type="button"
                           size="sm"
@@ -8474,12 +9255,20 @@ function WarehouseAndProductsPage() {
                         type="button"
                         size="sm"
                         variant="outline"
-                        onClick={downloadImportTemplate}
+                        onClick={
+                          activeTab === "master"
+                            ? downloadMasterImportTemplate
+                            : downloadImportTemplate
+                        }
                         className="h-7 px-2.5 text-xs gap-1 hover:bg-emerald-500/20"
-                        title="Unduh format template"
+                        title={
+                          activeTab === "master"
+                            ? "Unduh format template Master Barang"
+                            : "Unduh format template OBS Sparepart"
+                        }
                       >
                         <Download className="size-3" />
-                        Template
+                        Template {activeTab === "master" ? "Master" : "OBS"}
                       </Button>
                       <Button
                         type="button"
@@ -9208,6 +9997,66 @@ function WarehouseAndProductsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* ── MODAL DIALOG: KONFIRMASI KOSONGKAN TABEL OBS SPAREPART ──────────── */}
+      <AlertDialog open={isClearObsDialogOpen} onOpenChange={setIsClearObsDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
+              <Trash2 className="size-5 shrink-0" />
+              Kosongkan Seluruh Tabel OBS Sparepart?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2 text-xs">
+              <span className="block">
+                Tindakan ini akan <strong>menghapus seluruh barang OBS Sparepart</strong> yang saat ini ada di tabel ({products.filter((p) => isObsProduct(p)).length} barang) sehingga tabel menjadi <strong>kosong</strong>.
+              </span>
+              <span className="block p-2.5 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50">
+                Data master barang independen (menu Master Barang) dan data Buffer Stok tidak akan terpengaruh. Anda juga dapat menggunakan tombol &quot;Pulihkan 207 Data&quot; kapan saja untuk mengembalikan data awal.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearObsProducts.isPending}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 gap-1.5"
+              onClick={() => clearObsProducts.mutate()}
+              disabled={clearObsProducts.isPending}
+            >
+              {clearObsProducts.isPending ? "Mengosongkan..." : "Ya, Kosongkan Tabel"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── MODAL DIALOG: KONFIRMASI PULIHKAN 207 DATA OBS SPAREPART ──────────── */}
+      <AlertDialog open={isRestoreObsDialogOpen} onOpenChange={setIsRestoreObsDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+              <RotateCcw className="size-5 shrink-0" />
+              Pulihkan 207 Item Database OBS Sparepart?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2 text-xs">
+              <span className="block">
+                Sistem akan menyetel ulang tabel OBS Sparepart dan memulihkan <strong>207 item barang standar</strong> (206 data item lengkap dengan kode part, nama sparepart, minimal stok, maksimal stok, dan stok awal) ke dalam database.
+              </span>
+              <span className="block p-2.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900/50">
+                Seluruh barang OBS yang ada saat ini akan digantikan dengan data 207 item standar OBS Sparepart resmi.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={restoreObs207.isPending}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-blue-600 hover:bg-blue-700 text-white gap-1.5 font-medium"
+              onClick={() => restoreObs207.mutate()}
+              disabled={restoreObs207.isPending}
+            >
+              {restoreObs207.isPending ? "Memulihkan..." : "Ya, Pulihkan 207 Data OBS"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* ── MODAL DIALOG: DETAIL TRANSAKSI MUTASI ────────────────────────────── */}
       {/* ── MODAL SISTEM ORDER SPAREPART (STRUKTUR SAMA SEPERTI CATATAN KELUAR) ── */}
       <Dialog open={isOrderModalOpen} onOpenChange={setIsOrderModalOpen}>
@@ -9639,7 +10488,7 @@ function WarehouseAndProductsPage() {
                   <thead className="bg-surface-muted/60 text-muted-foreground border-b border-border sticky top-0 z-10 text-[11px] font-semibold uppercase tracking-wider">
                     <tr>
                       <th className="py-2.5 px-3">No. Order & Waktu</th>
-                      <th className="py-2.5 px-3">Informasi Barang</th>
+                      <th className="py-2.5 px-3">keterangan</th>
                       <th className="py-2.5 px-3 text-center">Jumlah Digunakan</th>
                       <th className="py-2.5 px-3 text-center">Stok Sebelum</th>
                       <th className="py-2.5 px-3 text-center">Stok Sesudah</th>
