@@ -122,6 +122,49 @@ import {
 } from "@/lib/orderService";
 import { syncStockAcrossMenus } from "@/lib/stockSync";
 
+// ── SCHEMA HEALING: kolom NOT NULL tak dikenal di tabel `products` DB live ──
+// Database live dapat memiliki kolom tambahan bergaya `spareparts` (mis.
+// material_number, material_description, dst.) yang NOT NULL tanpa default dan
+// TIDAK dikenal skema aplikasi. Saat insert barang baru, DB menolak dengan:
+//   null value in column "<kolom>" of relation "products" ...
+// Helper ini membaca nama kolom dari pesan error, mengisi nilainya dengan
+// mirror data aplikasi, lalu mencoba ulang — hingga insert lolos (maks 8 kali
+// untuk menangani beberapa kolom sekaligus).
+const PRODUCTS_NOTNULL_MIRRORS: Record<string, (p: Record<string, any>) => any> = {
+  material_number: (p) => p["code"] ?? "",
+  material_description: (p) => p["name"] ?? "",
+  material_type: () => "",
+  qty_stock: (p) => p["current_stock"] ?? 0,
+  uom: (p) => p["unit"] ?? "PCS",
+  unit: (p) => p["unit"] ?? "pcs",
+  avg_qty_gi: () => 0,
+  hit_miss_pct: () => "0",
+};
+
+async function insertProductRowHealing(row: Record<string, any>): Promise<{ error: any }> {
+  let payload = { ...row };
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const { error } = await supabase.from("products").insert(payload as any);
+    if (!error) return { error: null };
+
+    const m = /null value in column "([a-zA-Z0-9_]+)" of relation "products"/i.exec(
+      error.message || "",
+    );
+    const col = m?.[1];
+    if (!m || !col) return { error };
+
+    // Kolom memang ada di payload tapi null-nya ditolak → error asli (bukan soal kolom tak dikenal)
+    if (col in payload) return { error };
+
+    const mirror = PRODUCTS_NOTNULL_MIRRORS[col];
+    payload[col] = mirror ? mirror(payload) : "";
+    console.warn(
+      `Schema healing: kolom "${col}" NOT NULL di DB live → diisi mirror (percobaan ${attempt + 1}).`,
+    );
+  }
+  return { error: { message: "Insert produk tetap gagal setelah schema healing." } };
+}
+
 type ProductsSearch = {
   tab?: string | undefined;
   action?: string | undefined;
@@ -2217,20 +2260,22 @@ function WarehouseAndProductsPage() {
         if (insErr) {
           console.warn("Products batch insert fallback due to:", insErr.message);
           for (const it of chunk) {
-            const { error: singleErr } = await supabase.from("products").insert(it as any);
-            if (singleErr) {
-              // Self-healing: konflik nama unik → coba ulang dengan nama + kode barang
-              const conflictLike = /unique|duplicate|conflict/i.test(singleErr.message || "");
-              if (conflictLike && it.name && it.code) {
-                const alt = `${it.name} (${it.code})`;
-                const retry = await supabase.from("products").insert({ ...it, name: alt } as any);
-                if (!retry.error) continue;
-                failedImports.push(`${it.name} — ${retry.error.message}`);
-              } else {
-                failedImports.push(`${it.name} — ${singleErr.message}`);
-              }
-              console.error("Failed to insert product item:", it.name, singleErr.message);
+            // Schema healing: mengisi otomatis kolom NOT NULL tak dikenal DB live
+            // (material_number, material_description, dst.) lalu mencoba ulang.
+            const first = await insertProductRowHealing(it as any);
+            if (!first.error) continue;
+
+            // Konflik nama unik → coba ulang dengan nama + kode barang
+            const conflictLike = /unique|duplicate|conflict/i.test(first.error.message || "");
+            if (conflictLike && it.name && it.code) {
+              const alt = `${it.name} (${it.code})`;
+              const retry = await insertProductRowHealing({ ...it, name: alt });
+              if (!retry.error) continue;
+              failedImports.push(`${it.name} — ${retry.error.message}`);
+            } else {
+              failedImports.push(`${it.name} — ${first.error.message}`);
             }
+            console.error("Failed to insert product item:", it.name, first.error.message);
           }
         }
       }
@@ -3133,7 +3178,7 @@ function WarehouseAndProductsPage() {
       if (formData.image_url) newRow["image_url"] = formData.image_url;
       if (formData.doc_url) newRow["doc_url"] = formData.doc_url;
 
-      let { error } = await supabase.from("products").insert(newRow as any);
+      let { error } = await insertProductRowHealing(newRow as any);
 
       // Fallback: skema DB belum memiliki kolom lampiran → coba ulang tanpa kolom itu
       if (error && /doc_url|image_url/i.test(error.message || "")) {
@@ -3144,7 +3189,7 @@ function WarehouseAndProductsPage() {
         const retryRow = { ...newRow };
         delete retryRow["image_url"];
         delete retryRow["doc_url"];
-        const retry = await supabase.from("products").insert(retryRow as any);
+        const retry = await insertProductRowHealing(retryRow);
         error = retry.error;
       }
 
