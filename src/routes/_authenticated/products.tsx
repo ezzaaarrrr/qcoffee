@@ -3236,6 +3236,8 @@ function WarehouseAndProductsPage() {
         : (originalProduct?.max_stock ?? null);
 
       const newStock = Number(editingItem.current_stock) || 0;
+      const oldStock = Number(originalProduct?.current_stock ?? 0);
+      const stockDelta = newStock - oldStock;
 
       // Sinkronisasi metadata OBS (ending_balance) agar deskripsi dan tabel ending balance selalu selaras dengan perubahan stok saat ini
       let updatedDescription = editingItem.description?.trim() || null;
@@ -3353,6 +3355,26 @@ function WarehouseAndProductsPage() {
 
       if (error) throw error;
 
+      // ── SINKRONISASI STOK LINTAS MENU ────────────────────────────────────────
+      // Jika terjadi perubahan stok, sinkronkan selisihnya (delta) ke tabel
+      // Master Barang (spareparts) dan Buffer Stock (buffer_stock).
+      if (stockDelta !== 0) {
+        try {
+          await syncStockAcrossMenus(
+            supabase,
+            {
+              id: editingItem.id,
+              code: editingItem.code?.trim() || originalProduct?.code?.trim() || null,
+              name: editingItem.name.trim() || originalProduct?.name?.trim() || null,
+            },
+            stockDelta,
+            { skipTables: ["products"] }, // products sudah di-update oleh mutasi ini
+          );
+        } catch (syncErr) {
+          console.warn("Sinkronisasi stok lintas menu (edit barang) gagal:", syncErr);
+        }
+      }
+
       const changes: string[] = [];
       const humanChanges: string[] = [];
       if (originalProduct) {
@@ -3435,6 +3457,8 @@ function WarehouseAndProductsPage() {
       toast.success("Data barang berhasil diperbarui");
       setEditingItem(null);
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
+      queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
     },
     onError: (e: Error) => toast.error("Gagal mengubah data barang", { description: e.message }),
   });
