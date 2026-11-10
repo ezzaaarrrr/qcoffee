@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -621,16 +621,6 @@ function LoginPage() {
               {loading ? "Memverifikasi Akses..." : "Masuk ke Sistem"}
             </Button>
           </form>
-
-          <p className="mt-6 text-center text-xs text-blue-200/60">
-            Belum punya akun?{" "}
-            <Link
-              to="/auth/register"
-              className="font-semibold text-cyan-400 hover:text-cyan-300 underline underline-offset-4"
-            >
-              Daftar sekarang
-            </Link>
-          </p>
 
           {/* Modal Dialog: Lupa Kata Sandi */}
           <Dialog open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>

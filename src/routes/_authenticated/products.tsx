@@ -51,7 +51,6 @@ import {
   Loader2,
   ClipboardList,
   CheckCircle2,
-  XCircle,
   Info,
   RotateCcw,
 } from "lucide-react";
@@ -109,19 +108,19 @@ import { useCurrentUser } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { formatDate, formatUnit } from "@/lib/domain";
 import { exportSparepartInventoryExcel, getProductObsMeta } from "@/lib/exportUtils";
+import { fetchSpareparts, type SparepartRow } from "@/lib/queries";
 import {
   normalizeDepartmentKey,
   checkIsTeknikUser,
   checkIsGdspUser,
+  checkIsSuperAdminAccess,
 } from "@/lib/departmentPermissions";
 import {
   fetchSparepartOrders,
   createSparepartOrder,
-  approveSparepartOrder,
-  rejectSparepartOrder,
-  type SparepartOrder,
   type SparepartOrderItem,
 } from "@/lib/orderService";
+import { syncStockAcrossMenus } from "@/lib/stockSync";
 
 type ProductsSearch = {
   tab?: string | undefined;
@@ -555,7 +554,7 @@ function ProductSearchCombobox({
           <ChevronsUpDown className="ml-2 size-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[340px] sm:w-[420px] p-0 shadow-lg" align="start">
+      <PopoverContent className="w-[min(420px,calc(100vw-2rem))] p-0 shadow-lg" align="start">
         <div className="flex items-center border-b px-3 py-2">
           <Search className="mr-2 size-4 shrink-0 text-muted-foreground" />
           <input
@@ -728,6 +727,9 @@ function parseExcelWorkbookToSheets(
     const beginningBalanceIdx = headers.findIndex(
       (h: string) =>
         h.includes("beginning") ||
+        // Ejaan salah ketik umum: "begining" / "begining balance qty"
+        h.includes("begining") ||
+        h.includes("begin bal") ||
         h.includes("beg balance") ||
         h.includes("beg. balance") ||
         h.includes("beg bal") ||
@@ -738,10 +740,11 @@ function parseExcelWorkbookToSheets(
         h === "awal",
     );
 
-    // Kolom Mutasi Stok OBS: RECEIPT
+    // Kolom Mutasi Stok OBS: RECEIPT (mendukung "RECEIPT", "RECEIPT QTY", dst.)
     const receiptIdx = headers.findIndex(
       (h: string) =>
         h.includes("receipt") ||
+        h.includes("receiv") ||
         h.includes("masuk") ||
         h.includes("penerimaan") ||
         h.includes("qty in") ||
@@ -749,17 +752,18 @@ function parseExcelWorkbookToSheets(
         h === "rcpt",
     );
 
-    // Kolom Mutasi Stok OBS: ISSUED
+    // Kolom Mutasi Stok OBS: ISSUED (mendukung "ISSUED", "ISSUED QTY", dst.)
     const issuedIdx = headers.findIndex(
-      (h: string) =>
-        h.includes("issued") ||
-        h.includes("issue") ||
-        h.includes("keluar") ||
-        h.includes("pengeluaran") ||
-        h.includes("qty out") ||
-        h === "out" ||
-        h.includes("pemakaian") ||
-        h === "iss",
+      (h: string, idx: number) =>
+        idx !== receiptIdx &&
+        (h.includes("issued") ||
+          h.includes("issue") ||
+          h.includes("keluar") ||
+          h.includes("pengeluaran") ||
+          h.includes("qty out") ||
+          h === "out" ||
+          h.includes("pemakaian") ||
+          h === "iss"),
     );
 
     // Kolom Mutasi Stok OBS: ENDING BALANCE / STOK SAAT INI
@@ -1114,28 +1118,59 @@ function getPaginationPages(currentPage: number, totalPages: number): (number | 
 }
 
 // ── HELPER PEMISAHAN DATA: BARANG OBS SPAREPART VS MASTER BARANG ────────────
-export function isObsProduct(p?: ProductItem | null): boolean {
+const OBS_CODE_SET = new Set(
+  OBS_DEFAULT_ITEMS.map((it) => (it.code ? it.code.trim().toLowerCase() : "")).filter(Boolean),
+);
+const OBS_NAME_SET = new Set(OBS_DEFAULT_ITEMS.map((it) => it.name.trim().toLowerCase()));
+
+export function isMasterBarangProduct(p?: ProductItem | null): boolean {
   if (!p) return false;
-  // Jika secara eksplisit ditandai independen Master Barang (bukan OBS Sparepart)
-  if ((p as any).is_obs === false || (p as any).is_master_only === true) return false;
-  if ((p as any).source === "master_barang" || (p as any).source === "master") return false;
-  if (p.category === "Master Barang") return false;
+
+  const cat = String(p.category || "")
+    .trim()
+    .toLowerCase();
+  if (cat === "master barang" || cat.startsWith("master") || cat.includes("master")) return true;
+
+  if ((p as any).source === "master_barang" || (p as any).source === "master") return true;
+  if ((p as any).is_master_only === true || (p as any).is_obs === false) return true;
 
   if (p.description) {
+    const descLower = p.description.toLowerCase();
+    if (
+      descLower.includes("master_barang") ||
+      descLower.includes("is_master_only") ||
+      descLower.includes('"is_obs":false') ||
+      descLower.includes('"is_obs": false')
+    ) {
+      return true;
+    }
     try {
       const meta = JSON.parse(p.description);
       if (meta && typeof meta === "object") {
         if (
-          meta.is_obs === false ||
-          meta.is_master_only === true ||
           meta.source === "master_barang" ||
-          meta.source === "master"
+          meta.source === "master" ||
+          meta.is_master_only === true ||
+          meta.is_obs === false ||
+          String(meta.category || "")
+            .toLowerCase()
+            .includes("master")
         ) {
-          return false;
+          return true;
         }
       }
     } catch {}
   }
+  return false;
+}
+
+export function isObsProduct(p?: ProductItem | null): boolean {
+  if (!p) return false;
+
+  // 1. Jika secara eksplisit tergolong Master Barang independen -> Bukan OBS
+  if (isMasterBarangProduct(p)) return false;
+
+  // 2. Seluruh barang inventaris lainnya adalah milik OBS Sparepart
   return true;
 }
 
@@ -1146,15 +1181,27 @@ function WarehouseAndProductsPage() {
 
   const navigate = Route.useNavigate();
 
+  // Deteksi Super Admin tahan banting — dihitung SEBELUM deteksi Teknik & hak
+  // akses gudang agar seluruh fitur GDSP (card info Total Item/Fisik/Safety/
+  // Order/Out Of Stok, Tambah Barang, Export Laporan, Catat Masuk/Keluar)
+  // ikut aktif di akses "Super Admin" tanpa memerlukan baris role di DB.
+  const isSuperAdminSession = checkIsSuperAdminAccess(profile, roles);
+
   // Identifikasi peran Departemen Teknik / Administrator Teknik
-  const isTeknikUser = checkIsTeknikUser(profile, roles);
+  // (sesi Super Admin tidak pernah dianggap Teknik)
+  const isTeknikUser = isSuperAdminSession ? false : checkIsTeknikUser(profile, roles);
 
   // Hak akses Departemen Warehouse Sparepart & Continuous Improvement
   const isWarehouseAdmin =
     !isTeknikUser &&
-    (isAdmin || roles.includes("prod_process_uh") || roles.includes("admin_process"));
-  const canManageWarehouse = !isTeknikUser && (isWarehouseAdmin || roles.includes("qc_field"));
-  const canDeleteMaster = !isTeknikUser && (isAdmin || roles.includes("prod_process_uh"));
+    (isSuperAdminSession ||
+      isAdmin ||
+      roles.includes("prod_process_uh") ||
+      roles.includes("admin_process"));
+  const canManageWarehouse =
+    !isTeknikUser && (isWarehouseAdmin || isSuperAdminSession || roles.includes("qc_field"));
+  const canDeleteMaster =
+    !isTeknikUser && (isAdmin || isSuperAdminSession || roles.includes("prod_process_uh"));
 
   // Tab State
   const [activeTab, setActiveTab] = useState<string>(
@@ -1174,12 +1221,21 @@ function WarehouseAndProductsPage() {
   const [importSheets, setImportSheets] = useState<ParsedExcelSheet[]>([]);
   const [selectedSheet, setSelectedSheet] = useState<string>("ALL");
   const [importSortOption, setImportSortOption] = useState<string>("DEFAULT");
+
+  // Label kolom pratinjau menyesuaikan HEADER FILE yang diupload — sehingga
+  // kolom "Min Stock", "Batas Minimal", dll. tampil dengan nama asli di file.
+  const activeSheetColumns = useMemo(
+    () =>
+      (selectedSheet === "ALL"
+        ? importSheets[0]
+        : importSheets.find((s) => s.name === selectedSheet)
+      )?.columns || [],
+    [importSheets, selectedSheet],
+  );
+  const fileHeaderLabel = (key: string, fallback: string) =>
+    activeSheetColumns.find((c) => c.key === key)?.label || fallback;
   const [isImporting, setIsImporting] = useState(false);
   const bulkFileInputRef = useRef<HTMLInputElement>(null);
-
-  // State Dialog Kosongkan & Pulihkan Tabel OBS Sparepart (207 Item Standar)
-  const [isClearObsDialogOpen, setIsClearObsDialogOpen] = useState(false);
-  const [isRestoreObsDialogOpen, setIsRestoreObsDialogOpen] = useState(false);
 
   // State Modal Buffer Stok (tabel sendiri, independen)
   const [isBufferAddOpen, setIsBufferAddOpen] = useState(false);
@@ -1324,7 +1380,9 @@ function WarehouseAndProductsPage() {
           return;
         }
 
-        const sheets = parseExcelWorkbookToSheets(workbook, "Sparepart & Tools");
+        const isMaster = activeTab === "master" || search.tab === "master";
+        const defaultCategory = isMaster ? "Master Barang" : "Sparepart & Tools";
+        const sheets = parseExcelWorkbookToSheets(workbook, defaultCategory);
 
         if (sheets.length === 0) {
           toast.error("Tidak ada baris data barang yang valid ditemukan dalam file");
@@ -1335,45 +1393,32 @@ function WarehouseAndProductsPage() {
 
         setImportSheets(sheets);
 
-        const deduplicateParsedItems = (items: any[]) => {
-          const seen = new Set<string>();
-          const result: any[] = [];
-          for (const it of items) {
-            const nName = String(it.name || "")
-              .replace(/\u00a0/g, " ")
-              .replace(/\s+/g, " ")
-              .trim()
-              .toLowerCase();
-            const nCode = String(it.code || "")
-              .replace(/\u00a0/g, " ")
-              .replace(/\s+/g, " ")
-              .trim()
-              .toLowerCase();
-            const key = nName ? `n_${nName}` : nCode ? `c_${nCode}` : "";
-            if (!key || !seen.has(key)) {
-              if (key) seen.add(key);
-              result.push(it);
-            }
-          }
-          return result;
+        const sanitizeParsedItems = (items: any[]) => {
+          return items.filter((it) => {
+            const hasName =
+              it.name && String(it.name).trim() !== "" && String(it.name).trim() !== "-";
+            const hasCode =
+              it.code && String(it.code).trim() !== "" && String(it.code).trim() !== "-";
+            return Boolean(hasName || hasCode);
+          });
         };
 
         const firstSheet = sheets[0];
         if (sheets.length === 1 && firstSheet) {
-          const uniqueFirstSheetItems = deduplicateParsedItems(firstSheet.items);
+          const validFirstSheetItems = sanitizeParsedItems(firstSheet.items);
           setSelectedSheet(firstSheet.name);
-          setImportPreview(uniqueFirstSheetItems);
+          setImportPreview(validFirstSheetItems);
           toast.success(
-            `Berhasil membaca ${uniqueFirstSheetItems.length} barang dari sheet "${firstSheet.name}"`,
+            `Berhasil membaca ${validFirstSheetItems.length} barang dari sheet "${firstSheet.name}"`,
           );
         } else {
-          // Gabungkan semua sheet dengan deduplikasi
+          // Gabungkan semua sheet tanpa membuang baris data valid
           const allItems = sheets.flatMap((s) => s.items);
-          const uniqueItems = deduplicateParsedItems(allItems);
+          const validAllItems = sanitizeParsedItems(allItems);
           setSelectedSheet("ALL");
-          setImportPreview(uniqueItems);
+          setImportPreview(validAllItems);
           toast.success(
-            `Berhasil membaca ${uniqueItems.length} barang dari ${sheets.length} sheet`,
+            `Berhasil membaca ${validAllItems.length} barang dari ${sheets.length} sheet`,
           );
         }
       } catch (err: any) {
@@ -1435,15 +1480,46 @@ function WarehouseAndProductsPage() {
         "Nama Barang / Material",
         "Kategori",
         "Satuan",
-        "Minimal Stok",
-        "Maksimal Stok",
         "Stok Saat Ini",
         "Lokasi Gudang",
         "Posisi Rak",
       ],
-      [1, "7100115031", "ADAPTER SLEEVES HA 311", "Master Barang", "PCS", 1, 10, 5, "Gudang Utama", "Rak A-1"],
-      [2, "7100521472", "BELT CONVEYOR 2 PLY 1530 X 330 MM", "Master Barang", "PCS", 1, 5, 2, "Gudang Utama", "Rak A-2"],
-      [3, "7100913162", "BUTTERFLY VALVE CAST IRON Z011-A 4\"", "Master Barang", "PCS", 1, 8, 3, "Gudang Utama", "Rak B-1"],
+      [
+        1,
+        "7100115031",
+        "ADAPTER SLEEVES HA 311",
+        "Master Barang",
+        "PCS",
+        1,
+        10,
+        5,
+        "Gudang Utama",
+        "Rak A-1",
+      ],
+      [
+        2,
+        "7100521472",
+        "BELT CONVEYOR 2 PLY 1530 X 330 MM",
+        "Master Barang",
+        "PCS",
+        1,
+        5,
+        2,
+        "Gudang Utama",
+        "Rak A-2",
+      ],
+      [
+        3,
+        "7100913162",
+        'BUTTERFLY VALVE CAST IRON Z011-A 4"',
+        "Master Barang",
+        "PCS",
+        1,
+        8,
+        3,
+        "Gudang Utama",
+        "Rak B-1",
+      ],
     ];
 
     const worksheet = XLSX.utils.aoa_to_sheet(templateData);
@@ -1701,17 +1777,27 @@ function WarehouseAndProductsPage() {
 
       for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
         const chunk = toInsert.slice(i, i + CHUNK_SIZE);
-        const { error: insErr } = await (supabase as any)
-          .from("buffer_stock")
-          .upsert(chunk, { onConflict: "name" });
+        // INSERT polos (tanpa onConflict "name") — tabel buffer_stock tidak
+        // memiliki unique constraint pada kolom name, sehingga upsert dengan
+        // onConflict "name" selalu gagal "no unique or exclusion constraint".
+        // Duplikasi sudah dicegah oleh pra-pencocokan existingByName/byCode.
+        const { error: insErr } = await (supabase as any).from("buffer_stock").insert(chunk);
         if (insErr) {
-          console.warn("Buffer batch upsert fallback due to:", insErr.message);
+          console.warn("Buffer batch insert fallback due to:", insErr.message);
           for (const it of chunk) {
-            const { error: singleErr } = await (supabase as any)
-              .from("buffer_stock")
-              .upsert(it, { onConflict: "name" });
+            const { error: singleErr } = await (supabase as any).from("buffer_stock").insert(it);
             if (singleErr) {
-              console.error("Failed to upsert buffer item:", it.name, singleErr.message);
+              // Self-healing: konflik unik (bila DB punya constraint) → nama alternatif
+              const conflictLike = /unique|duplicate/i.test(singleErr.message || "");
+              if (conflictLike && it.name && it.code) {
+                const retry = await (supabase as any)
+                  .from("buffer_stock")
+                  .insert({ ...it, name: `${it.name} (${it.code})` });
+                if (!retry.error) continue;
+                console.error("Failed to insert buffer item:", it.name, retry.error.message);
+              } else {
+                console.error("Failed to insert buffer item:", it.name, singleErr.message);
+              }
             }
           }
         }
@@ -1751,18 +1837,33 @@ function WarehouseAndProductsPage() {
     }
     setIsImporting(true);
     try {
-      const { data: existingProducts, error: fetchErr } = await supabase
-        .from("products")
-        .select(
-          "id, name, code, category, unit, location, shelf, min_stock, safe_stock, max_stock, current_stock, description",
-        )
-        .range(0, 4999);
-
-      if (fetchErr) {
-        console.warn("Could not fetch existing products:", fetchErr.message);
+      // Fetch SELURUH existing products dengan paging (bukan hanya 5.000 baris
+      // pertama) supaya pencocokan import tidak melewatkan item lama & tidak
+      // salah memperlakukannya sebagai barang baru.
+      const existingProducts: any[] = [];
+      {
+        let page = 0;
+        let hasMorePages = true;
+        while (hasMorePages && page < 10) {
+          const from = page * 1000;
+          const { data, error } = await supabase
+            .from("products")
+            .select(
+              "id, name, code, category, unit, location, shelf, min_stock, safe_stock, max_stock, current_stock, description",
+            )
+            .range(from, from + 999);
+          if (error) {
+            console.warn("Could not fetch existing products:", error.message);
+            break;
+          }
+          if (!data || data.length === 0) break;
+          existingProducts.push(...(data as any[]));
+          if (data.length < 1000) hasMorePages = false;
+          else page++;
+        }
       }
 
-      const isMasterTab = activeTab === "master";
+      const isMasterTab = activeTab === "master" || search.tab === "master";
 
       const normStr = (s: any) =>
         String(s || "")
@@ -1773,22 +1874,38 @@ function WarehouseAndProductsPage() {
 
       const existingByName = new Map<string, any>();
       const existingByCode = new Map<string, any>();
+      // Fallback: baris LEGACY tanpa metadata flow (is_obs / master_barang),
+      // yang selama ini selalu dianggap "barang baru" oleh import sampai-sampai
+      // menimbulkan error ON CONFLICT. Boleh dicocokkan dengan nama/kode asli.
+      const fallbackByName = new Map<string, any>();
+      const fallbackByCode = new Map<string, any>();
 
       (existingProducts || []).forEach((p: any) => {
         const isObs = isObsProduct(p);
-        // Pemisahan ketat: import pada OBS hanya mencocokkan barang OBS, import Master hanya mencocokkan barang Master
-        if (isMasterTab ? !isObs : isObs) {
-          const nName = normStr(p.name);
-          const nCode = normStr(p.code);
+        let isMasterRows = false;
+        try {
+          const d =
+            typeof p.description === "string" ? JSON.parse(p.description) : p.description || {};
+          isMasterRows = d?.source === "master_barang" || d?.is_master_only === true;
+        } catch {
+          isMasterRows = false;
+        }
+        const nName = normStr(p.name);
+        const nCode = normStr(p.code);
+        // Peta utama: pemisahan ketat sesuai flow (perbaikan bug 206-vs-207)
+        if (isMasterTab ? isMasterRows && !isObs : isObs && !isMasterRows) {
           if (nName) existingByName.set(nName, p);
           if (nCode) existingByCode.set(nCode, p);
+        } else {
+          // Baris ambiguous/legacy → dicocokkan sebagai fallback
+          if (nName) fallbackByName.set(nName, p);
+          if (nCode) fallbackByCode.set(nCode, p);
         }
       });
 
       const toUpdate: any[] = [];
       const toInsert: any[] = [];
       const seenNamesInBatch = new Set<string>();
-      const seenCodesInBatch = new Set<string>();
 
       for (const item of importPreview) {
         const cleanName = String(item.name || "")
@@ -1804,81 +1921,115 @@ function WarehouseAndProductsPage() {
 
         if (!cleanName && !cleanCode) continue;
 
-        const finalName = cleanName || (cleanCode ? `Item ${cleanCode}` : "Unnamed Item");
-        const normName = normStr(finalName);
-        const normCode = cleanCode ? normStr(cleanCode) : "";
+        let finalName = cleanName || (cleanCode ? `Item ${cleanCode}` : "Unnamed Item");
+        let normName = normStr(finalName);
 
-        // Cegah duplikasi di dalam batch (hindari error PostgreSQL: cannot affect row a second time)
-        if (normName && seenNamesInBatch.has(normName)) continue;
-        if (normCode && seenCodesInBatch.has(normCode)) continue;
+        // Jika ada nama yang sama persis dalam file, beri penanda unik agar semua baris dari file tetap diimport
+        if (seenNamesInBatch.has(normName)) {
+          finalName = cleanCode
+            ? `${finalName} (${cleanCode})`
+            : `${finalName} #${seenNamesInBatch.size + 1}`;
+          normName = normStr(finalName);
+        }
+        seenNamesInBatch.add(normName);
 
-        if (normName) seenNamesInBatch.add(normName);
-        if (normCode) seenCodesInBatch.add(normCode);
+        // Cari di database: strict match sesuai flow dulu, lalu fallback baris
+        // legacy/ambiguous (tanpa metadata) berdasarkan nama / kode yang sama.
+        const isRealCode =
+          cleanCode &&
+          cleanCode.length >= 3 &&
+          !["-", "--", "0", "n/a", "na", "none", "null"].includes(cleanCode.toLowerCase());
 
-        // Cari di database: cek nama terlebih dahulu (karena unique constraint ada pada name), lalu cek code
         const found =
           (normName ? existingByName.get(normName) : null) ||
-          (normCode ? existingByCode.get(normCode) : null);
+          (isRealCode ? existingByCode.get(normStr(cleanCode)) : null) ||
+          (normName ? fallbackByName.get(normName) : null) ||
+          (isRealCode && fallbackByCode ? fallbackByCode.get(normStr(cleanCode)) : null);
 
         const hasEndingInFile = item.ending_balance !== null && item.ending_balance !== undefined;
         const hasMaxInFile = item.max_stock !== null && item.max_stock !== undefined;
         const hasMinInFile = item.min_stock !== null && item.min_stock !== undefined;
 
         // Metadata OBS / Master Barang untuk kolom BEGINNING BALANCE, RECEIPT, ISSUED, ENDING BALANCE
+        // + BATAS MINIMAL (nilai MIN STOCK dari file — tidak pernah menimpa
+        // min/max stok database, hanya rekam untuk tampilan kolom Batas Minimal)
         const obsMeta = isMasterTab
           ? {
               source: "master_barang",
               is_obs: false,
               is_master_only: true,
-              beginning_balance: item.beginning_balance !== undefined ? item.beginning_balance : null,
-              receipt: item.receipt !== undefined ? item.receipt : null,
-              issued: item.issued !== undefined ? item.issued : null,
-              ending_balance: item.ending_balance !== undefined ? item.ending_balance : null,
+              category: "Master Barang",
+              beginning_balance:
+                item.beginning_balance !== undefined
+                  ? item.beginning_balance
+                  : (item.ending_balance ?? item.current_stock ?? 0),
+              receipt: item.receipt !== undefined ? item.receipt : 0,
+              issued: item.issued !== undefined ? item.issued : 0,
+              ending_balance:
+                item.ending_balance !== undefined ? item.ending_balance : (item.current_stock ?? 0),
+              min_stock_file: hasMinInFile ? Number(item.min_stock) : null,
+              max_stock_file: hasMaxInFile ? Number(item.max_stock) : null,
             }
           : {
               source: "obs",
               is_obs: true,
-              beginning_balance: item.beginning_balance !== undefined ? item.beginning_balance : null,
-              receipt: item.receipt !== undefined ? item.receipt : null,
-              issued: item.issued !== undefined ? item.issued : null,
-              ending_balance: item.ending_balance !== undefined ? item.ending_balance : null,
+              category: "Sparepart & Tools",
+              beginning_balance:
+                item.beginning_balance !== undefined
+                  ? item.beginning_balance
+                  : (item.ending_balance ?? item.current_stock ?? 0),
+              receipt: item.receipt !== undefined ? item.receipt : 0,
+              issued: item.issued !== undefined ? item.issued : 0,
+              ending_balance:
+                item.ending_balance !== undefined ? item.ending_balance : (item.current_stock ?? 0),
+              min_stock_file: hasMinInFile ? Number(item.min_stock) : null,
+              max_stock_file: hasMaxInFile ? Number(item.max_stock) : null,
             };
-        const hasObsData =
-          obsMeta.beginning_balance !== null ||
-          obsMeta.receipt !== null ||
-          obsMeta.issued !== null ||
-          obsMeta.ending_balance !== null;
-        const obsDescription = hasObsData ? JSON.stringify(obsMeta) : found?.description || null;
+        const obsDescription = JSON.stringify(obsMeta);
 
         if (found) {
           // Data master barang: sertakan nama agar memenuhi NOT NULL constraint PostgreSQL saat upsert
+          //
+          // ⚠️ ATURAN IMPORT: import file baru HANYA mengubah ENDING BALANCE
+          // (current_stock) dan BEGINNING BALANCE (metadata di description).
+          // min_stock & max_stock TIDAK pernah ditimpa dari file — hanya
+          // super admin yang dapat mengeditnya lewat menu Edit Barang.
+          //
+          // ⚠️ KATEGORI DIKUNCI PADA FLOW-nya: import dari menu OBS mengubah
+          // barang yang ditemukan menjadi OBS penuh (source "obs"), dan import
+          // dari menu Master Barang menjadi Master Barang. Tanpa ini, barang
+          // lama yang pernah tersimpan dengan kategori "Master Barang" tidak
+          // ikut tampil di daftar OBS (jumlah yang terlihat jadi kurang dari
+          // jumlah item di file).
           toUpdate.push({
             id: found.id,
             name: found.name || finalName,
             code: cleanCode || found.code || null,
-            category: isMasterTab
-              ? (found.category || item.category || "Master Barang")
-              : (found.category || item.category || "Sparepart & Tools"),
-            unit: item.unit || found.unit || "pcs",
-            location: item.location || found.location || "Gudang Utama",
-            shelf: item.shelf || found.shelf || "Rak A-1",
-            // Jika file memuat ending balance, perbarui stok. Jika file HANYA update maks stock/master, pertahankan stok yang ada di database
+            category: isMasterTab ? "Master Barang" : "Sparepart & Tools",
+            // Unit & lokasi barang lama dipertahankan (tidak diubah oleh import)
+            unit: found.unit || item.unit || "pcs",
+            location: found.location || item.location || "Gudang Utama",
+            shelf: found.shelf || item.shelf || "Rak A-1",
+            // Jika file memuat ending balance, perbarui stok. Jika file HANYA update master, pertahankan stok yang ada di database
             current_stock: hasEndingInFile
               ? Number(item.ending_balance)
               : (found.current_stock ?? 0),
             safe_stock: found.safe_stock ?? 1,
-            // Rekam kolom minimal stock jika ada di file
-            min_stock: hasMinInFile ? Number(item.min_stock) : (found.min_stock ?? 10),
-            // Rekam kolom maksimal stock jika ada di file, jika tidak pertahankan dari database
-            max_stock: hasMaxInFile ? Number(item.max_stock) : (found.max_stock ?? null),
+            // Min/Max stock barang lama TIDAK berubah oleh import (proteksi atas)
+            min_stock: found.min_stock ?? 10,
+            max_stock: found.max_stock ?? null,
             description: obsDescription,
             is_active: true,
           });
         } else {
+          // Barang BARU: min/max stock diinisialisasi dari file (bukan mengubah
+          // data lama); setelah itu hanya super admin yang dapat mengeditnya.
           toInsert.push({
             name: finalName,
             code: cleanCode || null,
-            category: isMasterTab ? (item.category || "Master Barang") : (item.category || "Sparepart & Tools"),
+            category: isMasterTab
+              ? item.category || "Master Barang"
+              : item.category || "Sparepart & Tools",
             unit: item.unit || "pcs",
             location: item.location || "Gudang Utama",
             shelf: item.shelf || "Rak A-1",
@@ -1902,10 +2053,13 @@ function WarehouseAndProductsPage() {
             const mCode = item.code ? String(item.code).trim().toLowerCase() : "";
             const mName = item.name ? String(item.name).trim().toLowerCase() : "";
             const mData = {
-              beginning_balance: item.beginning_balance !== undefined ? item.beginning_balance : null,
+              beginning_balance:
+                item.beginning_balance !== undefined ? item.beginning_balance : null,
               receipt: item.receipt !== undefined ? item.receipt : null,
               issued: item.issued !== undefined ? item.issued : null,
               ending_balance: item.ending_balance !== undefined ? item.ending_balance : null,
+              min_stock_file: item.min_stock !== undefined ? item.min_stock : null,
+              max_stock_file: item.max_stock !== undefined ? item.max_stock : null,
             };
             if (mCode) obsMap[mCode] = mData;
             if (mName) obsMap[mName] = mData;
@@ -1914,9 +2068,122 @@ function WarehouseAndProductsPage() {
         } catch (e) {
           console.warn("Could not save to localStorage obs_stock_balances_map:", e);
         }
+      } else {
+        // Khusus Master Barang: sinkronkan seluruh item hasil import langsung ke
+        // tabel `spareparts` (sumber data Master Barang bersama semua role) supaya
+        // perubahan tersinkron antar user GDSP & Teknik — tanpa localStorage.
+        try {
+          const spareRows = importPreview.map((item, idx) => {
+            const codeRaw = String(item.code || "").trim();
+            const cleanCode = codeRaw.replace(/^0+/, "") || codeRaw;
+            const stockNum = Number(item.ending_balance ?? item.current_stock ?? 0) || 0;
+            const unitStr = (item.unit || "PCS").toUpperCase();
+            const minNum =
+              item.min_stock !== null && item.min_stock !== undefined ? Number(item.min_stock) : 10;
+            const maxNum =
+              item.max_stock !== null && item.max_stock !== undefined
+                ? Number(item.max_stock)
+                : null;
+            return {
+              material_number: cleanCode,
+              material_description: item.name || `Material ${idx + 1}`,
+              qty_stock: `${stockNum} ${unitStr}`,
+              min_stock: minNum,
+              max_stock: maxNum,
+            };
+          });
+
+          // PENTING: Import Master Barang bersifat UPDATE-ONLY — tidak pernah
+          // menambah baris baru ke tabel `spareparts` sehingga jumlah daftar nama
+          // barang tetap 2.808 (tidak membengkak). File import hanya memperbarui
+          // stok/min/max/deskripsi item yang kodenya sudah ada.
+          const existingCodes = new Set<string>();
+          // Pemetaan Nama → Kode: jika kode di file tidak ditemukan di Master
+          // Barang tapi NAMA barangnya sama, qty tetap ter-link ke item Master
+          // Barang tersebut (tidak menciptakan baris baru → tidak dobel item).
+          const spareNameMap = new Map<string, string>();
+          let page = 0;
+          let hasMore = true;
+          while (hasMore && page < 15) {
+            const from = page * 1000;
+            const { data, error } = await (supabase as any)
+              .from("spareparts")
+              .select("material_number, material_description")
+              .range(from, from + 999);
+            if (error || !data || data.length === 0) break;
+            (data as any[]).forEach((d) => {
+              const raw = String(d.material_number ?? "").trim();
+              const noLead = raw.replace(/^0+/, "") || raw;
+              existingCodes.add(raw);
+              existingCodes.add(noLead);
+              const nm = normStr(d.material_description);
+              if (nm && noLead && !spareNameMap.has(nm)) spareNameMap.set(nm, noLead);
+            });
+            if (data.length < 1000) hasMore = false;
+            else page++;
+          }
+
+          const toUpdateSp: any[] = [];
+          let skippedNewRows = 0;
+          spareRows.forEach((row) => {
+            const codeClean = String(row.material_number || "").trim();
+            const codeNoLead = codeClean.replace(/^0+/, "") || codeClean;
+            let targetCode = "";
+            if (
+              existingCodes.size === 0 ||
+              existingCodes.has(codeClean) ||
+              existingCodes.has(codeNoLead)
+            ) {
+              targetCode = codeClean;
+            } else {
+              // Fallback pencocokan NAMA BARANG yang sama di Master Barang
+              const nameHit = spareNameMap.get(normStr(row.material_description));
+              if (nameHit) targetCode = nameHit;
+            }
+            if (targetCode) {
+              toUpdateSp.push({ ...row, targetCode });
+            } else {
+              skippedNewRows++;
+            }
+          });
+          if (skippedNewRows > 0) {
+            console.warn(
+              `${skippedNewRows} item import dilewati (kode & nama tidak ada di Master Barang — import master barang tidak menambah item baru).`,
+            );
+          }
+
+          // Update paralel per 100 baris agar import ribuan item tetap cepat
+          // ⚠️ ATURAN IMPORT: hanya qty_stock (ENDING BALANCE) yang berubah.
+          // min_stock & max_stock TIDAK pernah ditimpa dari file — hanya
+          // super admin yang dapat mengeditnya lewat halaman Master Barang.
+          const SP_UPDATE_BATCH = 100;
+          for (let i = 0; i < toUpdateSp.length; i += SP_UPDATE_BATCH) {
+            const batch = toUpdateSp.slice(i, i + SP_UPDATE_BATCH);
+            await Promise.all(
+              batch.map(async (row) => {
+                // Target kode ter-resolve (kode file ATAU kode Master Barang
+                // yang namanya sama) — qty ter-link ke item yang sama persis.
+                const targetCode = String(
+                  (row as any).targetCode || row.material_number || "",
+                ).trim();
+                const clean = targetCode.replace(/^0+/, "") || targetCode;
+                const { error: upErr } = await (supabase as any)
+                  .from("spareparts")
+                  .update({
+                    qty_stock: row.qty_stock,
+                  })
+                  .in("material_number", [clean, targetCode]);
+                if (upErr) console.error("Update sparepart gagal:", targetCode, upErr.message);
+              }),
+            );
+          }
+        } catch (e: any) {
+          console.warn("Could not sync master barang import to spareparts:", e?.message || e);
+        }
       }
 
       const CHUNK_SIZE = 100;
+      const failedImports: string[] = [];
       // 1. Eksekusi update untuk barang yang sudah ada berdasarkan ID
       for (let i = 0; i < toUpdate.length; i += CHUNK_SIZE) {
         const chunk = toUpdate.slice(i, i + CHUNK_SIZE);
@@ -1930,30 +2197,53 @@ function WarehouseAndProductsPage() {
               .from("products")
               .upsert(it as any, { onConflict: "id" });
             if (singleErr) {
+              failedImports.push(`${it.name} — ${singleErr.message}`);
               console.error("Failed to upsert existing product item:", it.name, singleErr.message);
             }
           }
         }
       }
 
-      // 2. Eksekusi insert/upsert untuk barang baru dengan onConflict "name"
-      // Ini mencegah crash "duplicate key value violates unique constraint products_name_key"
+      // 2. Barang BARU: INSERT polos (TANPA onConflict "name") — kolom name di
+      //    tabel products tidak dijamin memiliki unique constraint di database
+      //    live; upsert dengan onConflict "name" selalu gagal dengan error
+      //    "there is no unique or exclusion constraint matching the ON CONFLICT
+      //    specification". Duplikasi dicegah oleh pra-pencocokan existing +
+      //    fallback map di atas; konflik unik (bila DB memang punya constraint)
+      //    di-retry dengan nama alternatif "Nama (KODE)".
       for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
         const chunk = toInsert.slice(i, i + CHUNK_SIZE);
-        const { error: insErr } = await supabase
-          .from("products")
-          .upsert(chunk as any, { onConflict: "name" });
+        const { error: insErr } = await supabase.from("products").insert(chunk as any);
         if (insErr) {
-          console.warn("Products batch upsert on name fallback due to:", insErr.message);
+          console.warn("Products batch insert fallback due to:", insErr.message);
           for (const it of chunk) {
-            const { error: singleErr } = await supabase
-              .from("products")
-              .upsert(it as any, { onConflict: "name" });
+            const { error: singleErr } = await supabase.from("products").insert(it as any);
             if (singleErr) {
-              console.error("Failed to upsert product item:", it.name, singleErr.message);
+              // Self-healing: konflik nama unik → coba ulang dengan nama + kode barang
+              const conflictLike = /unique|duplicate|conflict/i.test(singleErr.message || "");
+              if (conflictLike && it.name && it.code) {
+                const alt = `${it.name} (${it.code})`;
+                const retry = await supabase.from("products").insert({ ...it, name: alt } as any);
+                if (!retry.error) continue;
+                failedImports.push(`${it.name} — ${retry.error.message}`);
+              } else {
+                failedImports.push(`${it.name} — ${singleErr.message}`);
+              }
+              console.error("Failed to insert product item:", it.name, singleErr.message);
             }
           }
         }
+      }
+
+      // ⚠️ SEMUA baris dari file harus tersimpan: jika ada baris yang gagal,
+      // user dapat tahu nama barangnya — tidak ada yang hilang tanpa jejak.
+      if (failedImports.length > 0) {
+        toast.error(
+          `${failedImports.length} barang GAGAL tersimpan saat import (cek detail di console): ` +
+            failedImports.slice(0, 3).join(" ; "),
+          { duration: 10000 },
+        );
+        console.error("Barang gagal diimport:", failedImports);
       }
 
       const totalCount = toInsert.length + toUpdate.length;
@@ -1966,6 +2256,7 @@ function WarehouseAndProductsPage() {
       toast.success(
         `Berhasil mengimport ${totalCount} data barang (${toInsert.length} baru, ${toUpdate.length} diperbarui)!`,
       );
+      queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
@@ -2015,16 +2306,10 @@ function WarehouseAndProductsPage() {
   const [txType, setTxType] = useState<"IN" | "OUT">("IN");
 
   // ── SISTEM ORDER SPAREPART (TEKNIK & GUDANG) ───────────────────────────────
-  const isGdspUser = checkIsGdspUser(profile, roles, isAdmin);
+  const isGdspUser = checkIsGdspUser(profile, roles, isAdmin) || isSuperAdminSession;
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [isOrderListModalOpen, setIsOrderListModalOpen] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
-  const [isOrderMonitoringOpen, setIsOrderMonitoringOpen] = useState(false);
-  const [orderMonitoringSearch, setOrderMonitoringSearch] = useState("");
-  const [orderMonitoringStatus, setOrderMonitoringStatus] = useState<
-    "ALL" | "PENDING" | "APPROVED" | "REJECTED"
-  >("ALL");
-  const [orderRejectTarget, setOrderRejectTarget] = useState<SparepartOrder | null>(null);
-  const [orderRejectReason, setOrderRejectReason] = useState("");
 
   // Formulir Order: Meniru persis struktur dan field 'Catatan Keluar'
   const [orderItems, setOrderItems] = useState<
@@ -2037,15 +2322,29 @@ function WarehouseAndProductsPage() {
     notes: "", // Petugas Sparepart Shift 1/2/3
   });
 
-  // Query order sparepart dari database secara permanen
+  // Query order sparepart dari database (dipakai badge "Monitoring Stok Order" & tabel approval)
+  // Polling 12 detik agar badge selalu sinkron dengan tabel Permintaan Order di Approval Center,
+  // walau order disetujui/ditolak dari perangkat/sesi GDSP lain.
   const { data: sparepartOrders = [] } = useQuery({
     queryKey: ["sparepart_orders"],
     queryFn: () => fetchSparepartOrders(supabase),
+    refetchInterval: 12000,
   });
 
   const pendingOrdersCount = useMemo(() => {
     return sparepartOrders.filter((o) => o.status === "PENDING").length;
   }, [sparepartOrders]);
+
+  // Daftar bon orderan yang menunggu approval GDSP (untuk popup list)
+  const pendingOrdersList = useMemo(
+    () =>
+      [...sparepartOrders]
+        .filter((o) => o.status === "PENDING")
+        .sort(
+          (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
+        ),
+    [sparepartOrders],
+  );
 
   // Auto-open modal jika diarahkan dari dashboard dengan search parameter
   useEffect(() => {
@@ -2057,12 +2356,18 @@ function WarehouseAndProductsPage() {
       setTxType(search.type);
       setIsTxOpen(true);
     }
-    const targetTab = search.tab || "items";
-    if (isTeknikUser && targetTab !== "items") {
-      setActiveTab("items");
-      navigate({ search: (prev: any) => ({ ...prev, tab: "items" }), replace: true });
-      return;
+    // Auto-open formulir sistem order jika diarahkan dari halaman Monitoring Pemotongan Stok Order
+    if (search.action === "order") {
+      setOrderItems([{ productId: "", quantity: "1", unit: "PCS" }]);
+      setOrderHeader({
+        batchNumber: new Date().toISOString().split("T")[0],
+        referenceNo: profile?.full_name || profile?.email || "Administrator Teknik",
+        supplierOrDest: "",
+        notes: "",
+      });
+      setIsOrderModalOpen(true);
     }
+    const targetTab = search.tab || (isTeknikUser ? "master" : "items");
     setActiveTab(targetTab);
     if (targetTab === "transactions") {
       setTxDateFilter(getTodayDateStr());
@@ -2165,6 +2470,10 @@ function WarehouseAndProductsPage() {
           }
         },
       )
+      .on("postgres_changes", { event: "*", schema: "public", table: "warehouse_orders" }, () => {
+        // Status order berubah saat GDSP menyetujui/menolak → badge & tabel harus segar
+        queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
+      })
       .subscribe();
 
     return () => {
@@ -2183,15 +2492,216 @@ function WarehouseAndProductsPage() {
   const docInputRef = useRef<HTMLInputElement>(null);
   const txDocInputRef = useRef<HTMLInputElement>(null);
 
-  // ── QUERY DATA BARANG ──────────────────────────────────────────────────────────
-  const { data: products = [], isLoading: loadingProducts } = useQuery({
+  // ── QUERY DATA MASTER BARANG (TABEL SPAREPARTS SUPABASE - 2.735 DATA) ────────
+  const { data: sparepartsDb = [], isLoading: loadingSpareparts } = useQuery({
+    queryKey: ["spareparts_master"],
+    queryFn: fetchSpareparts,
+  });
+
+  // ── QUERY DATA OBS & MASTER BARANG DARI TABEL PRODUCTS (FULL RANGE) ────────
+  const { data: productsDb = [], isLoading: loadingProductsDb } = useQuery({
     queryKey: ["warehouse_products"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("products").select("*").order("name");
-      if (error) throw error;
-      return (data ?? []) as ProductItem[];
+      let queryFailed = false;
+      try {
+        let allProducts: any[] = [];
+        const PAGE_SIZE = 1000;
+        let page = 0;
+        let hasMore = true;
+
+        while (hasMore && page < 10) {
+          const from = page * PAGE_SIZE;
+          const to = from + PAGE_SIZE - 1;
+          const { data, error } = await supabase.from("products").select("*").range(from, to);
+
+          if (error) {
+            console.warn("warehouse_products range error:", error.message);
+            queryFailed = true;
+            break;
+          }
+
+          if (data && data.length > 0) {
+            allProducts = allProducts.concat(data);
+            if (data.length < PAGE_SIZE) {
+              hasMore = false;
+            } else {
+              page++;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+
+        if (allProducts.length > 0) {
+          return allProducts.map((d: any) => ({
+            id: d.id,
+            name: d.name || d.material_description || "Item",
+            code: d.code || d.material_number || null,
+            category: d.category || "Sparepart & Tools",
+            unit: d.unit || "pcs",
+            location: d.location || "Gudang Utama",
+            shelf: d.shelf || "Rak A-1",
+            min_stock: Number(d.min_stock ?? 10),
+            safe_stock: Number(d.safe_stock ?? 1),
+            max_stock: d.max_stock ? Number(d.max_stock) : null,
+            current_stock: Number(d.current_stock ?? 0),
+            is_active: d.is_active !== undefined ? d.is_active : true,
+            description: d.description || null,
+            created_at: d.created_at,
+          })) as ProductItem[];
+        }
+      } catch (e) {
+        console.warn("warehouse_products query error:", e);
+        queryFailed = true;
+      }
+      // ⚠️ Jangan silent-fail: kalau database gagal dibaca, halaman akan
+      // menampilkan daftar STANDAR (bukan data asli). Beri tahu user jelas
+      // agar tidak salah paham (mis. "206 item" padahal datanya bukan milik DB).
+      if (queryFailed) {
+        toast.error(
+          "Gagal memuat data barang dari database — yang tampil adalah daftar standar OBS, bukan data Supabase. Cek koneksi/izin akses Anda.",
+          { duration: 10000 },
+        );
+      }
+      return [];
     },
   });
+
+  // Sinkronisasi otomatis data OBS Sparepart default (206 item standar) jika belum ada di database
+  const defaultObsList = useMemo<ProductItem[]>(() => {
+    // Item standar yang sudah pernah dihapus user tidak lagi ditampilkan
+    let hiddenKeys: string[] = [];
+    try {
+      hiddenKeys = JSON.parse(localStorage.getItem("obs_default_deleted_keys") || "[]");
+    } catch {}
+    const hidden = new Set(hiddenKeys);
+
+    return OBS_DEFAULT_ITEMS.filter((item) =>
+      [item.code, item.name].every((k) => typeof k === "string" && k !== "" && !hidden.has(k)),
+    ).map((item, idx) => ({
+      id: `obs-default-${item.code || idx}`,
+      name: item.name,
+      code: item.code,
+      min_stock: item.min_stock,
+      safe_stock: item.safe_stock,
+      max_stock: item.max_stock,
+      current_stock: item.current_stock,
+      unit: item.unit,
+      category: item.category,
+      location: item.location,
+      shelf: item.shelf,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      description: JSON.stringify({
+        source: "obs",
+        is_obs: true,
+        beginning_balance: item.current_stock,
+        receipt: 0,
+        issued: 0,
+        ending_balance: item.current_stock,
+      }),
+    }));
+  }, []);
+
+  // Data OBS Sparepart aktif
+  const obsProducts = useMemo(() => {
+    if (productsDb && productsDb.length > 0) return productsDb;
+    return defaultObsList;
+  }, [productsDb, defaultObsList]);
+
+  // Data Master Barang dari tabel spareparts Supabase (±2.735 item, sumber bersama semua role)
+  // → Overlay dengan hasil import Excel Master Barang di tabel products sehingga
+  //   selalu sinkron antar user (GDSP & Teknik) tanpa ketergantungan localStorage.
+  const masterSparepartsList = useMemo<ProductItem[]>(() => {
+    // 1. Basis: data referral tabel spareparts
+    const baseRows: ProductItem[] = sparepartsDb.map((sp) => {
+      const stockNum = parseFloat(String(sp.qty_stock || "0").replace(/[^0-9.]/g, "")) || 0;
+      const minStockNum = parseFloat(String(sp.min_stock || "0").replace(/[^0-9.]/g, "")) || 0;
+      const maxStockNum = parseFloat(String(sp.max_stock || "0").replace(/[^0-9.]/g, "")) || 0;
+      const unitMatch = String(sp.qty_stock || sp.min_stock || "PCS").match(/[a-zA-Z]+/);
+      const unit = unitMatch ? unitMatch[0].toUpperCase() : "PCS";
+      const cleanCode = (sp.material_number || "").replace(/^0+/, "") || sp.material_number;
+
+      return {
+        id: sp.id,
+        name: sp.material_description || "Material",
+        code: cleanCode || null,
+        category: "Master Barang",
+        unit: unit,
+        location: "Gudang Sparepart",
+        shelf: "Rak Sparepart",
+        min_stock: minStockNum,
+        safe_stock: 1,
+        max_stock: maxStockNum,
+        current_stock: stockNum,
+        is_active: true,
+        description: JSON.stringify({
+          source: "master_barang",
+          is_obs: false,
+          is_master_only: true,
+          material_number: sp.material_number,
+          avg_qty_gi: sp.avg_qty_gi,
+          hit_miss_pct: sp.hit_miss_pct,
+          beginning_balance: stockNum,
+          receipt: 0,
+          issued: 0,
+          ending_balance: stockNum,
+        }),
+        created_at: sp.created_at || new Date().toISOString(),
+      };
+    });
+
+    // 2. Overlay: hasil import/update master barang di tabel products (data terbaru yang tersinkron)
+    const importedMasterRows = (productsDb || []).filter(
+      (p) => isMasterBarangProduct(p) && p.is_active !== false,
+    );
+    if (importedMasterRows.length === 0) return baseRows;
+
+    const overlayIndex = new Map<string, ProductItem>();
+    importedMasterRows.forEach((mp) => {
+      const codeKey = mp.code ? String(mp.code).trim().toLowerCase() : "";
+      const nameKey = mp.name ? String(mp.name).trim().toLowerCase() : "";
+      if (codeKey) overlayIndex.set(codeKey, mp);
+      if (nameKey) overlayIndex.set(nameKey, mp);
+    });
+
+    const merged: ProductItem[] = baseRows.map((row): ProductItem => {
+      const codeKey = row.code ? String(row.code).trim().toLowerCase() : "";
+      const nameKey = row.name ? String(row.name).trim().toLowerCase() : "";
+      const latest =
+        (codeKey && overlayIndex.get(codeKey)) || (nameKey && overlayIndex.get(nameKey)) || null;
+      if (!latest) return row;
+      // Data terbaru dari import menimpa stok/parameter; id mengikuti baris products
+      // agar mutasi & approval menunjuk ke sumber data yang benar.
+      return {
+        ...row,
+        id: latest.id,
+        name: latest.name || row.name,
+        code: latest.code || row.code || null,
+        unit: latest.unit || row.unit || "PCS",
+        min_stock: latest.min_stock ?? row.min_stock ?? 0,
+        max_stock: latest.max_stock ?? row.max_stock ?? null,
+        current_stock: Number(latest.current_stock ?? row.current_stock),
+        description: latest.description || row.description || null,
+      };
+    });
+
+    // PENTING: hasil import TIDAK MENAMBAH baris baru di sini.
+    // Daftar Master Barang = isi tabel spareparts (2.808 item) saja — import
+    // hanya menimpa (overlay) item yang kodenya sama. Barang baru dari import
+    // harus masuk lewat "Tambah Barang"/import yang menulis ke tabel `spareparts`,
+    // sehingga jumlah daftar nama barang tetap terkendali.
+    return merged;
+  }, [sparepartsDb, productsDb]);
+
+  const products = useMemo(() => {
+    if (activeTab === "master") {
+      return masterSparepartsList;
+    }
+    return obsProducts;
+  }, [activeTab, masterSparepartsList, obsProducts]);
+
+  const loadingProducts = activeTab === "master" ? loadingSpareparts : loadingProductsDb;
 
   // ── QUERY DATA KATEGORI ────────────────────────────────────────────────────────
   const { data: categories = [] } = useQuery({
@@ -2338,6 +2848,27 @@ function WarehouseAndProductsPage() {
         is_active: true,
       });
       if (error) throw error;
+
+      // ── SINKRONISASI STOK LINTAS MENU ────────────────────────────────────────
+      // Stok awal barang buffer (+) ikut menambah qty barang yang sama di
+      // menu Master Barang (spareparts) & OBS Sparepart (products).
+      const bufferInitialStock = Number(bufferFormData.current_stock) || 0;
+      if (bufferInitialStock > 0) {
+        try {
+          await syncStockAcrossMenus(
+            supabase,
+            {
+              code: bufferFormData.code.trim() || null,
+              name: bufferFormData.name.trim(),
+            },
+            bufferInitialStock,
+            { skipTables: ["buffer_stock"] }, // baris buffer baru saja dibuat oleh flow ini
+          );
+        } catch (syncErr) {
+          console.warn("Sinkronisasi stok lintas menu (tambah buffer) gagal:", syncErr);
+        }
+      }
+
       await recordActivity(
         "TAMBAH_BUFFER",
         `Menambahkan buffer stok baru: "${bufferFormData.name.trim()}"`,
@@ -2361,6 +2892,8 @@ function WarehouseAndProductsPage() {
         description: "",
       });
       queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
     },
     onError: (e: Error) => toast.error("Gagal menambah buffer stok", { description: e.message }),
@@ -2553,7 +3086,8 @@ function WarehouseAndProductsPage() {
       if (!formData.name.trim()) throw new Error("Nama barang wajib diisi");
 
       const initialStock = Number(formData.current_stock) || 0;
-      const isMasterTab = activeTab === "master";
+      const isMasterTab =
+        activeTab === "master" || search.tab === "master" || formData.category === "Master Barang";
 
       // Metadata OBS vs Master Barang independen: barang dari menu Master Barang tidak mempengaruhi OBS Sparepart
       const itemMeta = isMasterTab
@@ -2561,6 +3095,7 @@ function WarehouseAndProductsPage() {
             source: "master_barang",
             is_obs: false,
             is_master_only: true,
+            category: "Master Barang",
             beginning_balance: initialStock,
             receipt: 0,
             issued: 0,
@@ -2568,26 +3103,20 @@ function WarehouseAndProductsPage() {
             user_note: formData.description.trim() || undefined,
           }
         : {
+            source: "obs",
+            is_obs: true,
             beginning_balance: initialStock,
             receipt: 0,
             issued: 0,
             ending_balance: initialStock,
-            is_obs: true,
           };
 
-      let productDescription = formData.description.trim() || null;
-      try {
-        productDescription = JSON.stringify(itemMeta);
-      } catch {}
+      const productDescription = JSON.stringify(itemMeta);
 
-      const { error } = await supabase.from("products").insert({
+      const newRow: Record<string, any> = {
         name: formData.name.trim(),
         code: formData.code.trim() || null,
-        category: isMasterTab
-          ? formData.category && formData.category !== "Sparepart & Tools"
-            ? formData.category
-            : "Master Barang"
-          : formData.category,
+        category: isMasterTab ? "Master Barang" : formData.category,
         unit: formData.unit,
         location: formData.location,
         shelf: formData.shelf,
@@ -2597,10 +3126,27 @@ function WarehouseAndProductsPage() {
         max_stock: formData.max_stock ? Number(formData.max_stock) : null,
         current_stock: initialStock,
         description: productDescription,
-        image_url: formData.image_url || null,
-        doc_url: formData.doc_url || null,
         is_active: true,
-      } as any);
+      };
+      // Kolom lampiran hanya dikirim bila terisi — jika tabel products belum memiliki
+      // kolom image_url/doc_url, insert tetap berhasil (lihat fallback di bawah).
+      if (formData.image_url) newRow["image_url"] = formData.image_url;
+      if (formData.doc_url) newRow["doc_url"] = formData.doc_url;
+
+      let { error } = await supabase.from("products").insert(newRow as any);
+
+      // Fallback: skema DB belum memiliki kolom lampiran → coba ulang tanpa kolom itu
+      if (error && /doc_url|image_url/i.test(error.message || "")) {
+        console.warn(
+          "Kolom image_url/doc_url belum ada di tabel products, mencoba tanpa lampiran:",
+          error.message,
+        );
+        const retryRow = { ...newRow };
+        delete retryRow["image_url"];
+        delete retryRow["doc_url"];
+        const retry = await supabase.from("products").insert(retryRow as any);
+        error = retry.error;
+      }
 
       // Simpan ke cache localStorage HANYA jika bukan master tab (agar data OBS tidak terpengaruh)
       if (!isMasterTab) {
@@ -2616,6 +3162,26 @@ function WarehouseAndProductsPage() {
 
       if (error) throw error;
 
+      // ── SINKRONISASI STOK LINTAS MENU ────────────────────────────────────────
+      // Barang baru dengan stok awal > 0 menambah qty barang yang sama (match
+      // kode/nama) di menu Master Barang & Buffer Stock. Kolom min/max stok
+      // menu lain tidak diubah — kontrol batas minimum tetap utuh.
+      if (initialStock > 0) {
+        try {
+          await syncStockAcrossMenus(
+            supabase,
+            {
+              code: formData.code.trim() || null,
+              name: formData.name.trim(),
+            },
+            initialStock,
+            { skipTables: ["products"] }, // baris products baru saja dibuat oleh flow ini
+          );
+        } catch (syncErr) {
+          console.warn("Sinkronisasi stok lintas menu (tambah barang) gagal:", syncErr);
+        }
+      }
+
       await recordActivity(
         "TAMBAH_BARANG",
         `Menambahkan ${isMasterTab ? "master barang baru" : "barang OBS baru"}: "${formData.name.trim()}" (${isMasterTab ? "Master Barang" : formData.category})${initialStock > 0 ? ` — Stok awal: ${initialStock} ${formData.unit}` : ""}`,
@@ -2624,11 +3190,12 @@ function WarehouseAndProductsPage() {
     onSuccess: () => {
       toast.success("Barang baru berhasil ditambahkan");
       setIsAddOpen(false);
+      const isMaster = activeTab === "master" || search.tab === "master";
       setFormData({
         name: "",
         code: "",
-        category: "Sparepart & Tools",
-        unit: "Roll",
+        category: isMaster ? "Master Barang" : "Sparepart & Tools",
+        unit: "PCS",
         location: "Gudang Utama",
         shelf: "Rak A-1",
         qty_in: "0",
@@ -2644,6 +3211,8 @@ function WarehouseAndProductsPage() {
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
+      queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
+      queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
     },
     onError: (e: Error) => toast.error("Gagal menambah barang", { description: e.message }),
   });
@@ -2703,7 +3272,11 @@ function WarehouseAndProductsPage() {
       }
 
       // Perbarui juga cache localStorage obs_stock_balances_map HANYA untuk barang OBS
-      if (typeof window !== "undefined" && window.localStorage && isObsProduct(originalProduct || editingItem)) {
+      if (
+        typeof window !== "undefined" &&
+        window.localStorage &&
+        isObsProduct(originalProduct || editingItem)
+      ) {
         try {
           const rawMap = window.localStorage.getItem("obs_stock_balances_map");
           const map = rawMap ? JSON.parse(rawMap) : {};
@@ -2742,23 +3315,41 @@ function WarehouseAndProductsPage() {
         }
       }
 
-      const { error } = await supabase
+      const updateRow: Record<string, any> = {
+        name: editingItem.name.trim(),
+        code: editingItem.code?.trim() || null,
+        category: editingItem.category,
+        unit: editingItem.unit,
+        location: editingItem.location,
+        shelf: editingItem.shelf,
+        min_stock: minStockToSave,
+        max_stock: maxStockToSave,
+        current_stock: newStock,
+        description: updatedDescription,
+      };
+      if (editingItem.image_url) updateRow["image_url"] = editingItem.image_url;
+      if (editingItem.doc_url) updateRow["doc_url"] = editingItem.doc_url;
+
+      let { error } = await supabase
         .from("products")
-        .update({
-          name: editingItem.name.trim(),
-          code: editingItem.code?.trim() || null,
-          category: editingItem.category,
-          unit: editingItem.unit,
-          location: editingItem.location,
-          shelf: editingItem.shelf,
-          min_stock: minStockToSave,
-          max_stock: maxStockToSave,
-          current_stock: newStock,
-          description: updatedDescription,
-          image_url: editingItem.image_url || null,
-          doc_url: editingItem.doc_url || null,
-        } as any)
+        .update(updateRow as any)
         .eq("id", editingItem.id);
+
+      // Fallback: kolom lampiran belum ada di skema DB → ulang tanpa image_url/doc_url
+      if (error && /doc_url|image_url/i.test(error.message || "")) {
+        console.warn(
+          "Kolom image_url/doc_url belum ada di tabel products, mencoba tanpa lampiran:",
+          error.message,
+        );
+        const retryRow = { ...updateRow };
+        delete retryRow["image_url"];
+        delete retryRow["doc_url"];
+        const retry = await supabase
+          .from("products")
+          .update(retryRow as any)
+          .eq("id", editingItem.id);
+        error = retry.error;
+      }
 
       if (error) throw error;
 
@@ -2880,137 +3471,97 @@ function WarehouseAndProductsPage() {
   // ── MUTATION: HAPUS BARANG ────────────────────────────────────────────────────
   const deleteProduct = useMutation({
     mutationFn: async (item: ProductItem) => {
-      const { error } = await supabase.from("products").delete().eq("id", item.id);
-      if (error) throw error;
+      const idStr = String(item.id || "");
+      const isUuidId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        idStr,
+      );
+      const inMasterTab = activeTab === "master" || search.tab === "master";
 
-      await recordActivity("HAPUS_BARANG", `Menghapus barang: "${item.name}"`);
+      // 1) Item DEFAULT bawaan (id "obs-default-...", BUKAN baris database):
+      //    tidak bisa dihapus lewat DB (id bukan UUID → error cast). Ditandai
+      //    tersembunyi via localStorage sehingga hilang dari daftar tampilan.
+      if (!isUuidId) {
+        const hiddenKey = "obs_default_deleted_keys";
+        const keys = JSON.parse(localStorage.getItem(hiddenKey) || "[]");
+        const hideKeys = [idStr, item.code, item.name].filter(
+          (k): k is string => typeof k === "string" && k !== "",
+        );
+        for (const k of hideKeys) {
+          if (!keys.includes(k)) keys.push(k);
+        }
+        localStorage.setItem(hiddenKey, JSON.stringify(keys));
+
+        await recordActivity(
+          "HAPUS_BARANG",
+          `Menghapus barang daftar standar OBS: "${item.name}" (bukan baris database)`,
+        );
+        return;
+      }
+
+      // 2) ID valid (UUID): tentukan tabel asal baris.
+      //    • Master Barang → baris bisa bersumber dari tabel `spareparts`
+      //      atau hasil import (overlay tabel `products`).
+      //    • OBS → baris tabel `products`; jika id hanya ditemukan di tabel
+      //      `spareparts`, hapus di sana.
+      const inProducts = (productsDb as any[]).some((p) => String(p.id) === idStr);
+      const inSpareparts = (sparepartsDb as any[]).some((sp) => String(sp.id) === idStr);
+
+      if (inProducts) {
+        const { error } = await supabase.from("products").delete().eq("id", idStr);
+        if (error) throw error;
+        // Master Barang: hapus juga baris sumbernya di tabel spareparts (kode sama)
+        // agar item tidak muncul kembali dari daftar master.
+        if (inMasterTab && item.code) {
+          const codeRaw = String(item.code).trim();
+          const clean = codeRaw.replace(/^0+/, "") || codeRaw;
+          const { error: spErr } = await (supabase as any)
+            .from("spareparts")
+            .delete()
+            .in("material_number", [codeRaw, clean]);
+          if (spErr) console.warn("Hapus baris spareparts terkait gagal:", spErr.message);
+        }
+      } else if (inSpareparts) {
+        const { error } = await (supabase as any).from("spareparts").delete().eq("id", idStr);
+        if (error) throw error;
+        if (item.code) {
+          const codeRaw = String(item.code).trim();
+          const clean = codeRaw.replace(/^0+/, "") || codeRaw;
+          const { error: pErr } = await supabase
+            .from("products")
+            .delete()
+            .in("code", [codeRaw, clean]);
+          if (pErr) console.warn("Hapus baris products terkait gagal:", pErr.message);
+        }
+      } else {
+        // Fallback terakhir berdasarkan kode (jaga-jaga id tidak cocok kedua query)
+        if (inMasterTab && item.code) {
+          const codeRaw = String(item.code).trim();
+          const clean = codeRaw.replace(/^0+/, "") || codeRaw;
+          const { error } = await (supabase as any)
+            .from("spareparts")
+            .delete()
+            .in("material_number", [codeRaw, clean]);
+          if (error) throw error;
+        } else if (item.name) {
+          const { error } = await supabase.from("products").delete().eq("name", item.name);
+          if (error) throw error;
+        } else {
+          throw new Error("Baris barang tidak ditemukan di database");
+        }
+      }
+
+      await recordActivity(
+        "HAPUS_BARANG",
+        `Menghapus barang: "${item.name}"${inMasterTab ? " (master barang)" : ""}`,
+      );
     },
     onSuccess: () => {
       toast.success("Data barang berhasil dihapus");
       setDeletingItem(null);
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
     },
     onError: (e: Error) => toast.error("Gagal menghapus barang", { description: e.message }),
-  });
-
-  // ── MUTATION: KOSONGKAN SELURUH TABEL BARANG OBS SPAREPART ────────────────────
-  const clearObsProducts = useMutation({
-    mutationFn: async () => {
-      // Ambil seluruh ID produk yang tergolong OBS
-      const obsItems = products.filter((p) => isObsProduct(p));
-      if (obsItems.length === 0) {
-        throw new Error("Tabel OBS Sparepart saat ini sudah kosong.");
-      }
-
-      const ids = obsItems.map((p) => p.id);
-      const CHUNK_SIZE = 100;
-      for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
-        const chunk = ids.slice(i, i + CHUNK_SIZE);
-        const { error } = await supabase.from("products").delete().in("id", chunk);
-        if (error) throw error;
-      }
-
-      // Bersihkan juga cache saldo OBS di localStorage
-      if (typeof window !== "undefined" && window.localStorage) {
-        try {
-          window.localStorage.removeItem("obs_stock_balances_map");
-        } catch {}
-      }
-
-      await recordActivity(
-        "KOSONGKAN_TABEL_OBS",
-        `Mengosongkan seluruh tabel OBS Sparepart (menghapus ${ids.length} item barang)`,
-      );
-    },
-    onSuccess: () => {
-      toast.success("Seluruh data barang pada tabel OBS Sparepart berhasil dikosongkan");
-      setIsClearObsDialogOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
-      queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
-    },
-    onError: (e: Error) =>
-      toast.error("Gagal mengosongkan tabel OBS", { description: e.message }),
-  });
-
-  // ── MUTATION: PULIHKAN 207 DATA MASTER BARANG DATABASE OBS STANDAR ────────────
-  const restoreObs207 = useMutation({
-    mutationFn: async () => {
-      // 1. Bersihkan data OBS yang mungkin rusak atau tercampur
-      const existingObs = products.filter((p) => isObsProduct(p));
-      if (existingObs.length > 0) {
-        const ids = existingObs.map((p) => p.id);
-        const CHUNK_SIZE = 100;
-        for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
-          const chunk = ids.slice(i, i + CHUNK_SIZE);
-          await supabase.from("products").delete().in("id", chunk);
-        }
-      }
-
-      // 2. Siapkan 207 item standar OBS dari file master database
-      const obsMap: Record<string, any> = {};
-      const payload = OBS_DEFAULT_ITEMS.map((it) => {
-        const meta = {
-          source: "obs",
-          is_obs: true,
-          beginning_balance: it.current_stock,
-          receipt: 0,
-          issued: 0,
-          ending_balance: it.current_stock,
-        };
-        const cCode = it.code ? it.code.trim().toLowerCase() : "";
-        const cName = it.name ? it.name.trim().toLowerCase() : "";
-        if (cCode) obsMap[cCode] = meta;
-        if (cName) obsMap[cName] = meta;
-
-        return {
-          name: it.name.trim(),
-          code: it.code ? it.code.trim() : null,
-          category: "Sparepart & Tools",
-          unit: it.unit || "pcs",
-          location: it.location || "Gudang Utama",
-          shelf: it.shelf || "Rak A-1",
-          safe_stock: it.safe_stock || 1,
-          min_stock: it.min_stock || 1,
-          max_stock: it.max_stock,
-          current_stock: it.current_stock,
-          description: JSON.stringify(meta),
-          is_active: true,
-        };
-      });
-
-      // 3. Masukkan ke database Supabase
-      const CHUNK_SIZE = 100;
-      for (let i = 0; i < payload.length; i += CHUNK_SIZE) {
-        const chunk = payload.slice(i, i + CHUNK_SIZE);
-        const { error: insErr } = await supabase.from("products").insert(chunk as any);
-        if (insErr) {
-          console.warn("Insert fallback to upsert:", insErr.message);
-          await supabase.from("products").upsert(chunk as any, { onConflict: "name" });
-        }
-      }
-
-      // 4. Update cache localStorage
-      if (typeof window !== "undefined" && window.localStorage) {
-        try {
-          window.localStorage.setItem("obs_stock_balances_map", JSON.stringify(obsMap));
-        } catch {}
-      }
-
-      await recordActivity(
-        "RESTORE_DATABASE_OBS",
-        `Memulihkan database default 207 item barang OBS Sparepart`,
-      );
-    },
-    onSuccess: () => {
-      toast.success("Berhasil memulihkan 207 item data standar OBS Sparepart ke database!");
-      setIsRestoreObsDialogOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
-      queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
-    },
-    onError: (e: Error) =>
-      toast.error("Gagal memulihkan 207 data OBS", { description: e.message }),
   });
 
   // ── CREATE TRANSACTION (MASUK / KELUAR) - MULTI ITEM (S.D 6 BARANG) ─────────────
@@ -3123,6 +3674,26 @@ function WarehouseAndProductsPage() {
         }
 
         recordedNames.push(`${qty} ${targetProduct.unit || "kg"} ${targetProduct.name}`);
+
+        // ── SINKRONISASI STOK LINTAS MENU (Master Barang / OBS / Buffer Stock) ──
+        // Trigger DB sudah memperbarui tabel products berdasarkan product_id;
+        // helper akan menambahkan (IN) / memotong (OUT) baris yang sama di tabel
+        // spareparts (Master Barang) dan buffer_stock (Buffer Stock) — hanya
+        // kolom qty stok, batas minimum masing-masing menu tetap terjaga.
+        try {
+          await syncStockAcrossMenus(
+            supabase,
+            {
+              id: targetProduct.id,
+              code: targetProduct.code,
+              name: targetProduct.name,
+            },
+            txType === "IN" ? qty : -qty,
+            { productsViaTrigger: true },
+          );
+        } catch (syncErr) {
+          console.warn("Sinkronisasi stok lintas menu gagal:", syncErr);
+        }
       }
 
       await recordActivity(
@@ -3144,6 +3715,9 @@ function WarehouseAndProductsPage() {
       });
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
+      queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
+      queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
     },
     onError: (e: Error) => toast.error("Gagal mencatat transaksi", { description: e.message }),
   });
@@ -3234,51 +3808,6 @@ function WarehouseAndProductsPage() {
       toast.error("Gagal memproses order sparepart", { description: err.message });
     } finally {
       setIsOrdering(false);
-    }
-  };
-
-  // Handler Approval Order oleh GDSP
-  const handleApproveOrder = async (order: SparepartOrder) => {
-    try {
-      const approverName = profile?.full_name || profile?.email || "Petugas GDSP";
-      const approved = await approveSparepartOrder(supabase, order, {
-        id: profile?.id,
-        name: approverName,
-      });
-
-      await queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
-      await queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
-      await queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
-      await queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
-
-      toast.success(
-        `Order ${approved.order_number} disetujui! Stok otomatis terpotong dan tercatat di mutasi riwayat.`,
-      );
-    } catch (err: any) {
-      toast.error("Gagal menyetujui order", { description: err.message });
-    }
-  };
-
-  // Handler Tolak Order oleh GDSP
-  const handleRejectOrderConfirm = async () => {
-    if (!orderRejectTarget) return;
-    try {
-      const approverName = profile?.full_name || profile?.email || "Petugas GDSP";
-      const rejected = await rejectSparepartOrder(
-        supabase,
-        orderRejectTarget,
-        { id: profile?.id, name: approverName },
-        orderRejectReason,
-      );
-
-      await queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
-      await queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
-
-      toast.success(`Order ${rejected.order_number} ditolak. Stok tidak dipotong.`);
-      setOrderRejectTarget(null);
-      setOrderRejectReason("");
-    } catch (err: any) {
-      toast.error("Gagal menolak order", { description: err.message });
     }
   };
 
@@ -4371,11 +4900,15 @@ function WarehouseAndProductsPage() {
 
   // Filter & Search Logic with Sorting
   const filteredProducts = useMemo(() => {
-    // Pada tab OBS Sparepart ("items"), barang yang bukan OBS (misal ditambahkan dari menu Master Barang) tidak dimasukkan
+    // Pemisahan ketat data:
+    // Tab "items" (OBS Sparepart): HANYA tampilkan barang OBS Sparepart murni
+    // Tab "master" (Master Barang): HANYA tampilkan barang Master Barang independen
     const baseList =
       activeTab === "items" || (!activeTab && !isTeknikUser)
         ? products.filter((p) => isObsProduct(p))
-        : products;
+        : activeTab === "master"
+          ? products.filter((p) => isMasterBarangProduct(p))
+          : products;
 
     const list = baseList.filter((p) => {
       const q = searchQuery.toLowerCase().trim();
@@ -4466,7 +4999,16 @@ function WarehouseAndProductsPage() {
       }
       return 0;
     });
-  }, [products, activeTab, isTeknikUser, searchQuery, stockStatusFilter, productDateFilter, sortOption, latestInTxMap]);
+  }, [
+    products,
+    activeTab,
+    isTeknikUser,
+    searchQuery,
+    stockStatusFilter,
+    productDateFilter,
+    sortOption,
+    latestInTxMap,
+  ]);
 
   // Pagination untuk Master Barang OBS (10 item per page)
   const totalProductPages = Math.max(1, Math.ceil(filteredProducts.length / PRODUCT_PAGE_SIZE));
@@ -4557,85 +5099,51 @@ function WarehouseAndProductsPage() {
       }
       actions={
         <div className="flex items-center gap-2">
-          <Button
-            onClick={() => {
-              setOrderItems([{ productId: "", quantity: "1", unit: "PCS" }]);
-              setOrderHeader({
-                batchNumber: new Date().toISOString().split("T")[0],
-                referenceNo: profile?.full_name || profile?.email || "Administrator Teknik",
-                supplierOrDest: "",
-                notes: "",
-              });
-              setIsOrderModalOpen(true);
-            }}
-            className="gap-1.5 bg-[#0f274a] hover:bg-[#183a6b] text-white font-semibold shadow-sm h-8 px-3 text-xs rounded-md transition-all flex items-center border border-blue-900/40 select-none cursor-pointer"
-            title="Buka Formulir Sistem Order Sparepart"
-          >
-            <ShoppingCart className="size-3.5 text-blue-300" />
-            <span>Sistem Order</span>
-          </Button>
+          {/* Tombol "Sistem Order" hanya tampil di menu Master Barang */}
+          {activeTab === "master" && (
+            <Button
+              onClick={() => {
+                setOrderItems([{ productId: "", quantity: "1", unit: "PCS" }]);
+                setOrderHeader({
+                  batchNumber: new Date().toISOString().split("T")[0],
+                  referenceNo: profile?.full_name || profile?.email || "Administrator Teknik",
+                  supplierOrDest: "",
+                  notes: "",
+                });
+                setIsOrderModalOpen(true);
+              }}
+              className="gap-1.5 bg-[#0f274a] hover:bg-[#183a6b] text-white font-semibold shadow-sm h-8 px-3 text-xs rounded-md transition-all flex items-center border border-blue-900/40 select-none cursor-pointer"
+              title="Buka Formulir Sistem Order Sparepart"
+            >
+              <ShoppingCart className="size-3.5 text-blue-300" />
+              <span>Sistem Order</span>
+            </Button>
+          )}
 
-          <Button
-            onClick={() => setIsOrderMonitoringOpen(true)}
-            variant="outline"
-            className="gap-1.5 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-800 dark:text-slate-200 font-semibold shadow-sm h-8 px-3 text-xs rounded-md transition-all flex items-center select-none cursor-pointer"
-            title="Buka Monitoring Pemotongan Stok & Order"
-          >
-            <ClipboardList className="size-3.5 text-blue-600 dark:text-blue-400" />
-            <span className="hidden sm:inline">Monitoring Stok Order</span>
-            <span className="sm:hidden">Monitoring</span>
-            {pendingOrdersCount > 0 && (
-              <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-amber-500 text-white px-1.5 py-0.2 text-[10px] font-bold animate-pulse">
-                {pendingOrdersCount}
+          {/* Tombol "Monitoring ... Order" hanya tampil di menu Master Barang */}
+          {activeTab === "master" && (
+            <Button
+              onClick={() => setIsOrderListModalOpen(true)}
+              variant="outline"
+              className="gap-1.5 border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 text-slate-800 dark:text-slate-200 font-semibold shadow-sm h-8 px-3 text-xs rounded-md transition-all flex items-center select-none cursor-pointer"
+              title="Lihat Bon Orderan Sparepart yang Menunggu Approval GDSP"
+            >
+              <ClipboardList className="size-3.5 text-blue-600 dark:text-blue-400" />
+              <span className="hidden sm:inline">
+                {isTeknikUser ? "Monitoring Order Sparepart" : "Monitoring Stok Order"}
               </span>
-            )}
-          </Button>
+              <span className="sm:hidden">Monitoring</span>
+              {pendingOrdersCount > 0 && (
+                <span className="ml-0.5 inline-flex items-center justify-center rounded-full bg-amber-500 text-white px-1.5 py-0.2 text-[10px] font-bold animate-pulse">
+                  {pendingOrdersCount}
+                </span>
+              )}
+            </Button>
+          )}
         </div>
       }
       contentClassName={isTeknikUser ? "p-3 sm:p-4 pt-2 sm:pt-2.5" : undefined}
     >
-      {/* Banner Notifikasi Order untuk Role GDSP */}
-      {isGdspUser && pendingOrdersCount > 0 && (
-        <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50/90 dark:border-amber-800 dark:bg-amber-950/40 p-3 text-xs text-amber-900 dark:text-amber-200 shadow-sm animate-in fade-in">
-          <div className="flex items-center gap-2.5">
-            <div className="size-2 rounded-full bg-amber-500 animate-ping shrink-0" />
-            <div>
-              <strong>Pemberitahuan Approval Order:</strong> Ada{" "}
-              <span className="font-bold underline">
-                {pendingOrdersCount} permintaan order sparepart
-              </span>{" "}
-              dari Departemen Teknik yang menunggu persetujuan (approval) Anda. Stok tidak akan
-              terpotong sebelum disetujui.
-            </div>
-          </div>
-          <Button
-            size="sm"
-            onClick={() => setIsOrderMonitoringOpen(true)}
-            className="h-7.5 px-3 text-xs bg-amber-600 hover:bg-amber-700 text-white font-semibold shrink-0"
-          >
-            Tinjau & Setujui Sekarang
-          </Button>
-        </div>
-      )}
-
-      {/* Banner Info Order untuk Role Teknik */}
-      {isTeknikUser && pendingOrdersCount > 0 && (
-        <div className="mb-3 flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50/70 dark:border-blue-900 dark:bg-blue-950/30 p-2.5 text-xs text-blue-900 dark:text-blue-200">
-          <div className="flex items-center gap-2">
-            <Info className="size-4 text-blue-600 dark:text-blue-400 shrink-0" />
-            <span>
-              Anda memiliki <strong>{pendingOrdersCount} order</strong> yang sedang menunggu
-              persetujuan (approval) dari admin GDSP.
-            </span>
-          </div>
-          <button
-            onClick={() => setIsOrderMonitoringOpen(true)}
-            className="text-xs font-semibold text-blue-700 dark:text-blue-300 hover:underline cursor-pointer"
-          >
-            Lihat Status
-          </button>
-        </div>
-      )}
       {/* Header Halaman: disembunyikan untuk user teknik pada menu OBS Sparepart */}
       {!(
         isTeknikUser &&
@@ -4672,7 +5180,7 @@ function WarehouseAndProductsPage() {
                 style={{ fontFamily: "'Inter', sans-serif" }}
               >
                 {activeTab === "master"
-                  ? "Kelola data master barang dan inventaris sparepart gudang."
+                  ? "Kelola data master barang dan inventaris sparepart gudang"
                   : activeTab === "buffer_stock"
                     ? "Memantau dan mengelola stok cadangan sparepart untuk menjaga ketersediaan dan mendukung kebutuhan operasional."
                     : activeTab === "logs"
@@ -4683,7 +5191,8 @@ function WarehouseAndProductsPage() {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
-            {activeTab === "master" ? null : activeTab === "logs" || isTeknikUser ? null : activeTab === "transactions" ||
+            {activeTab === "master" ? null : activeTab === "logs" ||
+              isTeknikUser ? null : activeTab === "transactions" ||
               search.tab === "transactions" ? (
               /* Layout Sejajar Horizontal 1 Baris khusus Riwayat Mutasi */
               <div className="flex items-center gap-2">
@@ -4780,7 +5289,23 @@ function WarehouseAndProductsPage() {
                           });
                           setIsBufferAddOpen(true);
                         } else {
-                          setFormData((prev) => ({ ...prev, category: "Sparepart & Tools" }));
+                          setFormData({
+                            name: "",
+                            code: "",
+                            category: "Sparepart & Tools",
+                            unit: "PCS",
+                            location: "Gudang Utama",
+                            shelf: "Rak A-1",
+                            qty_in: "0",
+                            qty_out: "0",
+                            min_stock: "10",
+                            safe_stock: "1",
+                            max_stock: "",
+                            current_stock: "0",
+                            description: "",
+                            image_url: "",
+                            doc_url: "",
+                          });
                           setIsAddOpen(true);
                         }
                       }}
@@ -4923,7 +5448,23 @@ function WarehouseAndProductsPage() {
                 <Button
                   size="sm"
                   onClick={() => {
-                    setFormData((prev) => ({ ...prev, category: "Sparepart & Tools" }));
+                    setFormData({
+                      name: "",
+                      code: "",
+                      category: "Master Barang",
+                      unit: "PCS",
+                      location: "Gudang Utama",
+                      shelf: "Rak A-1",
+                      qty_in: "0",
+                      qty_out: "0",
+                      min_stock: "10",
+                      safe_stock: "1",
+                      max_stock: "",
+                      current_stock: "0",
+                      description: "",
+                      image_url: "",
+                      doc_url: "",
+                    });
                     setIsAddOpen(true);
                   }}
                   className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm active:scale-[0.98] transition-all h-9 text-xs px-3.5 rounded-md cursor-pointer shrink-0"
@@ -4944,7 +5485,9 @@ function WarehouseAndProductsPage() {
             ) : filteredProducts.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <PackageSearch className="mb-3 size-10 text-muted-foreground/40" />
-                <p className="text-sm font-medium">Tidak ada data master barang yang cocok dengan filter</p>
+                <p className="text-sm font-medium">
+                  Tidak ada data master barang yang cocok dengan filter
+                </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Coba ubah kata kunci pencarian atau sesuaikan opsi filter kondisi stok.
                 </p>
@@ -4952,7 +5495,23 @@ function WarehouseAndProductsPage() {
                   <Button
                     size="sm"
                     onClick={() => {
-                      setFormData((prev) => ({ ...prev, category: "Sparepart & Tools" }));
+                      setFormData({
+                        name: "",
+                        code: "",
+                        category: "Master Barang",
+                        unit: "PCS",
+                        location: "Gudang Utama",
+                        shelf: "Rak A-1",
+                        qty_in: "0",
+                        qty_out: "0",
+                        min_stock: "10",
+                        safe_stock: "1",
+                        max_stock: "",
+                        current_stock: "0",
+                        description: "",
+                        image_url: "",
+                        doc_url: "",
+                      });
                       setIsAddOpen(true);
                     }}
                     className="mt-4 gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-8"
@@ -4979,20 +5538,14 @@ function WarehouseAndProductsPage() {
                       <th className="label-caps px-2.5 py-3 text-center w-[85px] whitespace-nowrap text-white font-semibold">
                         Satuan
                       </th>
-                      <th className="label-caps px-2.5 py-3 text-center w-[95px] whitespace-nowrap text-white font-semibold">
-                        Minimal Stok
+                      <th className="label-caps px-2.5 py-3 text-center w-[90px] whitespace-nowrap text-white font-semibold">
+                        RECEIPT
                       </th>
                       <th className="label-caps px-2.5 py-3 text-center w-[95px] whitespace-nowrap text-white font-semibold">
-                        Maksimal Stok
+                        ISSUED
                       </th>
                       <th className="label-caps px-2.5 py-3 text-center w-[120px] whitespace-nowrap text-white font-semibold">
                         Stok Saat Ini
-                      </th>
-                      <th className="label-caps px-2.5 py-3 text-center w-[120px] whitespace-nowrap text-white font-semibold">
-                        Kondisi
-                      </th>
-                      <th className="label-caps px-2.5 py-3 text-center w-[110px] whitespace-nowrap text-white font-semibold">
-                        Aksi
                       </th>
                     </tr>
                   </thead>
@@ -5007,6 +5560,23 @@ function WarehouseAndProductsPage() {
                         rawMax !== null && rawMax !== undefined && rawMax !== ""
                           ? Number(rawMax)
                           : null;
+
+                      const nameKey = p.name ? p.name.trim().toLowerCase() : "";
+                      const codeKey = p.code ? p.code.trim().toLowerCase() : "";
+
+                      // RECEIPT: akumulasi SELURUH transaksi masuk per item
+                      // (hasil import/tambah barang dari menu OBS maupun Buffer Stok)
+                      const masterReceiptVal =
+                        (totalInQtyMap[p.id] ?? 0) ||
+                        (nameKey ? (totalInQtyMap[nameKey] ?? 0) : 0) ||
+                        (codeKey ? (totalInQtyMap[codeKey] ?? 0) : 0);
+
+                      // ISSUED: akumulasi SELURUH transaksi keluar per item
+                      // (barang yang telah diorder/permintaan barang & dicatat keluar)
+                      const masterIssuedVal =
+                        (totalOutQtyMap[p.id] ?? 0) ||
+                        (nameKey ? (totalOutQtyMap[nameKey] ?? 0) : 0) ||
+                        (codeKey ? (totalOutQtyMap[codeKey] ?? 0) : 0);
 
                       const obsMeta = getProductObsMeta(p);
                       const baseEnding =
@@ -5082,16 +5652,14 @@ function WarehouseAndProductsPage() {
                             </span>
                           </td>
 
-                          {/* 5. Minimal Stok */}
-                          <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
-                            {minStock.toLocaleString("id-ID")}
+                          {/* 5. RECEIPT */}
+                          <td className="px-2.5 py-2.5 text-center font-mono font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                            {Number(masterReceiptVal || 0).toLocaleString("id-ID")}
                           </td>
 
-                          {/* 6. Maksimal Stok */}
-                          <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
-                            {maxStock !== null && !isNaN(maxStock)
-                              ? maxStock.toLocaleString("id-ID")
-                              : "—"}
+                          {/* 6. ISSUED */}
+                          <td className="px-2.5 py-2.5 text-center font-mono font-semibold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                            {Number(masterIssuedVal || 0).toLocaleString("id-ID")}
                           </td>
 
                           {/* 7. Stok Saat Ini */}
@@ -5108,46 +5676,6 @@ function WarehouseAndProductsPage() {
                             >
                               {Number(effectiveStock).toLocaleString("id-ID")}
                             </span>
-                          </td>
-
-                          {/* 8. Kondisi */}
-                          <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
-                            <span
-                              className={cn(
-                                "inline-flex items-center justify-center w-28 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs",
-                                kondisiStyle,
-                              )}
-                            >
-                              {kondisiText}
-                            </span>
-                          </td>
-
-                          {/* 9. Aksi */}
-                          <td className="px-2.5 py-2.5 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2.5 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
-                                onClick={() => setSelectedProduct(p)}
-                                title="Lihat Detail & Edit Master Barang"
-                              >
-                                <Eye className="size-3 text-primary" />
-                                <span>Detail</span>
-                              </Button>
-
-                              {canDeleteMaster && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                                  onClick={() => setDeletingItem(p)}
-                                  title="Hapus Master Barang"
-                                >
-                                  <Trash2 className="size-3.5" />
-                                </Button>
-                              )}
-                            </div>
                           </td>
                         </tr>
                       );
@@ -5383,34 +5911,6 @@ function WarehouseAndProductsPage() {
                     </SelectContent>
                   </Select>
                 </div>
-
-                {/* Aksi Database OBS: Kosongkan Tabel & Pulihkan 207 Data */}
-                {canManageWarehouse && (
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsClearObsDialogOpen(true)}
-                      className="h-9 px-2.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 dark:border-rose-900/60 dark:hover:bg-rose-950/40 gap-1.5 font-medium shadow-2xs"
-                      title="Hapus dan kosongkan seluruh item barang pada tabel OBS Sparepart"
-                    >
-                      <Trash2 className="size-3.5" />
-                      Kosongkan Tabel
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsRestoreObsDialogOpen(true)}
-                      className="h-9 px-2.5 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 border-blue-200 dark:border-blue-900/60 dark:hover:bg-blue-950/40 gap-1.5 font-medium shadow-2xs"
-                      title="Pulihkan database ke 207 item barang standar OBS Sparepart"
-                    >
-                      <RotateCcw className="size-3.5" />
-                      Pulihkan 207 Data
-                    </Button>
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -5791,7 +6291,7 @@ function WarehouseAndProductsPage() {
                           isTeknikUser ? "py-2" : "py-3",
                         )}
                       >
-                        Kode
+                        {activeTab === "master" ? "Kode Material" : "Kode"}
                       </th>
                       <th
                         className={cn(
@@ -5799,7 +6299,7 @@ function WarehouseAndProductsPage() {
                           isTeknikUser ? "py-2" : "py-3",
                         )}
                       >
-                        Material
+                        {activeTab === "master" ? "Nama Barang / Material" : "Material"}
                       </th>
                       <th
                         className={cn(
@@ -5811,36 +6311,86 @@ function WarehouseAndProductsPage() {
                       </th>
                       {!isTeknikUser && (
                         <th className="label-caps px-2.5 py-3 text-center w-[90px] whitespace-nowrap text-white font-semibold">
-                          Minimal Stok
+                          {activeTab === "master" ? "RECEIPT" : "Minimal Stok"}
                         </th>
                       )}
-                      <th
-                        className={cn(
-                          "label-caps px-2.5 text-center w-[115px] whitespace-nowrap text-white font-semibold",
-                          isTeknikUser ? "py-2" : "py-3",
-                        )}
-                      >
-                        BEGINNING BALANCE
-                      </th>
-                      <th
-                        className={cn(
-                          "label-caps px-2.5 text-center w-[115px] whitespace-nowrap text-white font-semibold",
-                          isTeknikUser ? "py-2" : "py-3",
-                        )}
-                      >
-                        ENDING BALANCE
-                      </th>
+                      {/* Batas Minimal: nilai Min Stock dari file import (paritas di semua tab) */}
                       {!isTeknikUser && (
-                        <th className="label-caps px-2.5 py-3 text-center w-[90px] whitespace-nowrap text-white font-semibold">
-                          Maksimal Stok
+                        <th className="label-caps px-2.5 py-3 text-center w-[95px] whitespace-nowrap text-white font-semibold">
+                          Batas Minimal
                         </th>
                       )}
-                      {!isTeknikUser && (
+                      {activeTab === "master" ? (
+                        <>
+                          {!isTeknikUser && (
+                            <th className="label-caps px-2.5 py-3 text-center w-[95px] whitespace-nowrap text-white font-semibold">
+                              ISSUED
+                            </th>
+                          )}
+                          <th className="label-caps px-2.5 py-3 text-center w-[115px] whitespace-nowrap text-white font-semibold">
+                            Stok Saat Ini
+                          </th>
+                          {/* Kolom tambahan KHUSUS role akses "Super Admin" di tab Master Barang */}
+                          {isSuperAdminSession && (
+                            <>
+                              <th className="label-caps px-2.5 py-3 text-center w-[115px] whitespace-nowrap text-white font-semibold">
+                                Ending Balance
+                              </th>
+                              <th className="label-caps px-2.5 py-3 text-center w-[115px] whitespace-nowrap text-white font-semibold">
+                                Beginning Balance
+                              </th>
+                              <th className="label-caps px-2.5 py-3 text-center w-[110px] whitespace-nowrap text-white font-semibold">
+                                Status
+                              </th>
+                              <th className="label-caps px-2.5 py-3 text-center w-[140px] whitespace-nowrap text-white font-semibold">
+                                Aksi
+                              </th>
+                            </>
+                          )}
+                        </>
+                      ) : isTeknikUser ? (
+                        <>
+                          <th className="label-caps px-2.5 text-center w-[100px] whitespace-nowrap text-white font-semibold py-2">
+                            RECEIPT
+                          </th>
+                          <th className="label-caps px-2.5 text-center w-[100px] whitespace-nowrap text-white font-semibold py-2">
+                            ISSUED
+                          </th>
+                          <th className="label-caps px-2.5 text-center w-[115px] whitespace-nowrap text-white font-semibold py-2">
+                            ENDING BALANCE
+                          </th>
+                        </>
+                      ) : (
+                        <>
+                          <th
+                            className={cn(
+                              "label-caps px-2.5 text-center w-[115px] whitespace-nowrap text-white font-semibold",
+                              isTeknikUser ? "py-2" : "py-3",
+                            )}
+                          >
+                            BEGINNING BALANCE
+                          </th>
+                          <th
+                            className={cn(
+                              "label-caps px-2.5 text-center w-[115px] whitespace-nowrap text-white font-semibold",
+                              isTeknikUser ? "py-2" : "py-3",
+                            )}
+                          >
+                            ENDING BALANCE
+                          </th>
+                          {!isTeknikUser && (
+                            <th className="label-caps px-2.5 py-3 text-center w-[90px] whitespace-nowrap text-white font-semibold">
+                              Maksimal Stok
+                            </th>
+                          )}
+                        </>
+                      )}
+                      {!isTeknikUser && activeTab !== "master" && (
                         <th className="label-caps px-2.5 py-3 text-center w-[115px] whitespace-nowrap text-white font-semibold">
                           Kondisi
                         </th>
                       )}
-                      {!isTeknikUser && (
+                      {!isTeknikUser && activeTab !== "master" && (
                         <th className="label-caps px-2.5 py-3 text-center w-[95px] whitespace-nowrap text-white font-semibold">
                           Aksi
                         </th>
@@ -5873,6 +6423,20 @@ function WarehouseAndProductsPage() {
                         (nameKey ? (dailyOutQtyMap[nameKey] ?? 0) : 0) ||
                         (codeKey ? (dailyOutQtyMap[codeKey] ?? 0) : 0);
 
+                      // RECEIPT Master Barang: akumulasi SELURUH transaksi masuk per item
+                      // (hasil import tambah barang dari menu OBS maupun Buffer Stok)
+                      const masterReceiptVal =
+                        (totalInQtyMap[p.id] ?? 0) ||
+                        (nameKey ? (totalInQtyMap[nameKey] ?? 0) : 0) ||
+                        (codeKey ? (totalInQtyMap[codeKey] ?? 0) : 0);
+
+                      // ISSUED Master Barang: akumulasi SELURUH transaksi keluar per item
+                      // (barang yang telah diorder / dicatat keluar)
+                      const masterIssuedVal =
+                        (totalOutQtyMap[p.id] ?? 0) ||
+                        (nameKey ? (totalOutQtyMap[nameKey] ?? 0) : 0) ||
+                        (codeKey ? (totalOutQtyMap[codeKey] ?? 0) : 0);
+
                       // BEGINNING BALANCE tetap tidak berubah dari hasil excel:
                       const obsMeta = getProductObsMeta(p);
 
@@ -5899,6 +6463,17 @@ function WarehouseAndProductsPage() {
                           ? Number(obsMeta.issued)
                           : 0;
                       const issuedVal = baseIssued;
+
+                      // BATAS MINIMAL: nilai kolom MIN STOCK dari file import
+                      // (tersimpan di metadata OBS saat import). Jika file tidak
+                      // memuatnya, fallback ke Minimal Stok yang tersimpan.
+                      const batasMinimalFile =
+                        obsMeta &&
+                        obsMeta.min_stock_file !== null &&
+                        obsMeta.min_stock_file !== undefined
+                          ? Number(obsMeta.min_stock_file)
+                          : null;
+                      const batasMinimal = batasMinimalFile !== null ? batasMinimalFile : minStock;
 
                       // ENDING BALANCE: murni mengikuti stok saat ini / metadata OBS dari import/input baru (tidak dipengaruhi mutasi)
                       const baseEnding =
@@ -6001,55 +6576,190 @@ function WarehouseAndProductsPage() {
                             </span>
                           </td>
 
-                          {/* 5. Minimal Stok */}
+                          {/* 5. Minimal Stok / RECEIPT (Master Barang) */}
+                          {!isTeknikUser &&
+                            (activeTab === "master" ? (
+                              <td className="px-2.5 py-2.5 text-center font-mono font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                                {Number(masterReceiptVal || 0).toLocaleString("id-ID")}
+                              </td>
+                            ) : (
+                              <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
+                                {minStock.toLocaleString("id-ID")}
+                              </td>
+                            ))}
+
+                          {/* BATAS MINIMAL: nilai Min Stock dari file import */}
                           {!isTeknikUser && (
-                            <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
-                              {minStock.toLocaleString("id-ID")}
+                            <td className="px-2.5 py-2.5 text-center font-mono text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                              {batasMinimal.toLocaleString("id-ID")}
                             </td>
                           )}
 
-                          {/* 6. BEGINNING BALANCE */}
-                          <td
-                            className={cn(
-                              "px-2.5 text-center font-mono font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap",
-                              isTeknikUser ? "py-1.5" : "py-2.5",
-                            )}
-                          >
-                            {Number(beginningBalance).toLocaleString("id-ID")}
-                          </td>
-
-                          {/* 7. ENDING BALANCE */}
-                          <td
-                            className={cn(
-                              "px-2.5 text-center font-mono font-bold whitespace-nowrap",
-                              isTeknikUser ? "py-1.5" : "py-2.5",
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                "tabular-nums text-sm",
-                                endingBalance <= 0
-                                  ? "text-rose-600 dark:text-rose-400 font-extrabold"
-                                  : endingBalance <= minStock
-                                    ? "text-rose-600 dark:text-rose-400"
-                                    : "text-emerald-600 dark:text-emerald-400",
+                          {activeTab === "master" ? (
+                            <>
+                              {/* ISSUED Master Barang */}
+                              {!isTeknikUser && (
+                                <td className="px-2.5 py-2.5 text-center font-mono font-semibold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                                  {Number(masterIssuedVal || 0).toLocaleString("id-ID")}
+                                </td>
                               )}
-                            >
-                              {Number(endingBalance).toLocaleString("id-ID")}
-                            </span>
-                          </td>
+                              {/* Stok Saat Ini Master Barang */}
+                              <td
+                                className={cn(
+                                  "px-2.5 text-center font-mono font-bold whitespace-nowrap",
+                                  isTeknikUser ? "py-1.5" : "py-2.5",
+                                )}
+                              >
+                                <span
+                                  className={cn(
+                                    "tabular-nums text-sm font-bold",
+                                    current <= 0
+                                      ? "text-rose-600 dark:text-rose-400"
+                                      : "text-emerald-600 dark:text-emerald-400",
+                                  )}
+                                >
+                                  {Number(current).toLocaleString("id-ID")}
+                                </span>
+                              </td>
+                              {/* Kolom tambahan KHUSUS role akses "Super Admin" di tab Master Barang */}
+                              {isSuperAdminSession && (
+                                <>
+                                  {/* Ending Balance */}
+                                  <td className="px-2.5 py-2.5 text-center font-mono font-bold whitespace-nowrap">
+                                    <span
+                                      className={cn(
+                                        "tabular-nums text-sm",
+                                        endingBalance <= 0
+                                          ? "text-rose-600 dark:text-rose-400 font-extrabold"
+                                          : endingBalance <= minStock
+                                            ? "text-rose-600 dark:text-rose-400"
+                                            : "text-emerald-600 dark:text-emerald-400",
+                                      )}
+                                    >
+                                      {Number(endingBalance).toLocaleString("id-ID")}
+                                    </span>
+                                  </td>
 
-                          {/* 10. Maksimal Stok */}
-                          {!isTeknikUser && (
-                            <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
-                              {maxStock !== null && !isNaN(maxStock)
-                                ? maxStock.toLocaleString("id-ID")
-                                : "—"}
-                            </td>
+                                  {/* Beginning Balance */}
+                                  <td className="px-2.5 py-2.5 text-center font-mono font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                                    {Number(beginningBalance).toLocaleString("id-ID")}
+                                  </td>
+
+                                  {/* Status (Kondisi Stok) */}
+                                  <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                                    <span
+                                      className={cn(
+                                        "inline-flex items-center justify-center w-28 h-6 rounded-full text-[11px] font-semibold border tracking-wide uppercase shadow-2xs",
+                                        kondisiStyle,
+                                      )}
+                                    >
+                                      {kondisiText}
+                                    </span>
+                                  </td>
+
+                                  {/* Aksi: Detail & Delete */}
+                                  <td className="px-2.5 py-2.5 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 px-2.5 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+                                        onClick={() => setSelectedProduct(p)}
+                                        title="Lihat Detail & Edit Barang"
+                                      >
+                                        <Eye className="size-3 text-primary" />
+                                        <span>Detail</span>
+                                      </Button>
+                                      {canDeleteMaster && (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                          onClick={() => setDeletingItem(p)}
+                                          title="Hapus Barang"
+                                        >
+                                          <Trash2 className="size-3.5" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </>
+                              )}
+                            </>
+                          ) : isTeknikUser ? (
+                            <>
+                              {/* RECEIPT */}
+                              <td className="px-2.5 text-center font-mono font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap py-1.5">
+                                {Number(dailyReceipt || receiptVal || 0).toLocaleString("id-ID")}
+                              </td>
+
+                              {/* ISSUED */}
+                              <td className="px-2.5 text-center font-mono font-semibold text-rose-600 dark:text-rose-400 whitespace-nowrap py-1.5">
+                                {Number(dailyIssued || issuedVal || 0).toLocaleString("id-ID")}
+                              </td>
+
+                              {/* ENDING BALANCE */}
+                              <td className="px-2.5 text-center font-mono font-bold whitespace-nowrap py-1.5">
+                                <span
+                                  className={cn(
+                                    "tabular-nums text-sm",
+                                    endingBalance <= 0
+                                      ? "text-rose-600 dark:text-rose-400 font-extrabold"
+                                      : endingBalance <= minStock
+                                        ? "text-rose-600 dark:text-rose-400"
+                                        : "text-emerald-600 dark:text-emerald-400",
+                                  )}
+                                >
+                                  {Number(endingBalance).toLocaleString("id-ID")}
+                                </span>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              {/* 6. BEGINNING BALANCE */}
+                              <td
+                                className={cn(
+                                  "px-2.5 text-center font-mono font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap",
+                                  isTeknikUser ? "py-1.5" : "py-2.5",
+                                )}
+                              >
+                                {Number(beginningBalance).toLocaleString("id-ID")}
+                              </td>
+
+                              {/* 7. ENDING BALANCE */}
+                              <td
+                                className={cn(
+                                  "px-2.5 text-center font-mono font-bold whitespace-nowrap",
+                                  isTeknikUser ? "py-1.5" : "py-2.5",
+                                )}
+                              >
+                                <span
+                                  className={cn(
+                                    "tabular-nums text-sm",
+                                    endingBalance <= 0
+                                      ? "text-rose-600 dark:text-rose-400 font-extrabold"
+                                      : endingBalance <= minStock
+                                        ? "text-rose-600 dark:text-rose-400"
+                                        : "text-emerald-600 dark:text-emerald-400",
+                                  )}
+                                >
+                                  {Number(endingBalance).toLocaleString("id-ID")}
+                                </span>
+                              </td>
+
+                              {/* 10. Maksimal Stok */}
+                              {!isTeknikUser && (
+                                <td className="px-2.5 py-2.5 text-center font-mono text-muted-foreground whitespace-nowrap">
+                                  {maxStock !== null && !isNaN(maxStock)
+                                    ? maxStock.toLocaleString("id-ID")
+                                    : "—"}
+                                </td>
+                              )}
+                            </>
                           )}
 
                           {/* 8. Kondisi */}
-                          {!isTeknikUser && (
+                          {!isTeknikUser && activeTab !== "master" && (
                             <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                               <span
                                 className={cn(
@@ -6063,7 +6773,7 @@ function WarehouseAndProductsPage() {
                           )}
 
                           {/* 9. Aksi (detail, delete) */}
-                          {!isTeknikUser && (
+                          {!isTeknikUser && activeTab !== "master" && (
                             <td className="px-2.5 py-2.5 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
                               <div className="flex items-center justify-center gap-1.5">
                                 {/* Tombol Detail */}
@@ -9021,28 +9731,6 @@ function WarehouseAndProductsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Qty Masuk</Label>
-                    <Input
-                      type="number"
-                      value={formData.qty_in}
-                      onChange={(e) => setFormData({ ...formData, qty_in: e.target.value })}
-                      placeholder="0"
-                      className="h-9 text-xs font-mono"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Qty Keluar</Label>
-                    <Input
-                      type="number"
-                      value={formData.qty_out}
-                      onChange={(e) => setFormData({ ...formData, qty_out: e.target.value })}
-                      placeholder="0"
-                      className="h-9 text-xs font-mono"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
                     <Label className="text-xs font-semibold">Stok Awal / Saat Ini</Label>
                     <Input
                       type="number"
@@ -9124,16 +9812,38 @@ function WarehouseAndProductsPage() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-muted-foreground">
-                      Maksimal Stok (Terkunci)
-                    </Label>
+                    <div className="flex items-center justify-between">
+                      <Label
+                        className={cn("text-xs font-semibold", !isAdmin && "text-muted-foreground")}
+                      >
+                        Maksimal Stok{!isAdmin && " (Terkunci)"}
+                      </Label>
+                      {!isAdmin && (
+                        <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">
+                          (Hanya Super Admin)
+                        </span>
+                      )}
+                    </div>
                     <Input
                       type="number"
                       value={formData.max_stock}
-                      placeholder="Terkunci (atur via Edit Barang)"
-                      disabled
-                      className="h-9 text-xs font-mono bg-muted/40 cursor-not-allowed"
+                      onChange={(e) => setFormData({ ...formData, max_stock: e.target.value })}
+                      placeholder={isAdmin ? "mis. 300" : "Terkunci"}
+                      disabled={!isAdmin}
+                      className={cn(
+                        "h-9 text-xs font-mono",
+                        !isAdmin &&
+                          "bg-muted/40 cursor-not-allowed opacity-80 text-muted-foreground",
+                      )}
+                      title={
+                        !isAdmin ? "Hanya Super Admin yang dapat mengatur maksimal stok" : undefined
+                      }
                     />
+                    <p className="text-[10px] text-muted-foreground">
+                      {isAdmin
+                        ? "Batas stok maksimum barang"
+                        : "Hanya Super Admin yang dapat mengedit min/maks stok"}
+                    </p>
                   </div>
                 </div>
 
@@ -9211,7 +9921,8 @@ function WarehouseAndProductsPage() {
                           className="gap-1.5 text-xs h-8 font-medium hover:bg-emerald-500/10"
                         >
                           <Download className="size-3.5" />
-                          Unduh Template {activeTab === "master" ? "Master Barang" : "OBS Sparepart"}
+                          Unduh Template{" "}
+                          {activeTab === "master" ? "Master Barang" : "OBS Sparepart"}
                         </Button>
                         <Button
                           type="button"
@@ -9461,13 +10172,10 @@ function WarehouseAndProductsPage() {
                               Satuan
                             </th>
                             <th className="p-2.5 text-center w-36 font-semibold text-white">
-                              BEGINNING BALANCE
+                              {fileHeaderLabel("beginning_balance", "BEGINNING BALANCE")}
                             </th>
                             <th className="p-2.5 text-center w-28 font-semibold text-white">
-                              RECEIPT
-                            </th>
-                            <th className="p-2.5 text-center w-28 font-semibold text-white">
-                              ISSUED
+                              {fileHeaderLabel("min_stock", "Batas Minimal")}
                             </th>
                             <th
                               className="p-2.5 text-center w-36 cursor-pointer hover:bg-[#1a3a66] transition-colors select-none text-white font-semibold"
@@ -9479,14 +10187,14 @@ function WarehouseAndProductsPage() {
                               title="Urutkan ending balance angka terkecil / terbesar"
                             >
                               <div className="flex items-center justify-center gap-1">
-                                <span>ENDING BALANCE</span>
+                                <span>{fileHeaderLabel("ending_balance", "ENDING BALANCE")}</span>
                                 <ArrowUpDown
                                   className={`size-3 ${importSortOption.startsWith("STOCK") ? "text-amber-300 font-bold" : "text-white/60"}`}
                                 />
                               </div>
                             </th>
                             <th className="p-2.5 text-center w-28 font-semibold text-white">
-                              Maks. Stock
+                              {fileHeaderLabel("max_stock", "Maks. Stock")}
                             </th>
                           </tr>
                         </thead>
@@ -9510,14 +10218,10 @@ function WarehouseAndProductsPage() {
                                   ? Number(it.beginning_balance).toLocaleString("id-ID")
                                   : "—"}
                               </td>
-                              <td className="p-2.5 text-center font-mono font-semibold text-emerald-600 dark:text-emerald-400">
-                                {it.receipt !== null && it.receipt !== undefined
-                                  ? Number(it.receipt).toLocaleString("id-ID")
-                                  : "—"}
-                              </td>
-                              <td className="p-2.5 text-center font-mono font-semibold text-rose-600 dark:text-rose-400">
-                                {it.issued !== null && it.issued !== undefined
-                                  ? Number(it.issued).toLocaleString("id-ID")
+                              {/* MIN STOCK dari file (header "Min Stock" / varian lainnya) */}
+                              <td className="p-2.5 text-center font-mono font-semibold text-sky-600 dark:text-sky-400">
+                                {it.min_stock !== null && it.min_stock !== undefined
+                                  ? Number(it.min_stock).toLocaleString("id-ID")
                                   : "—"}
                               </td>
                               <td className="p-2.5 text-center font-mono font-bold text-emerald-700 dark:text-emerald-300">
@@ -9586,7 +10290,7 @@ function WarehouseAndProductsPage() {
 
       {/* ── MODAL DIALOG: EDIT BARANG ─────────────────────────────────────────── */}
       <Dialog open={!!editingItem} onOpenChange={(open) => !open && setEditingItem(null)}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-xl overflow-hidden rounded-xl shadow-2xl">
           <DialogHeader>
             <DialogTitle>Edit Data Barang</DialogTitle>
             <DialogDescription>Perbarui informasi master barang dan lokasi rak.</DialogDescription>
@@ -9713,7 +10417,10 @@ function WarehouseAndProductsPage() {
 
       {/* ── MODAL DIALOG: PENCATATAN TRANSAKSI MASUK / KELUAR ─────────────────── */}
       <Dialog open={isTxOpen && !isTeknikUser} onOpenChange={setIsTxOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          className="max-w-2xl max-h-[90vh] overflow-y-auto"
+          style={{ maxWidth: "min(42rem, calc(100vw - 2rem))" }}
+        >
           <DialogHeader>
             <DialogTitle>
               {txType === "IN" ? "Catat Barang Masuk (Inbound)" : "Catat Barang Keluar (Outbound)"}
@@ -9765,7 +10472,7 @@ function WarehouseAndProductsPage() {
                       </div>
 
                       {/* Search & Pilih Barang */}
-                      <div className="flex-1 space-y-1">
+                      <div className="min-w-0 flex-1 space-y-1">
                         <Label className="text-xs font-medium">
                           Cari & Pilih Barang #{idx + 1} *
                         </Label>
@@ -9997,70 +10704,10 @@ function WarehouseAndProductsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── MODAL DIALOG: KONFIRMASI KOSONGKAN TABEL OBS SPAREPART ──────────── */}
-      <AlertDialog open={isClearObsDialogOpen} onOpenChange={setIsClearObsDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
-              <Trash2 className="size-5 shrink-0" />
-              Kosongkan Seluruh Tabel OBS Sparepart?
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2 text-xs">
-              <span className="block">
-                Tindakan ini akan <strong>menghapus seluruh barang OBS Sparepart</strong> yang saat ini ada di tabel ({products.filter((p) => isObsProduct(p)).length} barang) sehingga tabel menjadi <strong>kosong</strong>.
-              </span>
-              <span className="block p-2.5 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50">
-                Data master barang independen (menu Master Barang) dan data Buffer Stok tidak akan terpengaruh. Anda juga dapat menggunakan tombol &quot;Pulihkan 207 Data&quot; kapan saja untuk mengembalikan data awal.
-              </span>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={clearObsProducts.isPending}>Batal</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 gap-1.5"
-              onClick={() => clearObsProducts.mutate()}
-              disabled={clearObsProducts.isPending}
-            >
-              {clearObsProducts.isPending ? "Mengosongkan..." : "Ya, Kosongkan Tabel"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* ── MODAL DIALOG: KONFIRMASI PULIHKAN 207 DATA OBS SPAREPART ──────────── */}
-      <AlertDialog open={isRestoreObsDialogOpen} onOpenChange={setIsRestoreObsDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
-              <RotateCcw className="size-5 shrink-0" />
-              Pulihkan 207 Item Database OBS Sparepart?
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2 text-xs">
-              <span className="block">
-                Sistem akan menyetel ulang tabel OBS Sparepart dan memulihkan <strong>207 item barang standar</strong> (206 data item lengkap dengan kode part, nama sparepart, minimal stok, maksimal stok, dan stok awal) ke dalam database.
-              </span>
-              <span className="block p-2.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900/50">
-                Seluruh barang OBS yang ada saat ini akan digantikan dengan data 207 item standar OBS Sparepart resmi.
-              </span>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={restoreObs207.isPending}>Batal</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-blue-600 hover:bg-blue-700 text-white gap-1.5 font-medium"
-              onClick={() => restoreObs207.mutate()}
-              disabled={restoreObs207.isPending}
-            >
-              {restoreObs207.isPending ? "Memulihkan..." : "Ya, Pulihkan 207 Data OBS"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {/* ── MODAL DIALOG: DETAIL TRANSAKSI MUTASI ────────────────────────────── */}
       {/* ── MODAL SISTEM ORDER SPAREPART (STRUKTUR SAMA SEPERTI CATATAN KELUAR) ── */}
       <Dialog open={isOrderModalOpen} onOpenChange={setIsOrderModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl" style={{ maxWidth: "min(42rem, calc(100vw - 2rem))" }}>
           <DialogHeader>
             <div className="flex items-center gap-2.5">
               <div className="flex items-center justify-center size-9 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0">
@@ -10082,8 +10729,8 @@ function WarehouseAndProductsPage() {
           <div className="space-y-4 py-2 text-sm">
             {/* Bagian List Barang (Multi-item hingga 15, persis Catatan Keluar) */}
             <div className="space-y-3 rounded-lg border border-border bg-surface-muted/30 p-3.5">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
                   <Label className="text-xs font-bold uppercase tracking-wider text-foreground">
                     Daftar Barang ({orderItems.length}/15 Barang)
                   </Label>
@@ -10104,7 +10751,7 @@ function WarehouseAndProductsPage() {
                         ]);
                       }
                     }}
-                    className="h-7 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
+                    className="h-7 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10 shrink-0"
                   >
                     <Plus className="size-3.5" />
                     Tambah Barang
@@ -10112,7 +10759,7 @@ function WarehouseAndProductsPage() {
                 )}
               </div>
 
-              <div className="space-y-2.5">
+              <div className="max-h-[38vh] overflow-y-auto pr-1.5 space-y-2.5">
                 {orderItems.map((item, idx) => {
                   const selectedProd = products.find((p) => p.id === item.productId);
                   const obsMeta = selectedProd ? getProductObsMeta(selectedProd) : null;
@@ -10130,7 +10777,7 @@ function WarehouseAndProductsPage() {
                       className="flex flex-col gap-2 rounded-md border border-border/80 bg-surface p-2.5 sm:flex-row sm:items-end"
                     >
                       {/* Search & Pilih Barang */}
-                      <div className="flex-1 space-y-1">
+                      <div className="min-w-0 flex-1 space-y-1">
                         <Label className="text-xs font-medium">
                           Cari & Pilih Barang #{idx + 1} *
                         </Label>
@@ -10238,7 +10885,9 @@ function WarehouseAndProductsPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>User</Label>
+                <Label>
+                  Pemesan <span className="text-rose-600">*</span>
+                </Label>
                 <Input
                   value={orderHeader.referenceNo}
                   onChange={(e) => setOrderHeader({ ...orderHeader, referenceNo: e.target.value })}
@@ -10254,16 +10903,6 @@ function WarehouseAndProductsPage() {
                 value={orderHeader.supplierOrDest}
                 onChange={(e) => setOrderHeader({ ...orderHeader, supplierOrDest: e.target.value })}
                 placeholder="cth. Penggantian Bearing Rusak Line Roasting 1"
-                className="h-9 text-xs"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Petugas Sparepart Shift 1/2/3</Label>
-              <Input
-                value={orderHeader.notes}
-                onChange={(e) => setOrderHeader({ ...orderHeader, notes: e.target.value })}
-                placeholder="contoh: Shift 1 / Sultan"
                 className="h-9 text-xs"
               />
             </div>
@@ -10284,7 +10923,7 @@ function WarehouseAndProductsPage() {
             </div>
           </div>
 
-          <DialogFooter className="pt-3 border-t border-border/60 shrink-0 flex items-center justify-between gap-2">
+          <DialogFooter className="pt-3 border-t border-border/60 shrink-0 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -10302,12 +10941,13 @@ function WarehouseAndProductsPage() {
                 size="sm"
                 onClick={() => {
                   setIsOrderModalOpen(false);
-                  setIsOrderMonitoringOpen(true);
+                  setIsOrderListModalOpen(true);
                 }}
                 className="text-xs h-8.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                title="Lihat bon orderan sparepart yang menunggu approval GDSP"
               >
                 <ClipboardList className="size-3.5 mr-1" />
-                Lihat Monitoring Stok Order
+                Order Menunggu Approval
               </Button>
             </div>
             <Button
@@ -10325,12 +10965,12 @@ function WarehouseAndProductsPage() {
               {isOrdering ? (
                 <>
                   <Loader2 className="size-3.5 animate-spin" />
-                  <span>Mengirim Permintaan...</span>
+                  <span>Saving...</span>
                 </>
               ) : (
                 <>
                   <ShoppingCart className="size-3.5" />
-                  <span>Kirim Permintaan Order (Approval GDSP)</span>
+                  <span>Save and Send</span>
                 </>
               )}
             </Button>
@@ -10338,442 +10978,102 @@ function WarehouseAndProductsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── MODAL DIALOG: MONITORING PEMOTONGAN STOK BARANG (ORDER TEKNIK) ────────── */}
-      <Dialog open={isOrderMonitoringOpen} onOpenChange={setIsOrderMonitoringOpen}>
-        <DialogContent className="max-w-5xl w-full max-h-[92vh] flex flex-col p-6 overflow-hidden">
-          <DialogHeader className="pb-3 border-b border-border/60 shrink-0">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <div className="flex items-center justify-center size-9 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0">
-                  <ClipboardList className="size-4.5" />
-                </div>
-                <div>
-                  <DialogTitle className="text-base font-bold text-foreground">
-                    Monitoring Pemotongan Stok Barang (Sistem Order)
-                  </DialogTitle>
-                  <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                    Memantau informasi barang, jumlah stok sebelum dan sesudah transaksi, jumlah
-                    barang yang digunakan, tanggal & waktu, nomor referensi order, dan user pemotong
-                    stok secara real-time.
-                  </DialogDescription>
-                </div>
+      {/* ── MODAL: POPUP LIST BON ORDERAN SPAREPART MENUNGGU APPROVAL GDSP ────── */}
+      <Dialog open={isOrderListModalOpen} onOpenChange={setIsOrderListModalOpen}>
+        <DialogContent
+          className="max-w-2xl max-h-[85vh] flex flex-col"
+          style={{ maxWidth: "min(42rem, calc(100vw - 2rem))" }}
+        >
+          <DialogHeader className="shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="flex items-center justify-center size-9 rounded-lg bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 shrink-0">
+                <ClipboardList className="size-4.5" />
               </div>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setIsOrderMonitoringOpen(false);
-                  setOrderItems([{ productId: "", quantity: "1", unit: "PCS" }]);
-                  setOrderHeader({
-                    batchNumber: new Date().toISOString().split("T")[0],
-                    referenceNo: profile?.full_name || profile?.email || "Administrator Teknik",
-                    supplierOrDest: "",
-                    notes: "",
-                  });
-                  setIsOrderModalOpen(true);
-                }}
-                className="gap-1.5 bg-[#0f274a] hover:bg-[#183a6b] text-white font-semibold text-xs h-8 px-3 shrink-0"
-              >
-                <Plus className="size-3.5" />
-                <span>Buat Order Baru</span>
-              </Button>
+              <div className="flex-1">
+                <DialogTitle className="text-base font-bold text-foreground">
+                  Bon Orderan Sparepart Menunggu Approval{" "}
+                  {pendingOrdersList.length > 0 && `(${pendingOrdersList.length})`}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  Daftar order yang dikirim ke GDSP dan menunggu persetujuan. Stok master barang
+                  otomatis terpotong setelah order disetujui.
+                </DialogDescription>
+              </div>
             </div>
           </DialogHeader>
 
-          {/* Stat Cards Monitoring */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-3 shrink-0">
-            <div className="p-3 rounded-lg border border-border bg-surface">
-              <div className="text-[11px] font-medium text-muted-foreground">
-                Total Permintaan Order
+          <div className="overflow-y-auto -mx-1 px-1 space-y-2.5 py-1 text-sm">
+            {pendingOrdersList.length === 0 && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 dark:border-emerald-900 dark:bg-emerald-950/30 p-6 text-center">
+                <CheckCircle2 className="size-8 mx-auto text-emerald-500/60 mb-2" />
+                <p className="text-xs font-medium text-foreground">
+                  Tidak ada bon orderan yang menunggu approval
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Semua permintaan order sparepart sudah diproses oleh GDSP.
+                </p>
               </div>
-              <div className="text-xl font-bold font-mono text-foreground mt-0.5">
-                {sparepartOrders.length}
-              </div>
-            </div>
-            <div className="p-3 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20">
-              <div className="text-[11px] font-medium text-amber-700 dark:text-amber-400 flex items-center justify-between">
-                <span>Menunggu Approval GDSP</span>
-                {pendingOrdersCount > 0 && (
-                  <span className="size-2 rounded-full bg-amber-500 animate-ping" />
-                )}
-              </div>
-              <div className="text-xl font-bold font-mono text-amber-600 dark:text-amber-300 mt-0.5">
-                {pendingOrdersCount}
-              </div>
-            </div>
-            <div className="p-3 rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/50 dark:bg-emerald-950/20">
-              <div className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
-                Disetujui & Stok Terpotong
-              </div>
-              <div className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-300 mt-0.5">
-                {sparepartOrders.filter((o) => o.status === "APPROVED").length}
-              </div>
-            </div>
-            <div className="p-3 rounded-lg border border-rose-200 dark:border-rose-900 bg-rose-50/50 dark:bg-rose-950/20">
-              <div className="text-[11px] font-medium text-rose-700 dark:text-rose-400">
-                Ditolak
-              </div>
-              <div className="text-xl font-bold font-mono text-rose-600 dark:text-rose-300 mt-0.5">
-                {sparepartOrders.filter((o) => o.status === "REJECTED").length}
-              </div>
-            </div>
-          </div>
+            )}
 
-          {/* Filter Bar */}
-          <div className="flex flex-col sm:flex-row items-center gap-2 pb-3 shrink-0">
-            <div className="relative flex-1 w-full">
-              <Search className="absolute left-3 top-2.5 size-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Cari nomor order, nama barang, pemohon, atau pemotong stok..."
-                value={orderMonitoringSearch}
-                onChange={(e) => setOrderMonitoringSearch(e.target.value)}
-                className="pl-8.5 h-8.5 text-xs w-full"
-              />
-            </div>
-            <Select
-              value={orderMonitoringStatus}
-              onValueChange={(val: any) => setOrderMonitoringStatus(val)}
-            >
-              <SelectTrigger className="w-full sm:w-48 h-8.5 text-xs">
-                <SelectValue placeholder="Status Approval" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL" className="text-xs">
-                  Semua Status
-                </SelectItem>
-                <SelectItem value="PENDING" className="text-xs text-amber-600 font-semibold">
-                  ⏳ Menunggu Approval
-                </SelectItem>
-                <SelectItem value="APPROVED" className="text-xs text-emerald-600 font-semibold">
-                  ✓ Disetujui (Stok Terpotong)
-                </SelectItem>
-                <SelectItem value="REJECTED" className="text-xs text-rose-600 font-semibold">
-                  ✕ Ditolak
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Tabel Monitoring Data */}
-          <div className="flex-1 overflow-y-auto border border-border rounded-lg bg-surface min-h-[280px]">
-            {(() => {
-              const q = orderMonitoringSearch.toLowerCase().trim();
-              const filteredOrders = sparepartOrders.filter((o) => {
-                if (orderMonitoringStatus !== "ALL" && o.status !== orderMonitoringStatus) {
-                  return false;
-                }
-                if (!q) return true;
-                const matchNum = o.order_number.toLowerCase().includes(q);
-                const matchPemohon = o.user_pemohon.toLowerCase().includes(q);
-                const matchAlasan = o.alasan_permintaan.toLowerCase().includes(q);
-                const matchApprover = (o.approved_by_name || "").toLowerCase().includes(q);
-                const matchItems = o.items.some(
-                  (it) =>
-                    it.product_name.toLowerCase().includes(q) ||
-                    it.product_code.toLowerCase().includes(q),
-                );
-                return matchNum || matchPemohon || matchAlasan || matchApprover || matchItems;
-              });
-
-              if (filteredOrders.length === 0) {
-                return (
-                  <div className="py-16 text-center text-xs text-muted-foreground space-y-2">
-                    <ClipboardList className="size-8 mx-auto text-muted-foreground/50" />
-                    <div>Tidak ada catatan order sparepart yang sesuai dengan filter.</div>
+            {pendingOrdersList.map((ord) => (
+              <div
+                key={ord.id || ord.order_number}
+                className="rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20 p-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold font-mono text-foreground">
+                      {ord.order_number}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {ord.created_at &&
+                        `${new Date(ord.created_at).toLocaleString("id-ID", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })} WIB · `}
+                      Pemesan: <span className="font-medium">{ord.user_pemohon}</span>
+                    </div>
                   </div>
-                );
-              }
+                  <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 text-[10px] font-semibold whitespace-nowrap animate-pulse">
+                    ⏳ Menunggu Approval
+                  </Badge>
+                </div>
 
-              return (
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead className="bg-surface-muted/60 text-muted-foreground border-b border-border sticky top-0 z-10 text-[11px] font-semibold uppercase tracking-wider">
-                    <tr>
-                      <th className="py-2.5 px-3">No. Order & Waktu</th>
-                      <th className="py-2.5 px-3">keterangan</th>
-                      <th className="py-2.5 px-3 text-center">Jumlah Digunakan</th>
-                      <th className="py-2.5 px-3 text-center">Stok Sebelum</th>
-                      <th className="py-2.5 px-3 text-center">Stok Sesudah</th>
-                      <th className="py-2.5 px-3">Pemohon & Keperluan</th>
-                      <th className="py-2.5 px-3">User Pemotong Stok</th>
-                      <th className="py-2.5 px-3 text-center">Status</th>
-                      {(isGdspUser || isAdmin) && (
-                        <th className="py-2.5 px-3 text-right">Aksi Approval</th>
+                <div className="mt-2 space-y-1">
+                  {ord.items.map((it, idx) => (
+                    <div key={idx} className="flex items-center gap-2 text-xs">
+                      <span className="font-semibold text-rose-600 font-mono">
+                        -{it.quantity} {it.unit}
+                      </span>
+                      <span className="font-medium text-foreground">{it.product_name}</span>
+                      {it.product_code && (
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          ({it.product_code})
+                        </span>
                       )}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {filteredOrders.map((ord) => {
-                      const isPending = ord.status === "PENDING";
-                      const isApproved = ord.status === "APPROVED";
-                      const isRejected = ord.status === "REJECTED";
+                    </div>
+                  ))}
+                </div>
 
-                      return (
-                        <tr
-                          key={ord.id || ord.order_number}
-                          className={cn(
-                            "hover:bg-surface-muted/40 transition-colors",
-                            isPending && "bg-amber-500/5",
-                          )}
-                        >
-                          {/* 1. No Order & Waktu */}
-                          <td className="py-3 px-3 align-top font-mono">
-                            <span className="font-bold text-foreground text-xs block">
-                              {ord.order_number}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground mt-0.5 block">
-                              {new Date(ord.created_at).toLocaleString("id-ID", {
-                                day: "2-digit",
-                                month: "short",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}{" "}
-                              WIB
-                            </span>
-                          </td>
-
-                          {/* 2. Informasi Barang */}
-                          <td className="py-3 px-3 align-top">
-                            <div className="space-y-1">
-                              {ord.items.map((it, idx) => (
-                                <div key={idx} className="font-medium text-foreground">
-                                  <span>{it.product_name}</span>{" "}
-                                  {it.product_code && (
-                                    <span className="font-mono text-[10px] text-muted-foreground bg-muted px-1 rounded">
-                                      {it.product_code}
-                                    </span>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-
-                          {/* 3. Jumlah Digunakan */}
-                          <td className="py-3 px-3 align-top text-center font-mono font-bold text-rose-600">
-                            {ord.items.map((it, idx) => (
-                              <div key={idx} className="whitespace-nowrap">
-                                -{it.quantity} {it.unit}
-                              </div>
-                            ))}
-                          </td>
-
-                          {/* 4. Stok Sebelum Transaksi */}
-                          <td className="py-3 px-3 align-top text-center font-mono text-muted-foreground">
-                            {ord.items.map((it, idx) => (
-                              <div key={idx} className="whitespace-nowrap font-medium">
-                                {it.stock_before !== undefined && it.stock_before !== null
-                                  ? `${it.stock_before} ${it.unit}`
-                                  : "—"}
-                              </div>
-                            ))}
-                          </td>
-
-                          {/* 5. Stok Sesudah Transaksi */}
-                          <td className="py-3 px-3 align-top text-center font-mono font-bold">
-                            {ord.items.map((it, idx) => {
-                              const sAfter = it.stock_after;
-                              return (
-                                <div
-                                  key={idx}
-                                  className={cn(
-                                    "whitespace-nowrap",
-                                    isApproved
-                                      ? "text-emerald-600"
-                                      : isPending
-                                        ? "text-amber-600"
-                                        : "text-muted-foreground",
-                                  )}
-                                >
-                                  {isApproved
-                                    ? sAfter !== undefined && sAfter !== null
-                                      ? `${sAfter} ${it.unit}`
-                                      : "—"
-                                    : isPending
-                                      ? sAfter !== undefined && sAfter !== null
-                                        ? `(${sAfter})*`
-                                        : "—"
-                                      : "—"}
-                                </div>
-                              );
-                            })}
-                          </td>
-
-                          {/* 6. Pemohon & Keperluan */}
-                          <td className="py-3 px-3 align-top">
-                            <div className="font-medium text-foreground">{ord.user_pemohon}</div>
-                            <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
-                              {ord.alasan_permintaan}
-                            </div>
-                            {ord.petugas_shift && ord.petugas_shift !== "-" && (
-                              <div className="text-[10px] text-muted-foreground/80 mt-0.5 font-mono">
-                                Shift/Catatan: {ord.petugas_shift}
-                              </div>
-                            )}
-                          </td>
-
-                          {/* 7. User Pemotong Stok (GDSP) */}
-                          <td className="py-3 px-3 align-top">
-                            {isApproved ? (
-                              <div>
-                                <span className="font-semibold text-foreground block">
-                                  {ord.approved_by_name || "Petugas GDSP"}
-                                </span>
-                                {ord.approved_at && (
-                                  <span className="text-[10px] text-muted-foreground font-mono block">
-                                    {new Date(ord.approved_at).toLocaleString("id-ID", {
-                                      day: "2-digit",
-                                      month: "short",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })}{" "}
-                                    WIB
-                                  </span>
-                                )}
-                              </div>
-                            ) : isRejected ? (
-                              <div>
-                                <span className="font-semibold text-rose-600 block">
-                                  {ord.approved_by_name || "Admin GDSP"} (Ditolak)
-                                </span>
-                                {ord.rejection_reason && (
-                                  <span className="text-[10px] text-rose-700 dark:text-rose-300 block italic">
-                                    &ldquo;{ord.rejection_reason}&rdquo;
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-[11px] text-amber-600 font-medium italic">
-                                Menunggu Approval GDSP
-                              </span>
-                            )}
-                          </td>
-
-                          {/* 8. Status */}
-                          <td className="py-3 px-3 align-top text-center">
-                            {isPending && (
-                              <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 text-[10px] font-semibold whitespace-nowrap animate-pulse">
-                                ⏳ Menunggu Approval
-                              </Badge>
-                            )}
-                            {isApproved && (
-                              <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 text-[10px] font-semibold whitespace-nowrap">
-                                ✓ APPROVAL
-                              </Badge>
-                            )}
-                            {isRejected && (
-                              <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 text-[10px] font-semibold whitespace-nowrap">
-                                ✕ Ditolak
-                              </Badge>
-                            )}
-                          </td>
-
-                          {/* 9. Aksi untuk Role GDSP / Admin */}
-                          {(isGdspUser || isAdmin) && (
-                            <td className="py-3 px-3 align-top text-right whitespace-nowrap">
-                              {isPending ? (
-                                <div className="flex items-center justify-end gap-1.5">
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleApproveOrder(ord)}
-                                    className="h-7 px-2.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-                                    title="Setujui dan potong stok sekarang"
-                                  >
-                                    <CheckCircle2 className="size-3.5 mr-1" />
-                                    Setujui
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setOrderRejectTarget(ord);
-                                      setOrderRejectReason("");
-                                    }}
-                                    className="h-7 px-2.5 text-xs text-rose-600 border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/50"
-                                    title="Tolak permintaan order ini"
-                                  >
-                                    <XCircle className="size-3.5 mr-1" />
-                                    Tolak
-                                  </Button>
-                                </div>
-                              ) : (
-                                <span className="text-[11px] text-muted-foreground">—</span>
-                              )}
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              );
-            })()}
+                <div className="mt-2 text-[11px] text-muted-foreground">
+                  <span className="font-semibold">Alasan:</span> {ord.alasan_permintaan}
+                </div>
+              </div>
+            ))}
           </div>
 
-          <DialogFooter className="pt-3 border-t border-border/60 shrink-0 flex items-center justify-between">
-            <div className="text-[11px] text-muted-foreground">
-              * Tanda (*) pada kolom stok sesudah saat status pending merupakan proyeksi sisa stok
-              jika order disetujui.
-            </div>
+          <DialogFooter className="pt-2 border-t border-border/60 shrink-0">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setIsOrderMonitoringOpen(false)}
+              onClick={() => setIsOrderListModalOpen(false)}
               className="text-xs h-8"
             >
               Tutup
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── MODAL DIALOG: KONFIRMASI TOLAK ORDER GDSP ────────────────────────────── */}
-      <Dialog
-        open={Boolean(orderRejectTarget)}
-        onOpenChange={(open) => !open && setOrderRejectTarget(null)}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-bold text-rose-600 flex items-center gap-2">
-              <XCircle className="size-5" />
-              <span>Tolak Permintaan Order Sparepart</span>
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground mt-1">
-              Order <strong>{orderRejectTarget?.order_number}</strong> akan ditolak dan stok barang
-              tidak akan terpotong.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3 py-2 text-xs">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Alasan Penolakan *</Label>
-              <Input
-                value={orderRejectReason}
-                onChange={(e) => setOrderRejectReason(e.target.value)}
-                placeholder="Contoh: Stok sedang dialokasikan untuk maintenance prioritas lain"
-                className="h-9 text-xs"
-                autoFocus
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setOrderRejectTarget(null)}
-              className="text-xs h-8"
-            >
-              Batal
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleRejectOrderConfirm}
-              disabled={!orderRejectReason.trim()}
-              className="h-8 text-xs bg-rose-600 hover:bg-rose-700 text-white font-semibold"
-            >
-              Konfirmasi Tolak Order
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -10924,7 +11224,7 @@ function WarehouseAndProductsPage() {
 
       {/* ── MODAL DIALOG: DETAIL BARANG & SPESIFIKASI BUFFER STOK ─────────────── */}
       <Dialog open={!!selectedProduct} onOpenChange={(open) => !open && setSelectedProduct(null)}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-xl overflow-hidden rounded-xl shadow-2xl">
           <DialogHeader>
             <div className="flex items-center justify-between gap-2 pr-4">
               <DialogTitle className="text-base font-bold flex items-center gap-2">
@@ -11060,18 +11360,6 @@ function WarehouseAndProductsPage() {
                       </div>
                     </div>
                   </div>
-
-                  {/* Deskripsi Tambahan jika ada */}
-                  {selectedProduct.description && (
-                    <div className="space-y-1">
-                      <div className="font-semibold text-foreground">
-                        Deskripsi / Catatan Teknis:
-                      </div>
-                      <p className="p-2.5 rounded border border-border bg-surface text-muted-foreground leading-relaxed">
-                        {selectedProduct.description}
-                      </p>
-                    </div>
-                  )}
                 </div>
               );
             })()}
@@ -11114,7 +11402,7 @@ function WarehouseAndProductsPage() {
         open={!!selectedBufferItem}
         onOpenChange={(open) => !open && setSelectedBufferItem(null)}
       >
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-xl overflow-hidden rounded-xl shadow-2xl">
           <DialogHeader>
             <div className="flex items-center justify-between gap-2 pr-4">
               <DialogTitle className="text-base font-bold flex items-center gap-2">
@@ -11257,18 +11545,6 @@ function WarehouseAndProductsPage() {
                       </div>
                     </div>
                   </div>
-
-                  {/* Deskripsi Tambahan jika ada */}
-                  {selectedBufferItem.description && (
-                    <div className="space-y-1">
-                      <div className="font-semibold text-foreground">
-                        Deskripsi / Catatan Teknis:
-                      </div>
-                      <p className="p-2.5 rounded border border-border bg-surface text-muted-foreground leading-relaxed">
-                        {selectedBufferItem.description}
-                      </p>
-                    </div>
-                  )}
                 </div>
               );
             })()}

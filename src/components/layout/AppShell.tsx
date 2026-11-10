@@ -1,6 +1,6 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   LayoutDashboard,
   ClipboardList,
@@ -30,8 +30,10 @@ import {
   fetchRemoteDeptPermissions,
   checkIsTeknikUser,
   checkIsGdspUser,
+  checkIsSuperAdminAccess,
 } from "@/lib/departmentPermissions";
 import { fetchSparepartOrders } from "@/lib/orderService";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -49,6 +51,41 @@ type NavItem = {
   icon: typeof LayoutDashboard;
   adminOnly?: boolean;
 };
+
+/**
+ * Bel "ding" dua nada via Web Audio API (tanpa file audio eksternal).
+ * Dibunyikan saat order sparepart milik user Teknik disetujui oleh GDSP.
+ */
+function playApprovalChime(times = 2) {
+  try {
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const playOnce = (startAt: number) => {
+      // Nada naik kecerian: E5 -> A5 (sinyal "siap")
+      [659.25, 880].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        const t0 = startAt + i * 0.16;
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.28, t0 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.38);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(t0);
+        osc.stop(t0 + 0.42);
+      });
+    };
+    for (let r = 0; r < times; r++) playOnce(ctx.currentTime + r * 0.9);
+    setTimeout(() => ctx.close().catch(() => {}), times * 900 + 800);
+  } catch {
+    // Audio tidak tersedia (mis. autoplay policy) — abaikan
+  }
+}
 
 const OPERASIONAL: NavItem[] = [
   { to: "/dashboard", label: "DASHBOARD OVERVIEW", icon: LayoutDashboard },
@@ -139,42 +176,85 @@ export function AppShell({
 
   const effectiveDept = normalizeDepartmentKey(profile?.department, roles);
 
+  // Deteksi Super Admin tahan banting (role DB, departemen, pilihan login, email)
+  const isSuperAdminAccess = checkIsSuperAdminAccess(profile, roles);
+
   const isNavAllowed = (path: string) => {
-    if (isAdmin) return true;
-    return isRouteAllowedForDept(
-      path,
-      effectiveDept,
-      isAdmin,
-      deptPermissionsQuery.data,
-      roles,
-    );
+    if (isAdmin || isSuperAdminAccess) return true;
+    return isRouteAllowedForDept(path, effectiveDept, isAdmin, deptPermissionsQuery.data, roles);
   };
 
-  const isCurrentPageAllowed = isAdmin || isNavAllowed(pathname);
+  const isCurrentPageAllowed = isAdmin || isSuperAdminAccess || isNavAllowed(pathname);
 
   const isTeknikUser = checkIsTeknikUser(profile, roles);
   const isGdspUser = checkIsGdspUser(profile, roles, isAdmin);
+  // Pengelola gudang: GDSP & Super Admin — untuk badge order, notifikasi, menu master
+  const isWarehouseManager = isGdspUser || isSuperAdminAccess;
 
-  // Query order pending untuk notifikasi approval GDSP
-  const { data: pendingOrders = [] } = useQuery({
-    queryKey: ["sparepart_orders_pending_count"],
-    queryFn: async () => {
-      const orders = await fetchSparepartOrders(supabase);
-      return orders.filter((o) => o.status === "PENDING");
-    },
-    enabled: isGdspUser,
+  // Query order sparepart: dipakai badge approval GDSP & notifikasi user Teknik
+  // Memakai cache "sparepart_orders" yang sama dengan tabel Permintaan Order di
+  // Approval Center supaya angka badge selalu sinkron.
+  const { data: sparepartOrders = [] } = useQuery({
+    queryKey: ["sparepart_orders"],
+    queryFn: () => fetchSparepartOrders(supabase),
+    enabled: isWarehouseManager || isTeknikUser,
     refetchInterval: 12000,
   });
-  const pendingOrdersCount = pendingOrders.length;
+  const pendingOrdersCount = useMemo(
+    () => sparepartOrders.filter((o) => o.status === "PENDING").length,
+    [sparepartOrders],
+  );
+
+  // ── NOTIFIKASI TEKNIK: order saya disetujui GDSP → suara + toast ───────────
+  const prevOrderStatusRef = useRef<Map<string, string>>(new Map());
+  const orderBaselineReadyRef = useRef(false);
+
+  useEffect(() => {
+    const myOrders = sparepartOrders.filter((o) => {
+      const createdBy = String(o.created_by || "").toLowerCase();
+      const pemohon = String(o.user_pemohon || "").toLowerCase();
+      const identities = [profile?.id, profile?.full_name, profile?.email]
+        .filter(Boolean)
+        .map((s) => String(s).toLowerCase());
+      return (
+        (createdBy && identities.includes(createdBy)) || (pemohon && identities.includes(pemohon))
+      );
+    });
+
+    // Simpan baseline tanpa notifikasi agar order lama yang sudah PENDING tidak memicu bunyi
+    if (!orderBaselineReadyRef.current) {
+      myOrders.forEach((o) => prevOrderStatusRef.current.set(o.order_number, o.status));
+      orderBaselineReadyRef.current = true;
+      return;
+    }
+
+    for (const o of myOrders) {
+      const prev = prevOrderStatusRef.current.get(o.order_number);
+      if (prev === "PENDING" && o.status === "APPROVED") {
+        playApprovalChime(2);
+        const firstItem = o.items?.[0]?.product_name;
+        toast.success("Pesanan anda sudah siap", {
+          description: `Order ${o.order_number}${firstItem ? ` (${firstItem})` : ""} telah disetujui oleh GDSP — barang siap diambil di gudang.`,
+          duration: 10000,
+        });
+      }
+      prevOrderStatusRef.current.set(o.order_number, o.status);
+    }
+  }, [sparepartOrders, profile?.id, profile?.full_name, profile?.email]);
 
   const visibleOperasional = OPERASIONAL.filter(
     (item) => (!item.adminOnly || isAdmin) && isNavAllowed(item.to),
   );
   const visibleManajemen = MANAJEMEN.filter((item) => {
-    if ((item.adminOnly && !isAdmin) || !isNavAllowed(item.to)) return false;
+    if (item.adminOnly && !isAdmin) return false;
+    // SUPER ADMIN: semua menu tampil, imun dari filter dept/role/teknik apa pun.
+    // Ini awal evaluasi supaya 5 menu gudang (OBS, Master, Buffer, Mutasi, Log)
+    // pasti tampil meski departemen profil kosong/TEKNIK dan role DB belum ada.
+    if (isSuperAdminAccess) return true;
+    if (!isNavAllowed(item.to)) return false;
     // Khusus menu Master barang di path /products?tab=master: hanya tampil untuk role GDSP dan Super Admin
     if (item.to === "/products" && item.search?.tab === "master") {
-      if (!isGdspUser && !isAdmin) return false;
+      if (!(isGdspUser || isAdmin || effectiveDept === "Super Admin")) return false;
     }
     // Khusus user teknik: di bagian menu produk hanya menampilkan OBS Sparepart (Master barang) saja
     if (isTeknikUser && item.to === "/products") {
@@ -185,7 +265,12 @@ export function AppShell({
     }
     return true;
   }).map((item) => {
-    if (isTeknikUser && item.to === "/products" && (!item.search?.tab || item.search?.tab === "items")) {
+    if (
+      isTeknikUser &&
+      !isSuperAdminAccess &&
+      item.to === "/products" &&
+      (!item.search?.tab || item.search?.tab === "items")
+    ) {
       return { ...item, label: "Master barang" };
     }
     return item;
@@ -197,7 +282,9 @@ export function AppShell({
       if (item.to === "/products") {
         const itemTab = item.search?.tab;
         if (itemTab) {
-          active = pathname === "/products" && (currentTab === itemTab || (!currentTab && itemTab === "items"));
+          active =
+            pathname === "/products" &&
+            (currentTab === itemTab || (!currentTab && itemTab === "items"));
         } else {
           active = pathname === "/products";
         }
@@ -221,11 +308,15 @@ export function AppShell({
           {!collapsed && (
             <div className="flex flex-1 items-center justify-between min-w-0">
               <span className="truncate">{item.label}</span>
-              {isApproval && pendingOrdersCount > 0 && isGdspUser && (
-                <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-0.2 text-[10px] font-bold text-white shrink-0 animate-pulse">
-                  {pendingOrdersCount}
-                </span>
-              )}
+              {isApproval &&
+                pendingOrdersCount > 0 &&
+                isWarehouseManager &&
+                pathname === "/products" &&
+                currentTab === "master" && (
+                  <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 py-0.2 text-[10px] font-bold text-white shrink-0 animate-pulse">
+                    {pendingOrdersCount}
+                  </span>
+                )}
             </div>
           )}
         </Link>
@@ -299,7 +390,10 @@ export function AppShell({
             )}
           </button>
           {!collapsed && (
-            <Link to="/profile" className="mt-2 flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 transition-colors">
+            <Link
+              to="/profile"
+              className="mt-2 flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 transition-colors"
+            >
               <div className="grid size-8 shrink-0 place-items-center rounded-full bg-blue-900/60 text-blue-200 border border-blue-800/50 font-mono text-xs font-bold">
                 {initials}
               </div>
@@ -324,16 +418,19 @@ export function AppShell({
             <span className="font-semibold text-foreground">{breadcrumb}</span>
           </div>
           <div className="flex items-center gap-3">
-            {isGdspUser && pendingOrdersCount > 0 && (
-              <Link
-                to="/approvals"
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-xs font-semibold hover:bg-amber-500/20 transition-colors shadow-2xs"
-                title="Ada permintaan order sparepart dari Teknik yang memerlukan approval"
-              >
-                <span className="size-2 rounded-full bg-amber-500 animate-ping shrink-0" />
-                <span>{pendingOrdersCount} Order Pending</span>
-              </Link>
-            )}
+            {isWarehouseManager &&
+              pendingOrdersCount > 0 &&
+              pathname === "/products" &&
+              currentTab === "master" && (
+                <Link
+                  to="/approvals"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-xs font-semibold hover:bg-amber-500/20 transition-colors shadow-2xs"
+                  title="Ada permintaan order sparepart dari Teknik yang memerlukan approval"
+                >
+                  <span className="size-2 rounded-full bg-amber-500 animate-ping shrink-0" />
+                  <span>{pendingOrdersCount} Order Pending</span>
+                </Link>
+              )}
             {actions}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -369,9 +466,15 @@ export function AppShell({
               <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-destructive/10 text-destructive">
                 <ShieldAlert className="size-8" />
               </div>
-              <h2 className="text-xl font-bold tracking-tight text-foreground">Akses Halaman Ditolak</h2>
+              <h2 className="text-xl font-bold tracking-tight text-foreground">
+                Akses Halaman Ditolak
+              </h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Departemen <strong className="text-foreground">{effectiveDept}</strong> tidak memiliki izin untuk mengakses halaman <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{pathname}</code>. Status hak akses diatur sebagai <strong>Ditolak (Hilang)</strong> oleh Super Admin.
+                Departemen <strong className="text-foreground">{effectiveDept}</strong> tidak
+                memiliki izin untuk mengakses halaman{" "}
+                <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{pathname}</code>
+                . Status hak akses diatur sebagai <strong>Ditolak (Hilang)</strong> oleh Super
+                Admin.
               </p>
               <div className="mt-6 flex flex-col sm:flex-row gap-2 justify-center">
                 <Button

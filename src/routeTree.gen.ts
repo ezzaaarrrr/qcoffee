@@ -25,6 +25,7 @@ import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticat
 import { Route as AuthIndexRouteImport } from './routes/auth/index'
 import { Route as AuthLoginRouteImport } from './routes/auth/login'
 import { Route as AuthRegisterRouteImport } from './routes/auth/register'
+import { Route as AuthenticatedProductsOrderMonitoringRouteImport } from './routes/_authenticated/products.order-monitoring'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -105,6 +106,12 @@ const AuthRegisterRoute = AuthRegisterRouteImport.update({
   path: '/register',
   getParentRoute: () => AuthRoute,
 } as any)
+const AuthenticatedProductsOrderMonitoringRoute =
+  AuthenticatedProductsOrderMonitoringRouteImport.update({
+    id: '/order-monitoring',
+    path: '/order-monitoring',
+    getParentRoute: () => AuthenticatedProductsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -114,7 +121,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/formulasi': typeof AuthenticatedFormulasiRoute
   '/grinding': typeof AuthenticatedGrindingRoute
-  '/products': typeof AuthenticatedProductsRoute
+  '/products': typeof AuthenticatedProductsRouteWithChildren
   '/profile': typeof AuthenticatedProfileRoute
   '/roasting': typeof AuthenticatedRoastingRoute
   '/roles': typeof AuthenticatedRolesRoute
@@ -122,6 +129,7 @@ export interface FileRoutesByFullPath {
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
   '/auth/': typeof AuthIndexRoute
+  '/products/order-monitoring': typeof AuthenticatedProductsOrderMonitoringRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -130,7 +138,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/formulasi': typeof AuthenticatedFormulasiRoute
   '/grinding': typeof AuthenticatedGrindingRoute
-  '/products': typeof AuthenticatedProductsRoute
+  '/products': typeof AuthenticatedProductsRouteWithChildren
   '/profile': typeof AuthenticatedProfileRoute
   '/roasting': typeof AuthenticatedRoastingRoute
   '/roles': typeof AuthenticatedRolesRoute
@@ -138,6 +146,7 @@ export interface FileRoutesByTo {
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
   '/auth': typeof AuthIndexRoute
+  '/products/order-monitoring': typeof AuthenticatedProductsOrderMonitoringRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -149,7 +158,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/formulasi': typeof AuthenticatedFormulasiRoute
   '/_authenticated/grinding': typeof AuthenticatedGrindingRoute
-  '/_authenticated/products': typeof AuthenticatedProductsRoute
+  '/_authenticated/products': typeof AuthenticatedProductsRouteWithChildren
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/roasting': typeof AuthenticatedRoastingRoute
   '/_authenticated/roles': typeof AuthenticatedRolesRoute
@@ -157,6 +166,7 @@ export interface FileRoutesById {
   '/auth/login': typeof AuthLoginRoute
   '/auth/register': typeof AuthRegisterRoute
   '/auth/': typeof AuthIndexRoute
+  '/_authenticated/products/order-monitoring': typeof AuthenticatedProductsOrderMonitoringRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/auth/login'
     | '/auth/register'
     | '/auth/'
+    | '/products/order-monitoring'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -192,6 +203,7 @@ export interface FileRouteTypes {
     | '/auth/login'
     | '/auth/register'
     | '/auth'
+    | '/products/order-monitoring'
   id:
     | '__root__'
     | '/'
@@ -210,6 +222,7 @@ export interface FileRouteTypes {
     | '/auth/login'
     | '/auth/register'
     | '/auth/'
+    | '/_authenticated/products/order-monitoring'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -332,8 +345,29 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRegisterRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_authenticated/products/order-monitoring': {
+      id: '/_authenticated/products/order-monitoring'
+      path: '/order-monitoring'
+      fullPath: '/products/order-monitoring'
+      preLoaderRoute: typeof AuthenticatedProductsOrderMonitoringRouteImport
+      parentRoute: typeof AuthenticatedProductsRoute
+    }
   }
 }
+
+interface AuthenticatedProductsRouteChildren {
+  AuthenticatedProductsOrderMonitoringRoute: typeof AuthenticatedProductsOrderMonitoringRoute
+}
+
+const AuthenticatedProductsRouteChildren: AuthenticatedProductsRouteChildren = {
+  AuthenticatedProductsOrderMonitoringRoute:
+    AuthenticatedProductsOrderMonitoringRoute,
+}
+
+const AuthenticatedProductsRouteWithChildren =
+  AuthenticatedProductsRoute._addFileChildren(
+    AuthenticatedProductsRouteChildren,
+  )
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedApprovalsRoute: typeof AuthenticatedApprovalsRoute
@@ -341,7 +375,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedFormulasiRoute: typeof AuthenticatedFormulasiRoute
   AuthenticatedGrindingRoute: typeof AuthenticatedGrindingRoute
-  AuthenticatedProductsRoute: typeof AuthenticatedProductsRoute
+  AuthenticatedProductsRoute: typeof AuthenticatedProductsRouteWithChildren
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedRoastingRoute: typeof AuthenticatedRoastingRoute
   AuthenticatedRolesRoute: typeof AuthenticatedRolesRoute
@@ -354,7 +388,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedFormulasiRoute: AuthenticatedFormulasiRoute,
   AuthenticatedGrindingRoute: AuthenticatedGrindingRoute,
-  AuthenticatedProductsRoute: AuthenticatedProductsRoute,
+  AuthenticatedProductsRoute: AuthenticatedProductsRouteWithChildren,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedRoastingRoute: AuthenticatedRoastingRoute,
   AuthenticatedRolesRoute: AuthenticatedRolesRoute,

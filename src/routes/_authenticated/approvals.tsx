@@ -100,9 +100,12 @@ function ApprovalsPage() {
   const roasting = useQuery({ queryKey: ["roasting"], queryFn: fetchRoasting });
 
   // ── QUERY DATA ORDER SPAREPART ──────────────────────────────────────────────
+  // Polling 12 detik agar jumlah di header tabel selalu sinkron dengan badge
+  // "Monitoring Stok Order" & badge sidebar walau perubahan datang dari sesi lain.
   const { data: sparepartOrders = [] } = useQuery({
     queryKey: ["sparepart_orders"],
     queryFn: () => fetchSparepartOrders(supabase),
+    refetchInterval: 12000,
   });
 
   // Realtime subscription untuk order sparepart
@@ -123,6 +126,9 @@ function ApprovalsPage() {
           queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
         },
       )
+      .on("postgres_changes", { event: "*", schema: "public", table: "warehouse_orders" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
+      })
       .subscribe();
 
     return () => {
@@ -487,16 +493,19 @@ function ApprovalsPage() {
                     KETERANGAN
                   </th>
                   <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase text-muted-foreground">
-                    Stok Sebelum
+                    QTY
                   </th>
                   <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase text-muted-foreground">
-                    Stok Sesudah
+                    BGN BLNC
+                  </th>
+                  <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase text-muted-foreground">
+                    END BLNC
                   </th>
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase text-muted-foreground">
-                    USER Teknik
+                    USER PEMESAN
                   </th>
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase text-muted-foreground">
-                    User GDSP
+                    ALASAN PERMINTAAN
                   </th>
                   <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase text-muted-foreground">
                     Status
@@ -507,7 +516,7 @@ function ApprovalsPage() {
                 {completedOrders.length === 0 && (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="px-4 py-10 text-center text-muted-foreground text-xs"
                     >
                       Belum ada riwayat order sparepart yang diselesaikan.
@@ -543,18 +552,25 @@ function ApprovalsPage() {
                         <div className="space-y-0.5 text-xs">
                           {ord.items.map((it, idx) => (
                             <div key={idx} className="font-medium text-foreground">
-                              <span className="font-mono font-bold text-rose-600 mr-1.5">
-                                -{it.quantity} {it.unit}
-                              </span>
                               <span>{it.product_name}</span>
                             </div>
                           ))}
                         </div>
                       </td>
 
+                      {/* QTY */}
+                      <td className="px-4 py-3 align-top text-center font-mono font-bold text-rose-600 text-xs">
+                        {ord.items.map((it, idx) => (
+                          <div key={idx} className="whitespace-nowrap">
+                            {it.quantity} {it.unit}
+                          </div>
+                        ))}
+                      </td>
+
+                      {/* BGN BLNC */}
                       <td className="px-4 py-3 align-top text-center font-mono text-xs text-muted-foreground">
                         {ord.items.map((it, idx) => (
-                          <div key={idx}>
+                          <div key={idx} className="whitespace-nowrap">
                             {it.stock_before !== undefined && it.stock_before !== null
                               ? `${it.stock_before} ${it.unit}`
                               : "—"}
@@ -562,11 +578,16 @@ function ApprovalsPage() {
                         ))}
                       </td>
 
-                      <td className="px-4 py-3 align-top text-center font-mono text-xs font-bold">
+                      {/* END BLNC */}
+                      <td className="px-4 py-3 align-top text-center font-mono font-bold text-xs">
                         {ord.items.map((it, idx) => (
                           <div
                             key={idx}
-                            className={isApproved ? "text-emerald-600" : "text-muted-foreground"}
+                            className={
+                              isApproved && it.stock_after !== undefined && it.stock_after !== null
+                                ? "text-emerald-600 whitespace-nowrap"
+                                : "text-muted-foreground font-medium whitespace-nowrap"
+                            }
                           >
                             {isApproved && it.stock_after !== undefined && it.stock_after !== null
                               ? `${it.stock_after} ${it.unit}`
@@ -575,32 +596,16 @@ function ApprovalsPage() {
                         ))}
                       </td>
 
+                      {/* USER PEMESAN */}
                       <td className="px-4 py-3 align-top">
                         <div className="font-medium text-foreground text-xs">
                           {ord.user_pemohon}
                         </div>
-                        <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
-                          {ord.alasan_permintaan}
-                        </div>
                       </td>
 
-                      <td className="px-4 py-3 align-top text-xs">
-                        {isApproved ? (
-                          <span className="font-semibold text-foreground">
-                            {ord.approved_by_name || "Petugas GDSP"}
-                          </span>
-                        ) : (
-                          <div>
-                            <span className="font-semibold text-rose-600 block">
-                              {ord.approved_by_name || "Admin GDSP"} (Ditolak)
-                            </span>
-                            {ord.rejection_reason && (
-                              <span className="text-[10px] text-rose-700 dark:text-rose-300 italic block mt-0.5">
-                                &ldquo;{ord.rejection_reason}&rdquo;
-                              </span>
-                            )}
-                          </div>
-                        )}
+                      {/* ALASAN PERMINTAAN */}
+                      <td className="px-4 py-3 align-top text-xs text-muted-foreground">
+                        <div className="line-clamp-2 max-w-[220px]">{ord.alasan_permintaan}</div>
                       </td>
 
                       <td className="px-4 py-3 align-top text-center">

@@ -1,4 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
+import { syncStockAcrossMenus } from "@/lib/stockSync";
 
 export type SparepartOrderItem = {
   product_id: string;
@@ -61,16 +62,28 @@ export async function fetchSparepartOrders(supabase: SupabaseClient): Promise<Sp
                     product_name: row.product_name,
                     quantity: Number(row.quantity) || 1,
                     unit: row.unit || "PCS",
-                    stock_before: row.stock_before !== null && row.stock_before !== undefined ? Number(row.stock_before) : undefined,
-                    stock_after: row.stock_after !== null && row.stock_after !== undefined ? Number(row.stock_after) : undefined,
+                    stock_before:
+                      row.stock_before !== null && row.stock_before !== undefined
+                        ? Number(row.stock_before)
+                        : undefined,
+                    stock_after:
+                      row.stock_after !== null && row.stock_after !== undefined
+                        ? Number(row.stock_after)
+                        : undefined,
                   },
                 ],
             user_pemohon: row.user_pemohon || row.created_by_name || "-",
             alasan_permintaan: row.alasan_permintaan || "-",
             petugas_shift: row.petugas_shift || "-",
             status: row.status as "PENDING" | "APPROVED" | "REJECTED",
-            stock_before: row.stock_before !== null && row.stock_before !== undefined ? Number(row.stock_before) : undefined,
-            stock_after: row.stock_after !== null && row.stock_after !== undefined ? Number(row.stock_after) : undefined,
+            stock_before:
+              row.stock_before !== null && row.stock_before !== undefined
+                ? Number(row.stock_before)
+                : undefined,
+            stock_after:
+              row.stock_after !== null && row.stock_after !== undefined
+                ? Number(row.stock_after)
+                : undefined,
             approved_by: row.approved_by,
             approved_by_name: row.approved_by_name,
             approved_at: row.approved_at,
@@ -215,7 +228,8 @@ export async function createSparepartOrder(
 
   for (const it of payload.items) {
     if (!it.productId) throw new Error("Pilih barang yang valid untuk diorder");
-    if (it.quantity <= 0) throw new Error(`Kuantitas order untuk "${it.productName}" harus lebih dari 0`);
+    if (it.quantity <= 0)
+      throw new Error(`Kuantitas order untuk "${it.productName}" harus lebih dari 0`);
     if (it.quantity > it.currentStock) {
       throw new Error(
         `Kuantitas order (${it.quantity}) untuk "${it.productName}" melebihi stok yang tersedia (${it.currentStock})`,
@@ -231,7 +245,8 @@ export async function createSparepartOrder(
   }
 
   const orderNumber = await generateOrderNumber(supabase);
-  const orderId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `ord_${Date.now()}`;
+  const orderId =
+    typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `ord_${Date.now()}`;
   const nowIso = new Date().toISOString();
 
   const formattedItems: SparepartOrderItem[] = payload.items.map((it) => ({
@@ -309,6 +324,166 @@ export async function createSparepartOrder(
 }
 
 /**
+ * Mencari data produk terkini untuk sebuah item order.
+ * Lookup dilakukan berlapis supaya order dari sumber data manapun tetap bisa disetujui:
+ *  - Tabel "products"   : product_id -> nama (case-insensitive) -> kode
+ *  - Tabel "spareparts" : id -> material_number -> material_description
+ *    (tabel spareparts adalah sumber data Master Barang hasil import Excel)
+ */
+export type ResolvedOrderProduct = {
+  source: "products" | "spareparts";
+  id: string;
+  name: string;
+  /** Stok numerik terkini */
+  stock: number;
+  /** String stok mentah di tabel spareparts (mis. "10 PCS") — formatnya dipertahankan saat update */
+  stockRaw: string | null;
+  /** Kolom description (metadata OBS) di tabel products */
+  description: string | null;
+};
+
+function parseStockNumber(value: any): number {
+  return parseFloat(String(value ?? "").replace(/[^0-9.]/g, "")) || 0;
+}
+
+function toResolved(
+  source: "products" | "spareparts",
+  row: any,
+  fallbackName: string,
+): ResolvedOrderProduct {
+  if (source === "spareparts") {
+    const stockRaw = row.qty_stock != null ? String(row.qty_stock) : null;
+    return {
+      source: "spareparts",
+      id: row.id,
+      name: row.material_description || fallbackName,
+      stock: parseStockNumber(row.qty_stock),
+      stockRaw,
+      description: null,
+    };
+  }
+  return {
+    source: "products",
+    id: row.id,
+    name: row.name || fallbackName,
+    stock: Number(row.current_stock) || 0,
+    stockRaw: null,
+    description: row.description ?? null,
+  };
+}
+
+async function findProductForOrder(
+  supabase: SupabaseClient,
+  item: SparepartOrderItem,
+): Promise<ResolvedOrderProduct | null> {
+  const tryFetch = async (table: "products" | "spareparts", col: string, val: string) => {
+    if (!val) return null;
+    const { data, error } = await (supabase as any)
+      .from(table)
+      .select("*")
+      .eq(col, val.trim())
+      .limit(1);
+    if (error || !Array.isArray(data) || data.length === 0) return null;
+    return data[0];
+  };
+
+  // ── Tabel products ──────────────────────────────────────────────────────────
+  if (item.product_id) {
+    const byId = await tryFetch("products", "id", item.product_id);
+    if (byId) return toResolved("products", byId, item.product_name);
+  }
+
+  const trimmedName = (item.product_name || "").trim();
+  if (trimmedName) {
+    const res = await (supabase as any)
+      .from("products")
+      .select("*")
+      .ilike("name", trimmedName)
+      .limit(1);
+    const byName =
+      !res.error && Array.isArray(res.data) && res.data.length > 0 ? res.data[0] : null;
+    if (byName) return toResolved("products", byName, item.product_name);
+  }
+
+  const trimmedCode = (item.product_code || "").trim();
+  if (trimmedCode) {
+    const byCode = await tryFetch("products", "code", trimmedCode);
+    if (byCode) return toResolved("products", byCode, item.product_name);
+  }
+
+  // ── Tabel spareparts (sumber Master Barang hasil import) ────────────────────
+  if (item.product_id) {
+    const spById = await tryFetch("spareparts", "id", item.product_id);
+    if (spById) return toResolved("spareparts", spById, item.product_name);
+  }
+
+  if (trimmedCode) {
+    // Kode di order bisa jadi sudah di-strips leading zero dari sebelum import, coba kedua varian
+    const stripped = trimmedCode.replace(/^0+/, "") || trimmedCode;
+    for (const variant of [trimmedCode, stripped]) {
+      const rawMatch = await tryFetch("spareparts", "material_number", variant);
+      if (rawMatch) return toResolved("spareparts", rawMatch, item.product_name);
+    }
+  }
+
+  if (trimmedName) {
+    const res = await (supabase as any)
+      .from("spareparts")
+      .select("*")
+      .ilike("material_description", trimmedName)
+      .limit(1);
+    const byDesc =
+      !res.error && Array.isArray(res.data) && res.data.length > 0 ? res.data[0] : null;
+    if (byDesc) return toResolved("spareparts", byDesc, item.product_name);
+  }
+
+  if (trimmedCode) {
+    // Fallback terakhir: material_number mengandung kode (case-insensitive)
+    const res = await (supabase as any)
+      .from("spareparts")
+      .select("*")
+      .ilike("material_number", trimmedCode)
+      .limit(1);
+    const byFuzzy =
+      !res.error && Array.isArray(res.data) && res.data.length > 0 ? res.data[0] : null;
+    if (byFuzzy) return toResolved("spareparts", byFuzzy, item.product_name);
+  }
+
+  return null;
+}
+
+/** Potong stok di tabel products (current_stock) atau spareparts (qty_stock). */
+async function cutStockForItem(
+  supabase: SupabaseClient,
+  source: "products" | "spareparts",
+  productId: string,
+  newStock: number,
+  itemUnit: string,
+  stockRawBefore: string | null,
+  obsMeta: any,
+): Promise<{ error: any }> {
+  if (source === "spareparts") {
+    // Pertahankan format string qty_stock, mis. "10 PCS" -> "9 PCS"
+    let newQtyStr = String(newStock);
+    if (stockRawBefore) {
+      const m = stockRawBefore.match(/-?\d+(?:\.\d+)?/);
+      if (m) newQtyStr = stockRawBefore.replace(m[0], String(newStock));
+      else if (stockRawBefore.trim() !== "") newQtyStr = `${newStock} ${itemUnit}`;
+    } else {
+      newQtyStr = `${newStock} ${itemUnit}`;
+    }
+    return await (supabase as any)
+      .from("spareparts")
+      .update({ qty_stock: newQtyStr })
+      .eq("id", productId);
+  }
+
+  const update: Record<string, any> = { current_stock: newStock };
+  if (obsMeta) update["description"] = JSON.stringify(obsMeta);
+  return await (supabase as any).from("products").update(update).eq("id", productId);
+}
+
+/**
  * Menyetujui order sparepart oleh GDSP dan memotong stok barang secara atomik dan konsisten.
  */
 export async function approveSparepartOrder(
@@ -317,23 +492,29 @@ export async function approveSparepartOrder(
   approver: { id?: string | undefined; name: string },
 ): Promise<SparepartOrder> {
   if (order.status !== "PENDING") {
-    throw new Error(`Order ${order.order_number} sudah berstatus ${order.status} dan tidak dapat disetujui lagi.`);
+    throw new Error(
+      `Order ${order.order_number} sudah berstatus ${order.status} dan tidak dapat disetujui lagi.`,
+    );
   }
 
   // 1. Validasi stok terkini secara real-time dari database untuk setiap item
-  const updatedItems: SparepartOrderItem[] = [];
+  const updatedItems: Array<
+    SparepartOrderItem & {
+      product_source: string;
+      stock_raw: string | null;
+      description: string | null;
+    }
+  > = [];
   for (const item of order.items) {
-    const { data: freshProd, error: fetchErr } = await (supabase as any)
-      .from("products")
-      .select("id, name, code, current_stock, unit, description")
-      .eq("id", item.product_id)
-      .single();
+    const freshProd = await findProductForOrder(supabase, item);
 
-    if (fetchErr || !freshProd) {
-      throw new Error(`Barang "${item.product_name}" tidak ditemukan di database.`);
+    if (!freshProd) {
+      throw new Error(
+        `Barang "${item.product_name}"${item.product_code ? ` (${item.product_code})` : ""} tidak ditemukan di database (baik di tabel products maupun spareparts).`,
+      );
     }
 
-    const currentStock = Number(freshProd.current_stock) || 0;
+    const currentStock = freshProd.stock;
     if (currentStock < item.quantity) {
       throw new Error(
         `Stok "${freshProd.name}" tidak mencukupi! Stok saat ini: ${currentStock} ${item.unit}, kuantitas order: ${item.quantity} ${item.unit}. Approval dibatalkan agar stok tidak minus.`,
@@ -343,6 +524,11 @@ export async function approveSparepartOrder(
     const newStock = Math.max(0, currentStock - item.quantity);
     updatedItems.push({
       ...item,
+      product_id: freshProd.id,
+      product_name: freshProd.name,
+      product_source: freshProd.source,
+      stock_raw: freshProd.stockRaw,
+      description: freshProd.description,
       stock_before: currentStock,
       stock_after: newStock,
     });
@@ -353,48 +539,46 @@ export async function approveSparepartOrder(
 
   // 2. Eksekusi pemotongan stok & pencatatan mutasi untuk setiap item
   for (const item of updatedItems) {
-    const { data: currentProd } = await (supabase as any)
-      .from("products")
-      .select("description")
-      .eq("id", item.product_id)
-      .single();
+    const source = item.product_source === "spareparts" ? "spareparts" : "products";
 
+    // Metadata OBS hanya relevan untuk tabel products
     let obsMeta: any = null;
-    try {
-      if (currentProd?.description && currentProd.description.startsWith("{")) {
-        obsMeta = JSON.parse(currentProd.description);
+    if (source === "products") {
+      try {
+        if (item.description && String(item.description).startsWith("{")) {
+          obsMeta = JSON.parse(item.description);
+        }
+      } catch {}
+      if (obsMeta) {
+        obsMeta.ending_balance = item.stock_after;
+        obsMeta.issued = (Number(obsMeta.issued) || 0) + item.quantity;
       }
-    } catch {}
+    }
 
-    const updatedObs = obsMeta
-      ? { ...obsMeta }
-      : {
-          beginning_balance: item.stock_before,
-          receipt: 0,
-          issued: 0,
-          ending_balance: item.stock_before,
-        };
-    updatedObs.ending_balance = item.stock_after;
-    updatedObs.issued = (Number(updatedObs.issued) || 0) + item.quantity;
-
-    // a. Update stok di tabel products
-    const { error: prodUpdateErr } = await (supabase as any)
-      .from("products")
-      .update({
-        current_stock: item.stock_after,
-        description: JSON.stringify(updatedObs),
-      })
-      .eq("id", item.product_id);
+    // a. Potong stok di tabel yang benar (products atau spareparts)
+    const { error: prodUpdateErr } = await cutStockForItem(
+      supabase,
+      source,
+      item.product_id,
+      item.stock_after ?? 0,
+      item.unit,
+      item.stock_raw ?? null,
+      obsMeta,
+    );
 
     if (prodUpdateErr) {
       throw new Error(`Gagal memotong stok untuk ${item.product_name}: ${prodUpdateErr.message}`);
     }
 
     // b. Simpan mutasi pengeluaran ke warehouse_transactions
+    //    product_id sengaja NULL: trigger `handle_warehouse_stock_update` memotong
+    //    products.current_stock lagi untuk product_id tersebut → order yang sudah
+    //    dipotong di atas akan terpotong DOBEL. Identitas barang tetap lengkap
+    //    lewat product_name; sinkronisasi menu lain ditangani helper di bawah.
     await (supabase as any).from("warehouse_transactions").insert({
       transaction_number: order.order_number,
       tx_type: "OUT",
-      product_id: item.product_id,
+      product_id: null,
       product_name: item.product_name,
       quantity: item.quantity,
       unit: item.unit,
@@ -405,6 +589,24 @@ export async function approveSparepartOrder(
       created_by: approver.id || null,
       created_by_name: approverName,
     });
+
+    // c. SINKRONISASI STOK LINTAS MENU — order keluar memotong qty barang yang
+    //    sama di MENU LAIN juga (Master Barang ↔ OBS Sparepart ↔ Buffer Stock).
+    //    Tabel sumber dilewati karena sudah dipotong di atas. Kolom batas
+    //    minimum/safe/max masing-masing menu tidak disentuh agar kontrol tetap jalan.
+    try {
+      await syncStockAcrossMenus(
+        supabase,
+        {
+          code: item.product_code,
+          name: item.product_name,
+        },
+        -item.quantity,
+        { skipTables: [source] },
+      );
+    } catch (syncErr) {
+      console.warn("Sinkronisasi stok lintas menu (approval order) gagal:", syncErr);
+    }
   }
 
   const updatedOrder: SparepartOrder = {

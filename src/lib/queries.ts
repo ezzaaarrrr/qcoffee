@@ -150,20 +150,31 @@ export async function fetchRoastingItems(roastingId: string) {
 }
 
 export async function fetchProducts() {
-  const { data, error } = await (supabase as any)
-    .from("products")
-    .select("id, name, code, is_active, current_stock, min_stock, unit")
-    .order("name");
-  if (error) throw error;
-  return (data ?? []) as {
-    id: string;
-    name: string;
-    code: string | null;
-    is_active: boolean;
-    current_stock?: number | null;
-    min_stock?: number | null;
-    unit?: string | null;
-  }[];
+  try {
+    const { data, error } = await (supabase as any)
+      .from("products")
+      .select("*");
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data.map((d: any) => ({
+        id: d.id,
+        name: d.name || d.material_description || "Item",
+        code: d.code || d.material_number || null,
+        is_active: d.is_active !== undefined ? d.is_active : true,
+        current_stock: Number(d.current_stock ?? d.qty_stock ?? 0),
+        min_stock: Number(d.min_stock ?? 10),
+        max_stock: d.max_stock ? Number(d.max_stock) : null,
+        unit: d.unit || "pcs",
+        category: d.category || "Sparepart & Tools",
+        location: d.location || "Gudang Utama",
+        shelf: d.shelf || "Rak A-1",
+        description: d.description || null,
+        created_at: d.created_at,
+      }));
+    }
+  } catch (err) {
+    console.warn("fetchProducts query fallback:", err);
+  }
+  return [];
 }
 
 export async function fetchProfiles() {
@@ -179,4 +190,55 @@ export async function fetchUserRoles() {
   const { data, error } = await supabase.from("user_roles").select("id, user_id, role");
   if (error) throw error;
   return data ?? [];
+}
+export type SparepartRow = {
+  id: string;
+  material_number: string;
+  material_description: string;
+  min_stock: number | string | null;
+  max_stock: number | string | null;
+  qty_stock: number | string | null;
+  avg_qty_gi: number | string | null;
+  hit_miss_pct: string | null;
+  created_at?: string;
+};
+
+export async function fetchSpareparts(): Promise<SparepartRow[]> {
+  try {
+    let allRows: SparepartRow[] = [];
+    const PAGE_SIZE = 1000;
+    let page = 0;
+    let hasMore = true;
+
+    while (hasMore && page < 5) {
+      const from = page * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+      const { data, error } = await (supabase as any)
+        .from("spareparts")
+        .select("*")
+        .order("material_number", { ascending: true })
+        .range(from, to);
+
+      if (error) {
+        console.warn("fetchSpareparts error:", error.message);
+        break;
+      }
+
+      if (data && data.length > 0) {
+        allRows = allRows.concat(data as SparepartRow[]);
+        if (data.length < PAGE_SIZE) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      } else {
+        hasMore = false;
+      }
+    }
+
+    return allRows;
+  } catch (err) {
+    console.warn("fetchSpareparts exception:", err);
+    return [];
+  }
 }

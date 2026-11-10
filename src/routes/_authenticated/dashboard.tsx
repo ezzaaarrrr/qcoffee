@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FlaskConical,
   Flame,
@@ -28,6 +28,7 @@ import {
   Eye,
   Download,
   ExternalLink,
+  Trash2,
   Layers,
   Activity,
   BoxIcon,
@@ -76,16 +77,23 @@ import {
   fetchGrinding,
   fetchRoasting,
   fetchProducts,
+  fetchSpareparts,
   fetchProfiles,
   type FormulasiRow,
   type GrindingRow,
   type RoastingRow,
 } from "@/lib/queries";
 import { formatDate, ROLE_LABELS, type AppRole } from "@/lib/domain";
+import { checkIsSuperAdminAccess } from "@/lib/departmentPermissions";
 import { useCurrentUser } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { exportSparepartInventoryExcel, exportSparepartMutasiExcel } from "@/lib/exportUtils";
+import {
+  exportSparepartInventoryExcel,
+  exportSparepartMutasiExcel,
+  getProductObsMeta,
+} from "@/lib/exportUtils";
+import { OBS_DEFAULT_ITEMS } from "@/data/obsDefaultItems";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
@@ -130,6 +138,7 @@ type BufferStockItem = {
 
 function DashboardPage() {
   const { profile, roles, isAdmin } = useCurrentUser();
+  const queryClient = useQueryClient();
   const [selectedTx, setSelectedTx] = useState<any | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedOutgoingSparepart, setSelectedOutgoingSparepart] = useState<any | null>(null);
@@ -146,7 +155,12 @@ function DashboardPage() {
   >(null);
   const [selectedPieStatus, setSelectedPieStatus] = useState<"Aman" | "Limit" | "Habis">("Aman");
   const [metricSearchQuery, setMetricSearchQuery] = useState("");
-  const [metricCategoryFilter, setMetricCategoryFilter] = useState<"all" | "obs" | "buffer">("all");
+  const [metricCategoryFilter, setMetricCategoryFilter] = useState<
+    "all" | "obs" | "buffer" | "master"
+  >("all");
+  // Konfirmasi hapus Master Barang dari Dashboard (khusus Super Admin)
+  const [pendingMasterDelete, setPendingMasterDelete] = useState<MetricItem | null>(null);
+  const [isDeletingMaster, setIsDeletingMaster] = useState(false);
   const [metricStatusFilter, setMetricStatusFilter] = useState<"all" | "safe" | "limit" | "empty">(
     "all",
   );
@@ -210,8 +224,64 @@ function DashboardPage() {
   const barangMasukCount = txData.filter((t) => t.tx_type === "IN").length;
   const barangKeluarCount = txData.filter((t) => t.tx_type === "OUT").length;
 
-  const allProducts = products.data ?? [];
-  const activeProducts = allProducts.filter((p) => p.is_active);
+  // ── MAP MUTASI (RECEIPT/ISSUED) per barang untuk Dashboard (Super Admin) ────
+  // Jika file import TIDAK memuat kolom RECEIPT/ISSUED (mis. format 207 OBS yang
+  // hanya memuat Min/Max/Qty Stock), nilai diambil dari mutasi barang MASUK &
+  // KELUAR nyata yang ter-link ke item yang sama (by id / nama barang) — jadi
+  // data Master Barang tidak pernah terjadi dobel item; hanya qty yang mengalir.
+  const productMovementByItem = useMemo(() => {
+    const inQty = new Map<string, number>();
+    const outQty = new Map<string, number>();
+    txData.forEach((t: any) => {
+      const qty = Number(t.quantity) || 0;
+      if (!qty) return;
+      const targets: Array<string | null> = [
+        t.product_id ? String(t.product_id) : null,
+        t.product_name
+          ? String(t.product_name)
+              .replace(/\u00a0/g, " ")
+              .trim()
+              .toLowerCase()
+          : null,
+      ];
+      targets.forEach((k) => {
+        if (!k) return;
+        const m = t.tx_type === "IN" ? inQty : outQty;
+        m.set(k, (m.get(k) || 0) + qty);
+      });
+    });
+    return { inQty, outQty };
+  }, [txData]);
+
+  // Query Data Master Barang dari tabel spareparts (2.735 item)
+  const sparepartsQuery = useQuery({ queryKey: ["spareparts_master"], queryFn: fetchSpareparts });
+  const allSpareparts = sparepartsQuery.data ?? [];
+
+  const defaultObsProducts = useMemo(() => {
+    return OBS_DEFAULT_ITEMS.map((item, idx) => ({
+      id: `obs-default-${item.code || idx}`,
+      name: item.name,
+      code: item.code,
+      unit: item.unit || "pcs",
+      location: item.location || "Gudang Utama",
+      shelf: item.shelf || "Rak A-1",
+      min_stock: item.min_stock,
+      safe_stock: item.safe_stock,
+      max_stock: item.max_stock,
+      current_stock: item.current_stock,
+      description: null,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    }));
+  }, []);
+
+  const allProducts = useMemo(() => {
+    const raw = products.data ?? [];
+    if (raw.length > 0) return raw;
+    return defaultObsProducts;
+  }, [products.data, defaultObsProducts]);
+
+  const activeProducts = useMemo(() => allProducts.filter((p) => p.is_active), [allProducts]);
   const totalActiveProducts = activeProducts.length;
 
   // Lookup map untuk kode material dan unit barang
@@ -336,11 +406,18 @@ function DashboardPage() {
     id: string;
     name: string;
     code?: string | null;
-    category: "OBS Sparepart" | "Buffer Stock";
+    category: "OBS Sparepart" | "Buffer Stock" | "Master Barang";
     current_stock: number;
     min_stock: number;
     unit: string;
     status: "safe" | "limit" | "empty";
+    // Data pembukuan gudang tampil Khusus Super Admin (paritas menu Master Barang)
+    ending_balance: number;
+    beginning_balance: number;
+    receipt: number | null;
+    issued: number | null;
+    // Maksimal Stock: dari file import (metadata) atau database
+    max_stock: number | null;
   };
 
   const unifiedMetricItems = useMemo<MetricItem[]>(() => {
@@ -353,6 +430,43 @@ function DashboardPage() {
       if (stock <= 0) status = "empty";
       else if (stock <= minStock) status = "limit";
 
+      // Pembukuan OBS dari metadata import (Beginning dari excel, Ending = stok kini)
+      let obsMeta: any = null;
+      try {
+        obsMeta = getProductObsMeta(p as any);
+      } catch {
+        obsMeta = null;
+      }
+      const obsBeginning =
+        obsMeta && obsMeta.beginning_balance !== null && obsMeta.beginning_balance !== undefined
+          ? Number(obsMeta.beginning_balance)
+          : stock;
+      const obsEnding =
+        obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
+          ? Number(obsMeta.ending_balance)
+          : stock;
+      // Paritas menu OBS Sparepart: jika stok saat ini berbeda dari metadata
+      // (barang pernah diedit manual), utamakan stok terkini.
+      const effectiveObsEnding =
+        Number.isFinite(obsEnding) && obsEnding !== stock ? stock : obsEnding;
+
+      const obsIssued =
+        obsMeta && obsMeta.issued !== null && obsMeta.issued !== undefined
+          ? Number(obsMeta.issued)
+          : null;
+      const obsReceipt =
+        obsMeta && obsMeta.receipt !== null && obsMeta.receipt !== undefined
+          ? Number(obsMeta.receipt)
+          : null;
+
+      // Maksimal Stock: utamakan nilai dari file import (metadata), fallback DB
+      const obsMax =
+        obsMeta && obsMeta.max_stock_file !== null && obsMeta.max_stock_file !== undefined
+          ? Number(obsMeta.max_stock_file)
+          : (p as any).max_stock !== null && (p as any).max_stock !== undefined
+            ? Number((p as any).max_stock)
+            : null;
+
       list.push({
         id: `obs-${p.id}`,
         name: p.name,
@@ -362,6 +476,11 @@ function DashboardPage() {
         min_stock: minStock,
         unit: p.unit || "pcs",
         status,
+        ending_balance: effectiveObsEnding,
+        beginning_balance: obsBeginning,
+        receipt: obsReceipt,
+        issued: obsIssued,
+        max_stock: obsMax,
       });
     });
 
@@ -381,11 +500,79 @@ function DashboardPage() {
         min_stock: minStock,
         unit: b.unit || "pcs",
         status,
+        ending_balance: stock,
+        beginning_balance: stock,
+        receipt: null,
+        issued: null,
+        max_stock: b.max_stock ?? null,
+      });
+    });
+
+    // ── ANTI DOBEL ITEM: kumpulkan kode & nama yang sudah ada di OBS/Buffer ────
+    // Item Master Barang yang sama persis (kode / nama) dengan item OBS atau
+    // Buffer TIDAK dijumlahkan lagi, sehingga jumlah item di dashboard selalu
+    // sesuai dengan daftar barang yang diupload — tidak ada duplikasi.
+    const seenKeys = new Set<string>();
+    const normKey = (v?: string | null) =>
+      v
+        ? String(v)
+            .replace(/\u00a0/g, " ")
+            .trim()
+            .toLowerCase()
+        : "";
+    list.forEach((it) => {
+      const c = normKey(it.code);
+      const n = normKey(it.name);
+      if (c) seenKeys.add(`c:${c}`);
+      if (n) seenKeys.add(`n:${n}`);
+    });
+
+    // Master Barang dibaca LANGSUNG dari tabel `spareparts` (live DB) — bukan
+    // lagi dari localStorage lama yang stale (sumber itu menyebabkan jumlah
+    // item di dashboard tidak sesuai dengan data yang diupload).
+    allSpareparts.forEach((sp) => {
+      const stock = parseFloat(String(sp.qty_stock || "0").replace(/[^0-9.]/g, "")) || 0;
+      const minStock = parseFloat(String(sp.min_stock || "0").replace(/[^0-9.]/g, "")) || 0;
+      let status: "safe" | "limit" | "empty" = "safe";
+      if (stock <= 0) status = "empty";
+      else if (stock <= minStock && minStock > 0) status = "limit";
+
+      // Skip jika item ini sudah tampil sebagai barang OBS / Buffer yang sama
+      const codeKey = normKey(sp.material_number);
+      const nameKey = normKey(sp.material_description);
+      const isDuplicate =
+        (codeKey && seenKeys.has(`c:${codeKey}`)) || (nameKey && seenKeys.has(`n:${nameKey}`));
+      if (isDuplicate) return;
+
+      // Rawannya catat supaya master yang dobel antar sendiri juga tidak dobel
+      if (codeKey) seenKeys.add(`c:${codeKey}`);
+      if (nameKey) seenKeys.add(`n:${nameKey}`);
+
+      let maxStock = null as number | null;
+      if (sp.max_stock !== null && sp.max_stock !== undefined && sp.max_stock !== "") {
+        const parsed = parseFloat(String(sp.max_stock).replace(/[^0-9.]/g, ""));
+        maxStock = isNaN(parsed) ? null : parsed;
+      }
+
+      list.push({
+        id: `master-${sp.id}`,
+        name: sp.material_description,
+        code: sp.material_number,
+        category: "Master Barang",
+        current_stock: stock,
+        min_stock: minStock,
+        unit: "PCS",
+        status,
+        ending_balance: stock,
+        beginning_balance: stock,
+        receipt: null,
+        issued: null,
+        max_stock: maxStock,
       });
     });
 
     return list;
-  }, [activeProducts, activeBufferItems]);
+  }, [activeProducts, activeBufferItems, allSpareparts]);
 
   // Filter barang sesuai kartu metrik yang dipilih & filter pencarian di modal
   const filteredModalItems = useMemo(() => {
@@ -435,11 +622,13 @@ function DashboardPage() {
       base = base.filter((it) => it.status === "limit" || it.status === "empty");
     }
 
-    // Filter Kategori (Semua / OBS / Buffer)
+    // Filter Kategori (Semua / OBS / Buffer / Master)
     if (metricCategoryFilter === "obs") {
       base = base.filter((it) => it.category === "OBS Sparepart");
     } else if (metricCategoryFilter === "buffer") {
       base = base.filter((it) => it.category === "Buffer Stock");
+    } else if (metricCategoryFilter === "master") {
+      base = base.filter((it) => it.category === "Master Barang");
     }
 
     // Filter Status (Aman / Limit / Habis)
@@ -711,10 +900,7 @@ function DashboardPage() {
     ].filter((d) => d.value > 0);
 
     return (
-      <div
-        id="diagram-analisis-status-sparepart"
-        className="rise-in scroll-mt-20"
-      >
+      <div id="diagram-analisis-status-sparepart" className="rise-in scroll-mt-20">
         {/* 2 Kolom Komparasi: OBS Sparepart vs All Item Barang */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Sisi Kiri: OBS Sparepart */}
@@ -882,9 +1068,7 @@ function DashboardPage() {
                         if (!item) return null;
                         const val = Number(item.value) || 0;
                         const pct =
-                          ca.totalGabungan > 0
-                            ? ((val / ca.totalGabungan) * 100).toFixed(1)
-                            : 0;
+                          ca.totalGabungan > 0 ? ((val / ca.totalGabungan) * 100).toFixed(1) : 0;
                         return (
                           <div className="rounded-lg border border-border bg-surface p-2.5 shadow-xl text-xs space-y-0.5 z-50">
                             <p className="font-semibold text-foreground">{item.name}</p>
@@ -928,6 +1112,88 @@ function DashboardPage() {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── PANEL SHORTCUT MENU GUDANG (Dashboard) ─────────────────────────────────
+  // Menu pintasan OBS Sparepart, Master Barang, Buffer Stok, Riwayat Mutasi,
+  // dan Activity Log — tampil di dashboard untuk role pengelola gudang
+  // (Super Admin, GDSP1201, CI1201/QC) sama seperti yang terdaftar di sidebar.
+  const renderWarehouseQuickMenu = () => {
+    const menus = [
+      {
+        to: "/products",
+        search: { tab: "items" },
+        icon: BoxIcon,
+        label: "OBS Sparepart",
+        desc: "Stok & keluhan sparepart OBS",
+        color: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+      },
+      {
+        to: "/products",
+        search: { tab: "master" },
+        icon: Package,
+        label: "Master Barang",
+        desc: "Data induk 2.808 barang gudang",
+        color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+      },
+      {
+        to: "/products",
+        search: { tab: "buffer_stock" },
+        icon: ShieldAlert,
+        label: "Buffer Stok",
+        desc: "Kontrol batas minimum buffer",
+        color: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+      },
+      {
+        to: "/products",
+        search: { tab: "transactions" },
+        icon: History,
+        label: "Riwayat Mutasi",
+        desc: "Transaksi barang masuk & keluar",
+        color: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      },
+      {
+        to: "/products",
+        search: { tab: "logs" },
+        icon: FileText,
+        label: "Activity Log",
+        desc: "Audit aktivitas modul gudang",
+        color: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+      },
+    ];
+
+    return (
+      <div>
+        <div className="mb-3 flex items-center gap-2">
+          <Wrench className="size-4 text-muted-foreground" />
+          <h2 className="label-caps text-xs font-bold uppercase tracking-wide text-muted-foreground">
+            Menu Gudang
+          </h2>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {menus.map((m) => (
+            <Link
+              key={m.label}
+              to={m.to}
+              search={m.search as never}
+              className="group flex items-start gap-3 rounded-lg border border-border bg-surface p-3 shadow-2xs transition-all hover:border-primary/40 hover:shadow-md"
+            >
+              <span className={cn("grid size-9 shrink-0 place-items-center rounded-md", m.color)}>
+                <m.icon className="size-4.5" />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold group-hover:text-primary">
+                  {m.label}
+                </span>
+                <span className="block text-[11px] leading-tight text-muted-foreground">
+                  {m.desc}
+                </span>
+              </span>
+            </Link>
+          ))}
         </div>
       </div>
     );
@@ -1108,6 +1374,74 @@ function DashboardPage() {
   };
 
   // Render Modal Detail Barang saat Kartu Metrik di-klik
+  // ── HAPUS MASTER BARANG DARI DASHBOARD (khusus Super Admin) ─────────────────
+  // Sama seperti tombol Hapus di menu Master Barang /products?tab=master:
+  // hapus baris sumber di tabel spareparts + baris overlay "Master Barang" di
+  // tabel products (metadata source master_barang), lalu sinkronkan cache.
+  const handleDashboardMasterDelete = async (item: MetricItem) => {
+    setIsDeletingMaster(true);
+    try {
+      // 1. Hapus sumber di tabel spareparts (Master Barang kini selalu live DB)
+      if (item.id.startsWith("master-")) {
+        const spId = item.id.replace(/^master-/, "");
+        if (spId) {
+          await (supabase as any).from("spareparts").delete().eq("id", spId);
+        }
+      }
+
+      // 2. Hapus baris overlay Master Barang di tabel products (berdasarkan kode)
+      if (item.code) {
+        const codeClean = String(item.code).trim();
+        const { data: productRows } = await supabase
+          .from("products")
+          .select("id, code, name, description")
+          .eq("code", codeClean);
+        const overlayIds = (productRows ?? [])
+          .filter((r: any) => {
+            try {
+              const d =
+                typeof r.description === "string" ? JSON.parse(r.description) : r.description;
+              return d?.source === "master_barang" || d?.is_master_only === true;
+            } catch {
+              return false;
+            }
+          })
+          .map((r: any) => r.id);
+        if (overlayIds.length > 0) {
+          await supabase.from("products").delete().in("id", overlayIds);
+        }
+
+        // 3. Bersihkan daftar import lokal yang berkaitan (item lama localStorage)
+        try {
+          const rawLocal = localStorage.getItem("master_barang_imported_items");
+          if (rawLocal) {
+            const imported: any[] = JSON.parse(rawLocal);
+            const pruned = imported.filter(
+              (it) =>
+                String(it.code || "")
+                  .trim()
+                  .toLowerCase() !== codeClean.toLowerCase(),
+            );
+            localStorage.setItem("master_barang_imported_items", JSON.stringify(pruned));
+          }
+        } catch {
+          // abaikan — localStorage tidak kritikal
+        }
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast.success(`Master barang "${item.name}" berhasil dihapus`);
+      setPendingMasterDelete(null);
+    } catch (err: any) {
+      toast.error("Gagal menghapus master barang", {
+        description: err?.message || "Terjadi kesalahan pada database.",
+      });
+    } finally {
+      setIsDeletingMaster(false);
+    }
+  };
+
   const renderMetricItemsModal = () => {
     if (!selectedMetricModal) return null;
 
@@ -1153,7 +1487,9 @@ function DashboardPage() {
         baseCount = limitOnlyCount;
       } else if (selectedPieStatus === "Habis") {
         const pct =
-          totalActiveProducts > 0 ? ((zeroProductsCount / totalActiveProducts) * 100).toFixed(1) : "0";
+          totalActiveProducts > 0
+            ? ((zeroProductsCount / totalActiveProducts) * 100).toFixed(1)
+            : "0";
         modalTitle = "Daftar Item Stok Habis — OBS Sparepart";
         modalDesc = `Menampilkan ${zeroProductsCount} item barang OBS Sparepart dengan stok kosong (${pct}% dari total ${totalActiveProducts} barang).`;
         modalBadge = `${zeroProductsCount} Item Habis (${pct}%)`;
@@ -1185,7 +1521,8 @@ function DashboardPage() {
         modalIcon = <AlertTriangle className="size-5 text-rose-500" />;
         baseCount = ca.gabunganHabis;
       } else {
-        const allSafePctExact = ca.totalGabungan > 0 ? (ca.gabunganAman / ca.totalGabungan) * 100 : 0;
+        const allSafePctExact =
+          ca.totalGabungan > 0 ? (ca.gabunganAman / ca.totalGabungan) * 100 : 0;
         const g = getGradeInfo(allSafePctExact);
         modalTitle = "Daftar Item Stok Aman — All Item Barang";
         modalDesc = `Menampilkan ${ca.gabunganAman} item barang gabungan OBS & Buffer berstatus Aman (${allSafePctExact.toFixed(1)}%) sesuai persentase KPI diagram [${g.badgeText}] dari total ${ca.totalGabungan} barang.`;
@@ -1203,294 +1540,493 @@ function DashboardPage() {
       selectedMetricModal === "perlu_perhatian";
 
     return (
-      <Dialog
-        open={!!selectedMetricModal}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedMetricModal(null);
-            setMetricSearchQuery("");
-            setMetricCategoryFilter("all");
-            setMetricStatusFilter("all");
-          }
-        }}
-      >
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-surface border border-border shadow-2xl">
-          {/* Header Modal */}
-          <DialogHeader className="p-5 pb-4 border-b border-border bg-surface-muted/40">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-surface border border-border/80 shadow-xs shrink-0">
-                  {modalIcon}
-                </div>
-                <div>
-                  <DialogTitle className="text-base sm:text-lg font-bold text-foreground flex items-center gap-2 flex-wrap">
-                    {modalTitle}
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-                      {modalBadge}
-                    </span>
-                  </DialogTitle>
-                  <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                    {modalDesc}
-                  </DialogDescription>
+      <>
+        <Dialog
+          open={!!selectedMetricModal}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSelectedMetricModal(null);
+              setMetricSearchQuery("");
+              setMetricCategoryFilter("all");
+              setMetricStatusFilter("all");
+              setPendingMasterDelete(null);
+            }
+          }}
+        >
+          <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden bg-surface border border-border shadow-2xl">
+            {/* Header Modal */}
+            <DialogHeader className="p-5 pb-4 border-b border-border bg-surface-muted/40">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-surface border border-border/80 shadow-xs shrink-0">
+                    {modalIcon}
+                  </div>
+                  <div>
+                    <DialogTitle className="text-base sm:text-lg font-bold text-foreground flex items-center gap-2 flex-wrap">
+                      {modalTitle}
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                        {modalBadge}
+                      </span>
+                    </DialogTitle>
+                    <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                      {modalDesc}
+                    </DialogDescription>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Filter & Search Bar */}
-            <div className="mt-4 flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between">
-              {/* Search Input */}
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                <Input
-                  value={metricSearchQuery}
-                  onChange={(e) => setMetricSearchQuery(e.target.value)}
-                  placeholder="Cari nama barang atau kode material..."
-                  className="pl-8 h-9 text-xs bg-surface"
-                />
-              </div>
-
-              {/* Filter Kategori: Semua / OBS / Buffer (hanya ditampilkan pada metrik total) */}
-              {(selectedMetricModal === "total_gabungan" ||
-                selectedMetricModal === "total_stok") && (
-                <div className="flex items-center gap-1 bg-surface p-1 rounded-md border border-border self-start sm:self-auto shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setMetricCategoryFilter("all")}
-                    className={cn(
-                      "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
-                      metricCategoryFilter === "all"
-                        ? "bg-primary text-primary-foreground shadow-xs"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    Semua ({unifiedMetricItems.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMetricCategoryFilter("obs")}
-                    className={cn(
-                      "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
-                      metricCategoryFilter === "obs"
-                        ? "bg-blue-600 text-white shadow-xs"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    OBS ({ca.totalOBS})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMetricCategoryFilter("buffer")}
-                    className={cn(
-                      "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
-                      metricCategoryFilter === "buffer"
-                        ? "bg-orange-600 text-white shadow-xs"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    Buffer ({ca.totalBuffer})
-                  </button>
+              {/* Filter & Search Bar */}
+              <div className="mt-4 flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between">
+                {/* Search Input */}
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                  <Input
+                    value={metricSearchQuery}
+                    onChange={(e) => setMetricSearchQuery(e.target.value)}
+                    placeholder="Cari nama barang atau kode material..."
+                    className="pl-8 h-9 text-xs bg-surface"
+                  />
                 </div>
-              )}
 
-              {/* Filter Status (khusus Total Item & Total Stok) */}
-              {(selectedMetricModal === "total_gabungan" ||
-                selectedMetricModal === "total_stok") && (
-                <div className="flex items-center gap-1 bg-surface p-1 rounded-md border border-border self-start sm:self-auto shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setMetricStatusFilter("all")}
-                    className={cn(
-                      "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
-                      metricStatusFilter === "all"
-                        ? "bg-secondary text-secondary-foreground font-semibold"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    Semua
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMetricStatusFilter("safe")}
-                    className={cn(
-                      "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
-                      metricStatusFilter === "safe"
-                        ? "bg-emerald-600 text-white font-semibold"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    Aman
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMetricStatusFilter("limit")}
-                    className={cn(
-                      "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
-                      metricStatusFilter === "limit"
-                        ? "bg-amber-600 text-white font-semibold"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    Limit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMetricStatusFilter("empty")}
-                    className={cn(
-                      "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
-                      metricStatusFilter === "empty"
-                        ? "bg-red-600 text-white font-semibold"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    Habis
-                  </button>
-                </div>
-              )}
-            </div>
-          </DialogHeader>
-
-          {/* Table Container */}
-          <div className="flex-1 overflow-y-auto max-h-[55vh] p-0 divide-y divide-border">
-            {filteredModalItems.length === 0 ? (
-              <div className="p-10 text-center text-muted-foreground space-y-2">
-                <Package className="size-8 mx-auto text-muted-foreground/50" />
-                <p className="text-sm font-medium">
-                  Tidak ada barang yang cocok dengan kriteria pencarian/filter.
-                </p>
-              </div>
-            ) : (
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-surface-muted border-b border-border z-10">
-                  <tr>
-                    <th className="py-2.5 px-3 text-center w-10 text-muted-foreground font-bold">
-                      #
-                    </th>
-                    <th className="py-2.5 px-3 text-left w-32 font-bold text-muted-foreground">
-                      KODE
-                    </th>
-                    <th className="py-2.5 px-3 text-left font-bold text-muted-foreground">
-                      NAMA BARANG
-                    </th>
-                    <th className="py-2.5 px-3 text-center w-28 font-bold text-muted-foreground">
-                      KATEGORI
-                    </th>
-                    <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">
-                      STOK FISIK
-                    </th>
-                    <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">
-                      MIN. STOK
-                    </th>
-                    {!hideStatusCol && (
-                      <th className="py-2.5 px-3 text-center w-28 font-bold text-muted-foreground">
-                        STATUS
-                      </th>
-                    )}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {filteredModalItems.map((item, idx) => {
-                    const isSafe = item.status === "safe";
-                    const isLimit = item.status === "limit";
-                    const isEmpty = item.status === "empty";
-
-                    return (
-                      <tr key={item.id} className="hover:bg-surface-muted/40 transition-colors">
-                        <td className="py-2.5 px-3 text-center text-muted-foreground font-mono">
-                          {idx + 1}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          {item.code ? (
-                            <span className="font-mono text-[11px] font-semibold bg-surface-muted px-1.5 py-0.5 rounded border border-border/70 text-foreground">
-                              {item.code}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground font-mono">—</span>
+                {/* Filter Kategori: Semua / OBS / Buffer (hanya ditampilkan pada metrik total) */}
+                {(selectedMetricModal === "total_gabungan" ||
+                  selectedMetricModal === "total_stok") && (
+                  <div className="flex items-center gap-1 bg-surface p-1 rounded-md border border-border self-start sm:self-auto shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setMetricCategoryFilter("all")}
+                      className={cn(
+                        "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
+                        metricCategoryFilter === "all"
+                          ? "bg-primary text-primary-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Semua ({unifiedMetricItems.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMetricCategoryFilter("obs")}
+                      className={cn(
+                        "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
+                        metricCategoryFilter === "obs"
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      OBS ({ca.totalOBS})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMetricCategoryFilter("buffer")}
+                      className={cn(
+                        "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
+                        metricCategoryFilter === "buffer"
+                          ? "bg-orange-600 text-white shadow-xs"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Buffer ({ca.totalBuffer})
+                    </button>
+                    {(() => {
+                      const masterCount = unifiedMetricItems.filter(
+                        (it) => it.category === "Master Barang",
+                      ).length;
+                      if (!isSuperAdminSession || masterCount === 0) return null;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setMetricCategoryFilter("master")}
+                          className={cn(
+                            "text-xs px-2.5 py-1 rounded font-medium transition-colors cursor-pointer",
+                            metricCategoryFilter === "master"
+                              ? "bg-violet-600 text-white shadow-xs"
+                              : "text-muted-foreground hover:text-foreground",
                           )}
-                        </td>
-                        <td className="py-2.5 px-3 font-medium text-foreground">
-                          <span title={item.name}>{item.name}</span>
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <span
-                            className={cn(
-                              "text-[10px] font-bold px-2 py-0.5 rounded-full border",
-                              item.category === "OBS Sparepart"
-                                ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25"
-                                : "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/25",
-                            )}
-                          >
-                            {item.category === "OBS Sparepart" ? "OBS" : "Buffer"}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-foreground">
-                          {item.current_stock.toLocaleString("id-ID")}{" "}
-                          <span className="text-[10px] font-normal text-muted-foreground">
-                            {item.unit}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">
-                          {item.min_stock.toLocaleString("id-ID")} {item.unit}
-                        </td>
-                        {!hideStatusCol && (
-                          <td className="py-2.5 px-3 text-center">
-                            {isSafe && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                                <span className="size-1.5 rounded-full bg-emerald-500" />
-                                Aman
+                        >
+                          Master ({masterCount})
+                        </button>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* Filter Status (khusus Total Item & Total Stok) */}
+                {(selectedMetricModal === "total_gabungan" ||
+                  selectedMetricModal === "total_stok") && (
+                  <div className="flex items-center gap-1 bg-surface p-1 rounded-md border border-border self-start sm:self-auto shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setMetricStatusFilter("all")}
+                      className={cn(
+                        "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
+                        metricStatusFilter === "all"
+                          ? "bg-secondary text-secondary-foreground font-semibold"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Semua
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMetricStatusFilter("safe")}
+                      className={cn(
+                        "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
+                        metricStatusFilter === "safe"
+                          ? "bg-emerald-600 text-white font-semibold"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Aman
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMetricStatusFilter("limit")}
+                      className={cn(
+                        "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
+                        metricStatusFilter === "limit"
+                          ? "bg-amber-600 text-white font-semibold"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Limit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMetricStatusFilter("empty")}
+                      className={cn(
+                        "text-xs px-2 py-1 rounded font-medium transition-colors cursor-pointer",
+                        metricStatusFilter === "empty"
+                          ? "bg-red-600 text-white font-semibold"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Habis
+                    </button>
+                  </div>
+                )}
+              </div>
+            </DialogHeader>
+
+            {/* Table Container */}
+            <div className="flex-1 overflow-y-auto max-h-[55vh] p-0 divide-y divide-border">
+              {filteredModalItems.length === 0 ? (
+                <div className="p-10 text-center text-muted-foreground space-y-2">
+                  <Package className="size-8 mx-auto text-muted-foreground/50" />
+                  <p className="text-sm font-medium">
+                    Tidak ada barang yang cocok dengan kriteria pencarian/filter.
+                  </p>
+                </div>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-surface-muted border-b border-border z-10">
+                    <tr>
+                      <th className="py-2.5 px-3 text-center w-10 text-muted-foreground font-bold">
+                        #
+                      </th>
+                      <th className="py-2.5 px-3 text-left w-32 font-bold text-muted-foreground">
+                        KODE
+                      </th>
+                      <th className="py-2.5 px-3 text-left font-bold text-muted-foreground">
+                        NAMA BARANG
+                      </th>
+                      <th className="py-2.5 px-3 text-center w-28 font-bold text-muted-foreground">
+                        KATEGORI
+                      </th>
+                      <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">
+                        STOK FISIK
+                      </th>
+                      <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">
+                        MIN. STOK
+                      </th>
+                      {/* Maksimal Stock: nilai dari file import / database */}
+                      <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">
+                        MAKS. STOK
+                      </th>
+                      {/* Kolom pembukuan & aksi KHUSUS role akses "Super Admin" (paritas menu Master Barang) */}
+                      {isSuperAdminSession && (
+                        <>
+                          <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">
+                            BEGINNING BAL.
+                          </th>
+                          <th className="py-2.5 px-3 text-right w-20 font-bold text-muted-foreground">
+                            RECEIPT
+                          </th>
+                          <th className="py-2.5 px-3 text-right w-20 font-bold text-muted-foreground">
+                            ISSUED
+                          </th>
+                          <th className="py-2.5 px-3 text-right w-24 font-bold text-muted-foreground">
+                            ENDING BAL.
+                          </th>
+                        </>
+                      )}
+                      {(!hideStatusCol || isSuperAdminSession) && (
+                        <th className="py-2.5 px-3 text-center w-28 font-bold text-muted-foreground">
+                          STATUS
+                        </th>
+                      )}
+                      {isSuperAdminSession && (
+                        <th className="py-2.5 px-3 text-center w-32 font-bold text-muted-foreground">
+                          AKSI
+                        </th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {filteredModalItems.map((item, idx) => {
+                      const isSafe = item.status === "safe";
+                      const isLimit = item.status === "limit";
+                      const isEmpty = item.status === "empty";
+
+                      // Receipt/Issued: utamakan kolom file (metadata import);
+                      // jika file tidak memuatnya (—), pakai mutasi barang nyata
+                      // yang ter-link ke item yang sama (id / nama barang).
+                      const dbId = item.id.replace(/^(obs|buffer|master-imported|master)-/, "");
+                      const nameKeyLower = item.name
+                        ? item.name
+                            .replace(/\u00a0/g, " ")
+                            .trim()
+                            .toLowerCase()
+                        : "";
+                      const receiptVal =
+                        item.receipt !== null && item.receipt !== undefined
+                          ? item.receipt
+                          : (productMovementByItem.inQty.get(dbId) ??
+                            productMovementByItem.inQty.get(nameKeyLower) ??
+                            null);
+                      const issuedVal =
+                        item.issued !== null && item.issued !== undefined
+                          ? item.issued
+                          : (productMovementByItem.outQty.get(dbId) ??
+                            productMovementByItem.outQty.get(nameKeyLower) ??
+                            null);
+
+                      return (
+                        <tr key={item.id} className="hover:bg-surface-muted/40 transition-colors">
+                          <td className="py-2.5 px-3 text-center text-muted-foreground font-mono">
+                            {idx + 1}
+                          </td>
+                          <td className="py-2.5 px-3">
+                            {item.code ? (
+                              <span className="font-mono text-[11px] font-semibold bg-surface-muted px-1.5 py-0.5 rounded border border-border/70 text-foreground">
+                                {item.code}
                               </span>
-                            )}
-                            {isLimit && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-                                <span className="size-1.5 rounded-full bg-amber-500" />
-                                Limit
-                              </span>
-                            )}
-                            {isEmpty && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
-                                <span className="size-1.5 rounded-full bg-rose-500" />
-                                Habis
-                              </span>
+                            ) : (
+                              <span className="text-muted-foreground font-mono">—</span>
                             )}
                           </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          {/* Footer Modal */}
-          <DialogFooter className="p-3.5 px-5 border-t border-border bg-surface-muted/30 flex flex-col sm:flex-row items-center justify-between gap-2">
-            <div className="text-xs text-muted-foreground">
-              Menampilkan{" "}
-              <span className="font-bold text-foreground">{filteredModalItems.length}</span> dari{" "}
-              <span className="font-bold text-foreground">{baseCount}</span> barang
+                          <td className="py-2.5 px-3 font-medium text-foreground">
+                            <span title={item.name}>{item.name}</span>
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <span
+                              className={cn(
+                                "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                                item.category === "OBS Sparepart"
+                                  ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/25"
+                                  : item.category === "Master Barang"
+                                    ? "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/25"
+                                    : "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/25",
+                              )}
+                            >
+                              {item.category === "OBS Sparepart"
+                                ? "OBS"
+                                : item.category === "Master Barang"
+                                  ? "Master"
+                                  : "Buffer"}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-foreground">
+                            {item.current_stock.toLocaleString("id-ID")}{" "}
+                            <span className="text-[10px] font-normal text-muted-foreground">
+                              {item.unit}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">
+                            {item.min_stock.toLocaleString("id-ID")} {item.unit}
+                          </td>
+                          {/* MAKSIMAL STOCK: dari file import / database */}
+                          <td className="py-2.5 px-3 text-right font-mono text-muted-foreground whitespace-nowrap">
+                            {item.max_stock !== null && item.max_stock !== undefined
+                              ? item.max_stock.toLocaleString("id-ID")
+                              : "—"}{" "}
+                            {item.unit}
+                          </td>
+                          {isSuperAdminSession && (
+                            <>
+                              {/* BEGINNING BALANCE */}
+                              <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">
+                                {item.beginning_balance.toLocaleString("id-ID")} {item.unit}
+                              </td>
+                              {/* RECEIPT (file import / mutasi masuk nyata) */}
+                              <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                                {receiptVal !== null && receiptVal !== undefined
+                                  ? receiptVal.toLocaleString("id-ID")
+                                  : "—"}
+                              </td>
+                              {/* ISSUED (file import / mutasi keluar nyata) */}
+                              <td className="py-2.5 px-3 text-right font-mono font-semibold text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                                {issuedVal !== null && issuedVal !== undefined
+                                  ? issuedVal.toLocaleString("id-ID")
+                                  : "—"}
+                              </td>
+                              {/* ENDING BALANCE */}
+                              <td className="py-2.5 px-3 text-right font-mono font-semibold text-foreground">
+                                {item.ending_balance.toLocaleString("id-ID")}{" "}
+                                <span className="text-[10px] font-normal text-muted-foreground">
+                                  {item.unit}
+                                </span>
+                              </td>
+                            </>
+                          )}
+                          {(!hideStatusCol || isSuperAdminSession) && (
+                            <td className="py-2.5 px-3 text-center">
+                              {isSafe && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                                  <span className="size-1.5 rounded-full bg-emerald-500" />
+                                  Aman
+                                </span>
+                              )}
+                              {isLimit && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                                  <span className="size-1.5 rounded-full bg-amber-500" />
+                                  Limit
+                                </span>
+                              )}
+                              {isEmpty && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
+                                  <span className="size-1.5 rounded-full bg-rose-500" />
+                                  Habis
+                                </span>
+                              )}
+                            </td>
+                          )}
+                          {isSuperAdminSession && (
+                            <td className="py-2.5 px-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <Link
+                                  to="/products"
+                                  search={{
+                                    tab:
+                                      item.category === "Master Barang"
+                                        ? "master"
+                                        : item.category === "Buffer Stock"
+                                          ? "buffer_stock"
+                                          : "items",
+                                  }}
+                                >
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 px-2 text-[11px] gap-1 font-medium"
+                                    title="Buka detail barang di menu gudang"
+                                  >
+                                    <ExternalLink className="size-3 text-primary" />
+                                    Detail
+                                  </Button>
+                                </Link>
+                                {item.category === "Master Barang" && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                    onClick={() => setPendingMasterDelete(item)}
+                                    title="Hapus Master Barang (database)"
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
-            <div className="flex items-center gap-2">
-              <Link to="/products">
-                <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5 cursor-pointer">
-                  <ExternalLink className="size-3.5" />
-                  Buka Manajemen Barang
+
+            {/* Footer Modal */}
+            <DialogFooter className="p-3.5 px-5 border-t border-border bg-surface-muted/30 flex flex-col sm:flex-row items-center justify-between gap-2">
+              <div className="text-xs text-muted-foreground">
+                Menampilkan{" "}
+                <span className="font-bold text-foreground">{filteredModalItems.length}</span> dari{" "}
+                <span className="font-bold text-foreground">{baseCount}</span> barang
+              </div>
+              <div className="flex items-center gap-2">
+                <Link to="/products">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs gap-1.5 cursor-pointer"
+                  >
+                    <ExternalLink className="size-3.5" />
+                    Buka Manajemen Barang
+                  </Button>
+                </Link>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setSelectedMetricModal(null);
+                    setMetricSearchQuery("");
+                    setMetricCategoryFilter("all");
+                    setMetricStatusFilter("all");
+                    setPendingMasterDelete(null);
+                  }}
+                  className="h-8 text-xs cursor-pointer"
+                >
+                  Tutup
                 </Button>
-              </Link>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── MODAL KONFIRMASI HAPUS MASTER BARANG (Khusus Super Admin) ────────── */}
+        <Dialog
+          open={!!pendingMasterDelete}
+          onOpenChange={(open) => {
+            if (!open && !isDeletingMaster) setPendingMasterDelete(null);
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base font-bold flex items-center gap-2">
+                <Trash2 className="size-4 text-rose-500" />
+                Hapus Master Barang?
+              </DialogTitle>
+              <DialogDescription className="text-xs leading-relaxed">
+                {pendingMasterDelete
+                  ? `"${pendingMasterDelete.name}"${
+                      pendingMasterDelete.code ? ` (${pendingMasterDelete.code})` : ""
+                    } akan dihapus permanen dari database (tabel spareparts + data master terkait). Sinkronisasi ke menu OBS & Buffer Otomatis mengikuti. Tindakan ini tidak dapat dibatalkan.`
+                  : ""}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2">
               <Button
                 size="sm"
-                onClick={() => {
-                  setSelectedMetricModal(null);
-                  setMetricSearchQuery("");
-                  setMetricCategoryFilter("all");
-                  setMetricStatusFilter("all");
-                }}
-                className="h-8 text-xs cursor-pointer"
+                variant="outline"
+                disabled={isDeletingMaster}
+                onClick={() => setPendingMasterDelete(null)}
               >
-                Tutup
+                Batal
               </Button>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={isDeletingMaster}
+                onClick={() =>
+                  pendingMasterDelete && handleDashboardMasterDelete(pendingMasterDelete)
+                }
+              >
+                {isDeletingMaster ? "Menghapus..." : "Ya, Hapus"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </>
     );
   };
 
@@ -2312,7 +2848,11 @@ function DashboardPage() {
   const loading = formulasi.isLoading || grinding.isLoading || roasting.isLoading;
 
   // Menentukan role pengguna aktif
-  const userRole: AppRole = roles.includes("admin")
+  // Deteksi Super Admin tahan banting: selain baris role 'admin' di DB,
+  // hargai departemen "Super Admin", pilihan akses login & email superadmin
+  // agar panel gudang (OBS + Buffer) selalu tampil untuk akses "Super Admin".
+  const isSuperAdminSession = checkIsSuperAdminAccess(profile, roles);
+  const userRole: AppRole = isSuperAdminSession
     ? "admin"
     : roles.includes("qc_field")
       ? "qc_field"
@@ -2437,6 +2977,9 @@ function DashboardPage() {
     >
       {(userRole === "admin" || isAdmin) && (
         <div className="space-y-6">
+          {/* Pintasan Menu Gudang: OBS, Master Barang, Buffer, Mutasi, Log */}
+          {renderWarehouseQuickMenu()}
+
           {/* Ringkasan Analisis Keseluruhan OBS + Buffer Stock */}
           {renderCombinedAnalysisPanel()}
 
@@ -2453,6 +2996,9 @@ function DashboardPage() {
 
       {userRole === "qc_field" && (
         <div className="space-y-6">
+          {/* Pintasan Menu Gudang: OBS, Master Barang, Buffer, Mutasi, Log */}
+          {renderWarehouseQuickMenu()}
+
           {/* Ringkasan Analisis Keseluruhan OBS + Buffer Stock */}
           {renderCombinedAnalysisPanel()}
 
@@ -2527,6 +3073,9 @@ function DashboardPage() {
 
       {userRole === "prod_process_uh" && (
         <div className="space-y-6">
+          {/* Pintasan Menu Gudang: OBS, Master Barang, Buffer, Mutasi, Log */}
+          {renderWarehouseQuickMenu()}
+
           {/* Ringkasan Analisis Keseluruhan OBS + Buffer Stock */}
           {renderCombinedAnalysisPanel()}
 
@@ -2761,9 +3310,7 @@ function DashboardPage() {
                     </span>
                     <span className="font-mono font-extrabold text-xl text-rose-600 dark:text-rose-400 mt-1 block">
                       {selectedOutgoingSparepart.totalQtyOut.toLocaleString("id-ID")}{" "}
-                      <span className="text-xs font-normal">
-                        {selectedOutgoingSparepart.unit}
-                      </span>
+                      <span className="text-xs font-normal">{selectedOutgoingSparepart.unit}</span>
                     </span>
                   </div>
 
@@ -2785,9 +3332,7 @@ function DashboardPage() {
                     </span>
                     <span className="font-mono font-extrabold text-base text-muted-foreground mt-1 block">
                       {selectedOutgoingSparepart.minStock.toLocaleString("id-ID")}{" "}
-                      <span className="text-xs font-normal">
-                        {selectedOutgoingSparepart.unit}
-                      </span>
+                      <span className="text-xs font-normal">{selectedOutgoingSparepart.unit}</span>
                     </span>
                   </div>
                 </div>
@@ -2802,11 +3347,7 @@ function DashboardPage() {
                 Lihat Riwayat Mutasi →
               </Button>
             </Link>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedOutgoingSparepart(null)}
-            >
+            <Button variant="outline" size="sm" onClick={() => setSelectedOutgoingSparepart(null)}>
               Tutup
             </Button>
           </DialogFooter>
