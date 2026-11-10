@@ -29,6 +29,7 @@ export const ROLE_TO_DEFAULT_DEPT: Record<AppRole, string> = {
   qc_field: "CI1201",
   admin_process: "CK1201",
   prod_process_uh: "GDSP1201",
+  teknik: "TEKNIK",
 };
 
 /** Mapping Relasi Departemen ke Role Sistem */

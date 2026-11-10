@@ -61,6 +61,7 @@ const OPERASIONAL: NavItem[] = [
 const MANAJEMEN: NavItem[] = [
   { to: "/approvals", label: "Approval Center", icon: ClipboardCheck },
   { to: "/products", search: { tab: "items" }, label: "OBS Sparepart", icon: Boxes },
+  { to: "/products", search: { tab: "master" }, label: "Master barang", icon: Package },
   { to: "/products", search: { tab: "buffer_stock" }, label: "Buffer Stok", icon: ShieldAlert },
   { to: "/products", search: { tab: "transactions" }, label: "Riwayat Mutasi", icon: History },
   { to: "/products", search: { tab: "logs" }, label: "Activity Log", icon: FileText },
@@ -165,10 +166,14 @@ export function AppShell({
   );
   const visibleManajemen = MANAJEMEN.filter((item) => {
     if ((item.adminOnly && !isAdmin) || !isNavAllowed(item.to)) return false;
+    // Khusus menu Master barang di path /products?tab=master: hanya tampil untuk role GDSP dan Super Admin
+    if (item.to === "/products" && item.search?.tab === "master") {
+      if (!isGdspUser && !isAdmin) return false;
+    }
     // Khusus user teknik: di bagian menu produk hanya menampilkan OBS Sparepart (Master barang) saja
     if (isTeknikUser && item.to === "/products") {
       const tab = item.search?.tab;
-      if (tab === "buffer_stock" || tab === "transactions" || tab === "logs") {
+      if (tab === "buffer_stock" || tab === "transactions" || tab === "logs" || tab === "master") {
         return false;
       }
     }

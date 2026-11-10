@@ -366,7 +366,7 @@ function ApprovalsPage() {
                     No. Order & Waktu Transaksi
                   </th>
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase text-muted-foreground">
-                    Barang & Kuantitas Digunakan
+                    KETERANGAN
                   </th>
                   <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase text-muted-foreground">
                     Stok Sebelum
@@ -375,10 +375,10 @@ function ApprovalsPage() {
                     Stok Sesudah
                   </th>
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase text-muted-foreground">
-                    Pemohon (Teknik)
+                    USER Teknik
                   </th>
                   <th className="px-4 py-2.5 text-xs font-semibold uppercase text-muted-foreground">
-                    User Pemotong Stok (GDSP)
+                    User GDSP
                   </th>
                   <th className="px-4 py-2.5 text-center text-xs font-semibold uppercase text-muted-foreground">
                     Status
@@ -488,7 +488,7 @@ function ApprovalsPage() {
                       <td className="px-4 py-3 align-top text-center">
                         {isApproved ? (
                           <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 text-[10px] font-semibold whitespace-nowrap">
-                            ✓ AAPPROVAL
+                            ✓ APPROVAL
                           </Badge>
                         ) : (
                           <Badge className="bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 text-[10px] font-semibold whitespace-nowrap">
