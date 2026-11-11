@@ -1435,7 +1435,7 @@ function WarehouseAndProductsPage() {
   const [bufferDateFilter, setBufferDateFilter] = useState<string>("");
   const [bufferSortOption, setBufferSortOption] = useState<string>("RECENT_MUTATION");
   const [bufferCurrentPage, setBufferCurrentPage] = useState<number>(1);
-  const BUFFER_PAGE_SIZE = 100;
+  const BUFFER_PAGE_SIZE = 10;
 
   // State Filter & Pagination Activity Log
   const [logSearchQuery, setLogSearchQuery] = useState("");
