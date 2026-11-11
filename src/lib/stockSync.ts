@@ -56,6 +56,17 @@ function normalizeText(value: unknown): string {
     .toLowerCase();
 }
 
+function normalizeCode(value: unknown): string {
+  const raw = String(value ?? "")
+    .replace(/\u00a0/g, "")
+    .replace(/\s+/g, "")
+    .trim();
+  // CSV/Excel kadang mengubah kode material menjadi 7100110339.0.
+  if (/^\d+\.0+$/.test(raw)) return String(parseInt(raw, 10));
+  if (/^\d+$/.test(raw)) return String(parseInt(raw, 10));
+  return raw.toLowerCase();
+}
+
 function parseStockNumber(value: unknown): number {
   const cleaned = String(value ?? "").replace(/[^0-9.\-]/g, "");
   const num = parseFloat(cleaned);
@@ -81,20 +92,12 @@ async function findRowInTable(
 ): Promise<any | null> {
   const spec = TABLE_SPECS[table];
 
-  // 1. Match berdasarkan ID (paling akurat)
-  if (ref.id) {
-    const { data, error } = await (supabase as any)
-      .from(table)
-      .select("*")
-      .eq("id", ref.id)
-      .limit(1);
-    if (!error && Array.isArray(data) && data.length > 0) return data[0];
-  }
-
-  // 2. Match berdasarkan kode material (termasuk varian tanpa leading zero)
+  // Sinkronisasi lintas tabel TIDAK menggunakan ID karena setiap tabel
+  // memiliki identitas baris yang berbeda. Gunakan kode material lalu nama.
+  // Match berdasarkan kode material (termasuk varian tanpa leading zero)
   const code = String(ref.code ?? "").trim();
   if (code) {
-    const clean = code.replace(/^0+/, "") || code;
+    const clean = normalizeCode(code);
     const variants = clean !== code ? [code, clean] : [code];
     for (const variant of variants) {
       const { data } = await (supabase as any)
@@ -104,12 +107,21 @@ async function findRowInTable(
         .limit(1);
       if (Array.isArray(data) && data.length > 0) return data[0];
     }
-    const { data: fuzzy } = await (supabase as any)
-      .from(table)
-      .select("*")
-      .ilike(spec.codeCol, code)
-      .limit(1);
-    if (Array.isArray(fuzzy) && fuzzy.length > 0) return fuzzy[0];
+    // Query seluruh kode hanya sebagai fallback untuk data lama dengan
+    // representasi leading zero yang berbeda; pencocokan dilakukan lokal.
+    const candidates: any[] = [];
+    for (let page = 0; page < 20; page++) {
+      const { data } = await (supabase as any)
+        .from(table)
+        .select("*")
+        .not(spec.codeCol, "is", null)
+        .range(page * 1000, page * 1000 + 999);
+      if (!Array.isArray(data) || data.length === 0) break;
+      candidates.push(...data);
+      if (data.length < 1000) break;
+    }
+    const matched = candidates.find((row: any) => normalizeCode(row[spec.codeCol]) === clean);
+    if (matched) return matched;
   }
 
   // 3. Match berdasarkan nama (case-insensitive)
@@ -121,6 +133,23 @@ async function findRowInTable(
       .ilike(spec.nameCol, name)
       .limit(1);
     if (Array.isArray(data) && data.length > 0) return data[0];
+
+    // Fallback untuk perbedaan spasi, kapitalisasi, atau nama kolom lama.
+    const candidates: any[] = [];
+    for (let page = 0; page < 20; page++) {
+      const { data } = await (supabase as any)
+        .from(table)
+        .select("*")
+        .not(spec.nameCol, "is", null)
+        .range(page * 1000, page * 1000 + 999);
+      if (!Array.isArray(data) || data.length === 0) break;
+      candidates.push(...data);
+      if (data.length < 1000) break;
+    }
+    const matched = candidates.find(
+      (row: any) => normalizeText(row[spec.nameCol]) === name,
+    );
+    if (matched) return matched;
   }
 
   return null;
@@ -194,7 +223,7 @@ export async function syncItemUpdateAcrossMenus(
   options?: { skipTables?: StockSyncTable[] },
 ): Promise<void> {
   const hasRef =
-    Boolean(ref.id) || Boolean(String(ref.code ?? "").trim()) || Boolean(normalizeText(ref.name));
+    Boolean(String(ref.code ?? "").trim()) || Boolean(normalizeText(ref.name));
   if (!hasRef) return;
   const skip = new Set<StockSyncTable>(options?.skipTables ?? []);
 
@@ -259,6 +288,67 @@ export async function syncItemUpdateAcrossMenus(
 }
 
 /**
+ * Menetapkan stok absolut yang sama pada semua tabel menu.
+ * Berbeda dari syncStockAcrossMenus (delta), fungsi ini aman dipakai setelah
+ * import CSV atau edit langsung karena nilai sumber dianggap sebagai nilai final.
+ */
+export async function syncAbsoluteStockAcrossMenus(
+  supabase: SupabaseClient,
+  ref: StockSyncRef,
+  stock: number,
+  options?: { skipTables?: StockSyncTable[] },
+): Promise<void> {
+  const hasRef =
+    Boolean(String(ref.code ?? "").trim()) || Boolean(normalizeText(ref.name));
+  if (!hasRef) return;
+  const nextStock = Math.max(0, Number(stock) || 0);
+  const skip = new Set<StockSyncTable>(options?.skipTables ?? []);
+
+  await Promise.all(
+    (["products", "spareparts", "buffer_stock"] as const)
+      .filter((table) => !skip.has(table))
+      .map(async (table) => {
+        const row = await findRowInTable(supabase, table, ref);
+        if (!row) return;
+        const spec = TABLE_SPECS[table];
+        const update: Record<string, any> = {
+          [spec.stockCol]: spec.stockIsString
+            ? formatStringStock(row[spec.stockCol], nextStock, row.unit || "PCS")
+            : nextStock,
+        };
+
+        if (table === "products" && row.description && String(row.description).trim().startsWith("{")) {
+          try {
+            const meta = JSON.parse(row.description);
+            if (meta && typeof meta === "object") {
+              meta.ending_balance = nextStock;
+              update.description = JSON.stringify(meta);
+            }
+          } catch {
+            /* description bukan metadata JSON */
+          }
+        }
+
+        const matchColumn = row[spec.codeCol] ? spec.codeCol : spec.nameCol;
+        const matchValue = row[matchColumn];
+        const { data: updatedRows, error } = await (supabase as any)
+          .from(table)
+          .update(update)
+          .eq(matchColumn, matchValue)
+          .select("*");
+        if (error) {
+          console.warn(`syncAbsoluteStock gagal (${table}):`, error.message);
+        } else if (!updatedRows || updatedRows.length === 0) {
+          // UPDATE tanpa SELECT dapat terlihat sukses walau RLS memfilter baris.
+          console.warn(`syncAbsoluteStock tidak mengubah baris (${table}); kemungkinan RLS atau baris tidak terlihat`);
+        } else {
+          console.info(`syncAbsoluteStock berhasil (${table})`, nextStock);
+        }
+      }),
+  );
+}
+
+/**
  * Sinkronkan perubahan qty stok satu barang ke SELURUH menu
  * ("products", "spareparts", "buffer_stock") berdasarkan id/kode/nama.
  *
@@ -280,7 +370,7 @@ export async function syncStockAcrossMenus(
   },
 ): Promise<void> {
   const hasRef =
-    Boolean(ref.id) || Boolean(String(ref.code ?? "").trim()) || Boolean(normalizeText(ref.name));
+    Boolean(String(ref.code ?? "").trim()) || Boolean(normalizeText(ref.name));
   if (!delta || !hasRef) return;
   const skip = new Set<StockSyncTable>(options?.skipTables ?? []);
 

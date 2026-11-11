@@ -120,7 +120,11 @@ import {
   createSparepartOrder,
   type SparepartOrderItem,
 } from "@/lib/orderService";
-import { syncStockAcrossMenus, syncItemUpdateAcrossMenus } from "@/lib/stockSync";
+import {
+  syncAbsoluteStockAcrossMenus,
+  syncStockAcrossMenus,
+  syncItemUpdateAcrossMenus,
+} from "@/lib/stockSync";
 
 // ── SCHEMA HEALING: kolom NOT NULL tak dikenal di tabel `products` DB live ──
 // Database live dapat memiliki kolom tambahan bergaya `spareparts` (mis.
@@ -1866,7 +1870,7 @@ function WarehouseAndProductsPage() {
 
       (existingItems || []).forEach((p: any) => {
         const nName = normStr(p.name);
-        const nCode = normStr(p.code);
+        const nCode = normCodeKey(p.code);
         if (nName) existingByName.set(nName, p);
         if (nCode) existingByCode.set(nCode, p);
       });
@@ -1892,7 +1896,7 @@ function WarehouseAndProductsPage() {
 
         const finalName = cleanName || (cleanCode ? `Item ${cleanCode}` : "Unnamed Item");
         const normName = normStr(finalName);
-        const normCode = cleanCode ? normStr(cleanCode) : "";
+        const normCode = cleanCode ? normCodeKey(cleanCode) : "";
 
         // Cegah duplikasi di dalam batch
         if (normName && seenNamesInBatch.has(normName)) continue;
@@ -1981,6 +1985,18 @@ function WarehouseAndProductsPage() {
             }
           }
         }
+      }
+
+      // Tetapkan stok absolut ke OBS dan Master Barang setelah bulk Buffer Stok.
+      // Gunakan identitas dari file (bukan hanya ID buffer), karena ID pada
+      // buffer_stock berbeda dengan ID products/spareparts.
+      for (const item of [...toUpdate, ...toInsert]) {
+        await syncAbsoluteStockAcrossMenus(
+          supabase,
+          { code: item.code, name: item.name },
+          Number(item.current_stock) || 0,
+          { skipTables: ["buffer_stock"] },
+        );
       }
 
       const totalCount = toInsert.length + toUpdate.length;
@@ -2367,6 +2383,15 @@ function WarehouseAndProductsPage() {
               }),
             );
           }
+
+          for (const row of toUpdateSp) {
+            await syncAbsoluteStockAcrossMenus(
+              supabase,
+              { code: row.targetCode, name: row.material_description },
+              Number(String(row.qty_stock).replace(/[^0-9.]/g, "")) || 0,
+              { skipTables: ["spareparts"] },
+            );
+          }
         } catch (e: any) {
           console.warn("Could not sync master barang import to spareparts:", e?.message || e);
         }
@@ -2441,6 +2466,18 @@ function WarehouseAndProductsPage() {
         console.error("Barang gagal diimport:", failedImports);
       }
 
+      // Nilai ending balance dari import OBS menjadi sumber absolut untuk
+      // Master Barang dan Buffer Stok, bukan sekadar perubahan delta.
+      for (const item of [...toUpdate, ...toInsert]) {
+        const stock = item.current_stock ?? 0;
+        await syncAbsoluteStockAcrossMenus(
+          supabase,
+          { code: item.code, name: item.name },
+          Number(stock) || 0,
+          { skipTables: ["products"] },
+        );
+      }
+
       const totalCount = toInsert.length + toUpdate.length;
       const successCount = totalCount - failedImports.length;
       if (typeof recordActivity === "function") {
@@ -2462,6 +2499,7 @@ function WarehouseAndProductsPage() {
         );
       }
       queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
+      queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
@@ -3140,6 +3178,13 @@ function WarehouseAndProductsPage() {
         .eq("id", editingBufferItem.id);
       if (error) throw error;
 
+      await syncAbsoluteStockAcrossMenus(
+        supabase,
+        { code: editingBufferItem.code, name: editingBufferItem.name },
+        Number(editingBufferItem.current_stock) || 0,
+        { skipTables: ["buffer_stock"] },
+      );
+
       const originalBuffer = bufferItems.find((b) => b.id === editingBufferItem.id);
       const changes: string[] = [];
       const humanChanges: string[] = [];
@@ -3587,7 +3632,6 @@ function WarehouseAndProductsPage() {
         await syncItemUpdateAcrossMenus(
           supabase,
           {
-            id: editingItem.id,
             code: originalProduct?.code ?? editingItem.code,
             name: originalProduct?.name ?? editingItem.name,
           },
@@ -3940,7 +3984,6 @@ function WarehouseAndProductsPage() {
           await syncStockAcrossMenus(
             supabase,
             {
-              id: targetProduct.id,
               code: targetProduct.code,
               name: targetProduct.name,
             },
