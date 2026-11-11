@@ -2263,7 +2263,8 @@ function WarehouseAndProductsPage() {
       // Simpan metadata saldo OBS ke localStorage cache hanya jika BUKAN dari tab Master Barang
       if (!isMasterTab) {
         try {
-          const obsMap = JSON.parse(localStorage.getItem("obs_stock_balances_map") || "{}");
+          if (typeof window === "undefined") return;
+          const obsMap = JSON.parse(window.localStorage.getItem("obs_stock_balances_map") || "{}");
           for (const item of importPreview) {
             const mCode = item.code ? String(item.code).trim().toLowerCase() : "";
             const mName = item.name ? String(item.name).trim().toLowerCase() : "";
@@ -2834,7 +2835,9 @@ function WarehouseAndProductsPage() {
     // Item standar yang sudah pernah dihapus user tidak lagi ditampilkan
     let hiddenKeys: string[] = [];
     try {
-      hiddenKeys = JSON.parse(localStorage.getItem("obs_default_deleted_keys") || "[]");
+      if (typeof window !== "undefined") {
+        hiddenKeys = JSON.parse(window.localStorage.getItem("obs_default_deleted_keys") || "[]");
+      }
     } catch {}
     const hidden = new Set(hiddenKeys);
 
@@ -3423,7 +3426,8 @@ function WarehouseAndProductsPage() {
       // Simpan ke cache localStorage HANYA jika bukan master tab (agar data OBS tidak terpengaruh)
       if (!isMasterTab) {
         try {
-          const obsMap = JSON.parse(localStorage.getItem("obs_stock_balances_map") || "{}");
+          if (typeof window === "undefined") return;
+          const obsMap = JSON.parse(window.localStorage.getItem("obs_stock_balances_map") || "{}");
           const mCode = formData.code ? formData.code.trim().toLowerCase() : "";
           const mName = formData.name ? formData.name.trim().toLowerCase() : "";
           if (mCode) obsMap[mCode] = itemMeta;
@@ -3791,14 +3795,19 @@ function WarehouseAndProductsPage() {
       //    tersembunyi via localStorage sehingga hilang dari daftar tampilan.
       if (!isUuidId) {
         const hiddenKey = "obs_default_deleted_keys";
-        const keys = JSON.parse(localStorage.getItem(hiddenKey) || "[]");
+        const keys =
+        typeof window !== "undefined"
+          ? JSON.parse(window.localStorage.getItem(hiddenKey) || "[]")
+          : [];
         const hideKeys = [idStr, item.code, item.name].filter(
           (k): k is string => typeof k === "string" && k !== "",
         );
         for (const k of hideKeys) {
           if (!keys.includes(k)) keys.push(k);
         }
-        localStorage.setItem(hiddenKey, JSON.stringify(keys));
+        if (typeof window !== "undefined") {
+        window.localStorage.setItem(hiddenKey, JSON.stringify(keys));
+      }
 
         await recordActivity(
           "HAPUS_BARANG",
