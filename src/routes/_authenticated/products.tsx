@@ -339,6 +339,13 @@ export const Route = createFileRoute("/_authenticated/products")({
   component: WarehouseAndProductsPage,
 });
 
+const normalizeMaterialCode = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  return /^\d+$/.test(raw) ? String(parseInt(raw, 10)) : raw;
+};
+
 type ProductItem = {
   id: string;
   name: string;
@@ -2737,7 +2744,7 @@ function WarehouseAndProductsPage() {
           return allProducts.map((d: any) => ({
             id: d.id,
             name: d.name || d.material_description || "Item",
-            code: d.code || d.material_number || null,
+            code: normalizeMaterialCode(d.code ?? d.material_number),
             category: d.category || "Sparepart & Tools",
             unit: d.unit || "pcs",
             location: d.location || "Gudang Utama",
@@ -2828,7 +2835,7 @@ function WarehouseAndProductsPage() {
       const maxStockNum = parseFloat(String(sp.max_stock || "0").replace(/[^0-9.]/g, "")) || 0;
       const unitMatch = String(sp.qty_stock || sp.min_stock || "PCS").match(/[a-zA-Z]+/);
       const unit = unitMatch ? unitMatch[0].toUpperCase() : "PCS";
-      const cleanCode = (sp.material_number || "").replace(/^0+/, "") || sp.material_number;
+      const cleanCode = normalizeMaterialCode(sp.material_number);
 
       return {
         id: sp.id,
@@ -3030,7 +3037,10 @@ function WarehouseAndProductsPage() {
         if (error.message?.includes("does not exist") || error.code === "42P01") return [];
         throw error;
       }
-      return (data ?? []) as BufferStockItem[];
+      return (data ?? []).map((item: BufferStockItem) => ({
+        ...item,
+        code: normalizeMaterialCode(item.code),
+      })) as BufferStockItem[];
     },
   });
 
@@ -7799,7 +7809,7 @@ function WarehouseAndProductsPage() {
                         <thead>
                           <tr className="border-b border-border bg-surface-muted/30 text-muted-foreground">
                             <th className="px-3.5 py-2 text-left font-medium w-10">No</th>
-                            <th className="px-3.5 py-2 text-left font-medium w-32">Kode SKU</th>
+                            <th className="px-3.5 py-2 text-left font-medium w-32">Kode Material</th>
                             <th className="px-3.5 py-2 text-left font-medium min-w-[320px] md:min-w-[420px]">
                               Nama Sparepart
                             </th>
@@ -8727,7 +8737,7 @@ function WarehouseAndProductsPage() {
                             No
                           </th>
                           <th className="label-caps px-2.5 py-3 text-left w-[110px] text-white font-semibold">
-                            Kode
+                            Kode Material
                           </th>
                           <th className="label-caps px-2.5 py-3 text-left min-w-[200px] text-white font-semibold">
                             Nama Barang
