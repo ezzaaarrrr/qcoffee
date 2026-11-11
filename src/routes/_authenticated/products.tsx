@@ -172,35 +172,54 @@ async function insertProductRowHealing(row: Record<string, any>): Promise<{ erro
       const detail = String((error as any).detail || "");
       const keyM = /Key \(([a-zA-Z0-9_]+)\)=\(([^)]*)\) already exists/i.exec(detail);
       const consM = /unique constraint "products_([a-zA-Z0-9_]+)_key"/i.exec(msg);
-      const dupCol = keyM?.[1] ?? consM?.[1];
+      let dupCol = keyM?.[1] ?? consM?.[1];
       let dupVal = keyM?.[2] ?? "";
 
       // Fallback: nilai duplikat = kode barang di payload (detail error kadang kosong)
-      if (!dupVal && /material_number/i.test(dupCol || consM?.[1] || msg)) {
+      if (!dupVal && (/material_number/i.test(dupCol || consM?.[1] || msg) || !dupCol)) {
+        dupCol = "material_number";
         dupVal = String(payload["code"] ?? payload["material_number"] ?? "").trim();
       }
 
       if (dupCol && dupVal) {
-        const { data: updData, error: updErr } = await (supabase as any)
-          .from("products")
-          .update(payload)
-          .eq(dupCol, dupVal)
-          .select("id");
-        if (!updErr) {
-          if (!updData || (Array.isArray(updData) && updData.length === 0)) {
-            return {
-              error: {
-                message: `Duplikat ${dupCol}="${dupVal}" ditemukan tapi UPDATE tidak mengubah baris apa pun (RLS/baris tidak terlihat).`,
-              },
-            };
+        const cleanDupVal = dupVal.replace(/^0+/, "");
+        const altDupVals = Array.from(new Set([dupVal, cleanDupVal, `0${dupVal}`, `00${dupVal}`])).filter(Boolean);
+
+        // 1. Coba update berdasarkan match material_number atau code
+        for (const val of altDupVals) {
+          const { data: updData, error: updErr } = await (supabase as any)
+            .from("products")
+            .update(payload)
+            .eq("material_number", val)
+            .select("id");
+          if (!updErr && updData && Array.isArray(updData) && updData.length > 0) {
+            return { error: null };
           }
+
+          const { data: codeUpd, error: codeErr } = await (supabase as any)
+            .from("products")
+            .update(payload)
+            .eq("code", val)
+            .select("id");
+          if (!codeErr && codeUpd && Array.isArray(codeUpd) && codeUpd.length > 0) {
+            return { error: null };
+          }
+        }
+
+        // 2. Jika masih gagal update karena RLS pada row spesifik, lakukan upsert dengan onConflict material_number jika ada
+        const { data: upsertData, error: upsertErr } = await (supabase as any)
+          .from("products")
+          .upsert(payload, { onConflict: "material_number" })
+          .select("id");
+        if (!upsertErr) {
           return { error: null };
         }
-        console.warn(
-          `Schema healing: duplikat ${dupCol}="${dupVal}" → update gagal:`,
-          updErr.message,
-        );
-        return { error: updErr };
+
+        return {
+          error: {
+            message: `Duplikat ${dupCol}="${dupVal}" ditemukan tapi UPDATE tidak mengubah baris apa pun (RLS/baris tidak terlihat).`,
+          },
+        };
       }
       return { error };
     }
@@ -1825,6 +1844,16 @@ function WarehouseAndProductsPage() {
           .trim()
           .toLowerCase();
 
+      // Normalisasi kode material: mengabaikan leading zeros (0 di depan) dan dikonversi ke angka integer/string numerik bersih
+      const normCodeKey = (c: any) => {
+        if (!c) return "";
+        const raw = String(c).trim();
+        if (/^\d+$/.test(raw)) {
+          return String(parseInt(raw, 10));
+        }
+        return raw.toLowerCase();
+      };
+
       const existingByName = new Map<string, any>();
       const existingByCode = new Map<string, any>();
 
@@ -2016,6 +2045,16 @@ function WarehouseAndProductsPage() {
           .trim()
           .toLowerCase();
 
+      // Normalisasi kode material: mengabaikan leading zeros (0 di depan) dan dikonversi ke angka integer/string numerik bersih
+      const normCodeKey = (c: any) => {
+        if (!c) return "";
+        const raw = String(c).trim();
+        if (/^\d+$/.test(raw)) {
+          return String(parseInt(raw, 10));
+        }
+        return raw.toLowerCase();
+      };
+
       const existingByName = new Map<string, any>();
       const existingByCode = new Map<string, any>();
       // Fallback: baris LEGACY tanpa metadata flow (is_obs / master_barang),
@@ -2035,15 +2074,15 @@ function WarehouseAndProductsPage() {
           isMasterRows = false;
         }
         const nName = normStr(p.name);
-        const nCode = normStr(p.code);
+        const nCodeKey = normCodeKey(p.code);
         // Peta utama: pemisahan ketat sesuai flow (perbaikan bug 206-vs-207)
         if (isMasterTab ? isMasterRows && !isObs : isObs && !isMasterRows) {
           if (nName) existingByName.set(nName, p);
-          if (nCode) existingByCode.set(nCode, p);
+          if (nCodeKey) existingByCode.set(nCodeKey, p);
         } else {
           // Baris ambiguous/legacy → dicocokkan sebagai fallback
           if (nName) fallbackByName.set(nName, p);
-          if (nCode) fallbackByCode.set(nCode, p);
+          if (nCodeKey) fallbackByCode.set(nCodeKey, p);
         }
       });
 
@@ -2086,9 +2125,9 @@ function WarehouseAndProductsPage() {
 
         const found =
           (normName ? existingByName.get(normName) : null) ||
-          (isRealCode ? existingByCode.get(normStr(cleanCode)) : null) ||
+          (isRealCode ? existingByCode.get(normCodeKey(cleanCode)) : null) ||
           (normName ? fallbackByName.get(normName) : null) ||
-          (isRealCode && fallbackByCode ? fallbackByCode.get(normStr(cleanCode)) : null);
+          (isRealCode && fallbackByCode ? fallbackByCode.get(normCodeKey(cleanCode)) : null);
 
         const hasEndingInFile = item.ending_balance !== null && item.ending_balance !== undefined;
         const hasMaxInFile = item.max_stock !== null && item.max_stock !== undefined;
