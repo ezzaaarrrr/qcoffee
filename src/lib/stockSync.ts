@@ -172,6 +172,93 @@ async function applyDeltaToRow(
 }
 
 /**
+ * Sinkronkan PERUBAHAN DATA ITEM (bukan sekadar mutasi stok) ke seluruh menu:
+ * kode material, nama material, stok saat ini, min stock (batas minimal) &
+ * max stock — dipakai handler EDIT BARANG agar 3 tabel Supabase (products,
+ * spareparts, buffer_stock) dan Dashboard selalu menampilkan data yang sama.
+ *
+ * @param ref      Identitas barang SEBELUM diedit (untuk mencari baris lama)
+ * @param changes  Nilai TERBARU (absolut). Kolom yang tidak ingin diubah
+ *                 cukup diisi undefined.
+ */
+export async function syncItemUpdateAcrossMenus(
+  supabase: SupabaseClient,
+  ref: StockSyncRef,
+  changes: {
+    code?: string | null;
+    name?: string | null;
+    stock?: number | null;
+    minStock?: number | null;
+    maxStock?: number | null;
+  },
+  options?: { skipTables?: StockSyncTable[] },
+): Promise<void> {
+  const hasRef =
+    Boolean(ref.id) || Boolean(String(ref.code ?? "").trim()) || Boolean(normalizeText(ref.name));
+  if (!hasRef) return;
+  const skip = new Set<StockSyncTable>(options?.skipTables ?? []);
+
+  const tables: StockSyncTable[] = (["products", "spareparts", "buffer_stock"] as const).filter(
+    (t) => !skip.has(t),
+  );
+
+  await Promise.all(
+    tables.map(async (table) => {
+      const row = await findRowInTable(supabase, table, ref);
+      if (!row) return;
+
+      const spec = TABLE_SPECS[table];
+      const update: Record<string, any> = {};
+
+      // Kode material baru
+      if (changes.code !== undefined && changes.code !== null && String(changes.code).trim()) {
+        update[spec.codeCol] = String(changes.code).trim();
+      }
+      // Nama material baru
+      if (changes.name !== undefined && changes.name !== null && String(changes.name).trim()) {
+        update[spec.nameCol] = String(changes.name).trim();
+      }
+      // Stok saat ini (absolut)
+      if (changes.stock !== undefined && changes.stock !== null) {
+        const stock = Number(changes.stock) || 0;
+        if (spec.stockIsString) {
+          update[spec.stockCol] = formatStringStock(row[spec.stockCol], stock, row.unit || "PCS");
+        } else {
+          update[spec.stockCol] = stock;
+          // Metadata OBS di kolom description: ending_balance mengikuti stok terbaru
+          if (row["description"] && String(row["description"]).trim().startsWith("{")) {
+            try {
+              const meta = JSON.parse(row["description"]);
+              if (meta && typeof meta === "object") {
+                meta.ending_balance = stock;
+                update["description"] = JSON.stringify(meta);
+              }
+            } catch {
+              /* description bukan JSON — biarkan */
+            }
+          }
+        }
+      }
+      // Min stock / Batas minimal
+      if (changes.minStock !== undefined && changes.minStock !== null) {
+        update["min_stock"] = Number(changes.minStock);
+      }
+      // Max stock (bisa sengaja dikosongkan → null)
+      if (changes.maxStock !== undefined) {
+        update["max_stock"] = changes.maxStock === null ? null : Number(changes.maxStock) || null;
+      }
+
+      if (Object.keys(update).length === 0) return;
+
+      const { error } = await (supabase as any).from(table).update(update).eq("id", row.id);
+      if (error) {
+        console.warn(`syncItemUpdate gagal (${table}, id=${row.id}):`, error.message);
+      }
+    }),
+  );
+}
+
+/**
  * Sinkronkan perubahan qty stok satu barang ke SELURUH menu
  * ("products", "spareparts", "buffer_stock") berdasarkan id/kode/nama.
  *

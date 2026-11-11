@@ -235,8 +235,13 @@ function ApprovalsPage() {
 
       await queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
       await queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
+      await queryClient.invalidateQueries({ queryKey: ["warehouse_transactions_full"] });
       await queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
       await queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
+      // Sumber data Dashboard (3 tabel gudang) agar halaman depan langsung update
+      await queryClient.invalidateQueries({ queryKey: ["products"] });
+      await queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
+      await queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
 
       toast.success(
         `Order ${res.order_number} disetujui! Stok otomatis terpotong di database dan riwayat mutasi tercatat.`,

@@ -150,31 +150,27 @@ export async function fetchRoastingItems(roastingId: string) {
 }
 
 export async function fetchProducts() {
-  try {
-    const { data, error } = await (supabase as any)
-      .from("products")
-      .select("*");
-    if (!error && Array.isArray(data) && data.length > 0) {
-      return data.map((d: any) => ({
-        id: d.id,
-        name: d.name || d.material_description || "Item",
-        code: d.code || d.material_number || null,
-        is_active: d.is_active !== undefined ? d.is_active : true,
-        current_stock: Number(d.current_stock ?? d.qty_stock ?? 0),
-        min_stock: Number(d.min_stock ?? 10),
-        max_stock: d.max_stock ? Number(d.max_stock) : null,
-        unit: d.unit || "pcs",
-        category: d.category || "Sparepart & Tools",
-        location: d.location || "Gudang Utama",
-        shelf: d.shelf || "Rak A-1",
-        description: d.description || null,
-        created_at: d.created_at,
-      }));
-    }
-  } catch (err) {
-    console.warn("fetchProducts query fallback:", err);
-  }
-  return [];
+  // PENTING: error query TIDAK boleh ditelan → kalau RLS/jaringan gagal,
+  // pemanggil (Dashboard) harus tahu bahwa data yang tampil BUKAN data DB.
+  // Tabel kosong ([]) = kondisi sah, error = throw.
+  const { data, error } = await (supabase as any).from("products").select("*");
+  if (error) throw error;
+  if (!Array.isArray(data) || data.length === 0) return [];
+  return data.map((d: any) => ({
+    id: d.id,
+    name: d.name || d.material_description || "Item",
+    code: d.code || d.material_number || null,
+    is_active: d.is_active !== undefined ? d.is_active : true,
+    current_stock: Number(d.current_stock ?? d.qty_stock ?? 0),
+    min_stock: Number(d.min_stock ?? 10),
+    max_stock: d.max_stock ? Number(d.max_stock) : null,
+    unit: d.unit || "pcs",
+    category: d.category || "Sparepart & Tools",
+    location: d.location || "Gudang Utama",
+    shelf: d.shelf || "Rak A-1",
+    description: d.description || null,
+    created_at: d.created_at,
+  }));
 }
 
 export async function fetchProfiles() {

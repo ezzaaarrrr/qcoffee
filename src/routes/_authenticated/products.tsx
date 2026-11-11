@@ -120,7 +120,7 @@ import {
   createSparepartOrder,
   type SparepartOrderItem,
 } from "@/lib/orderService";
-import { syncStockAcrossMenus } from "@/lib/stockSync";
+import { syncStockAcrossMenus, syncItemUpdateAcrossMenus } from "@/lib/stockSync";
 
 // ── SCHEMA HEALING: kolom NOT NULL tak dikenal di tabel `products` DB live ──
 // Database live dapat memiliki kolom tambahan bergaya `spareparts` (mis.
@@ -144,12 +144,68 @@ const PRODUCTS_NOTNULL_MIRRORS: Record<string, (p: Record<string, any>) => any> 
 async function insertProductRowHealing(row: Record<string, any>): Promise<{ error: any }> {
   let payload = { ...row };
   for (let attempt = 0; attempt < 8; attempt++) {
-    const { error } = await supabase.from("products").insert(payload as any);
-    if (!error) return { error: null };
+    // .select("id") → bisa memastikan baris BENAR-BENAR tersimpan (RLS bisa
+    // memblokir INSERT tanpa error tapi 0 baris masuk = "berhasil" palsu).
+    const { data, error } = await (supabase as any)
+      .from("products")
+      .insert(payload as any)
+      .select("id");
+    if (!error) {
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        return {
+          error: {
+            message:
+              "INSERT tidak menyimpan baris apa pun (0 row) — kemungkinan diblokir kebijakan RLS tabel products.",
+          },
+        };
+      }
+      return { error: null };
+    }
 
-    const m = /null value in column "([a-zA-Z0-9_]+)" of relation "products"/i.exec(
-      error.message || "",
-    );
+    const msg = error.message || "";
+
+    // ── Duplikat unik di DB live (mis. constraint "products_material_number_key")
+    // Barang dengan kode itu SUDAH ADA (hasil import sebelumnya dengan nama yang
+    // berbeda di database). Import bersifat update-only → alihkan ke UPDATE
+    // baris yang ada agar data terbaru (stok/nama/kode/min/max) tetap tersimpan.
+    if (/duplicate key value/i.test(msg) && /unique constraint/i.test(msg)) {
+      const detail = String((error as any).detail || "");
+      const keyM = /Key \(([a-zA-Z0-9_]+)\)=\(([^)]*)\) already exists/i.exec(detail);
+      const consM = /unique constraint "products_([a-zA-Z0-9_]+)_key"/i.exec(msg);
+      const dupCol = keyM?.[1] ?? consM?.[1];
+      let dupVal = keyM?.[2] ?? "";
+
+      // Fallback: nilai duplikat = kode barang di payload (detail error kadang kosong)
+      if (!dupVal && /material_number/i.test(dupCol || consM?.[1] || msg)) {
+        dupVal = String(payload["code"] ?? payload["material_number"] ?? "").trim();
+      }
+
+      if (dupCol && dupVal) {
+        const { data: updData, error: updErr } = await (supabase as any)
+          .from("products")
+          .update(payload)
+          .eq(dupCol, dupVal)
+          .select("id");
+        if (!updErr) {
+          if (!updData || (Array.isArray(updData) && updData.length === 0)) {
+            return {
+              error: {
+                message: `Duplikat ${dupCol}="${dupVal}" ditemukan tapi UPDATE tidak mengubah baris apa pun (RLS/baris tidak terlihat).`,
+              },
+            };
+          }
+          return { error: null };
+        }
+        console.warn(
+          `Schema healing: duplikat ${dupCol}="${dupVal}" → update gagal:`,
+          updErr.message,
+        );
+        return { error: updErr };
+      }
+      return { error };
+    }
+
+    const m = /null value in column "([a-zA-Z0-9_]+)" of relation "products"/i.exec(msg);
     const col = m?.[1];
     if (!m || !col) return { error };
 
@@ -163,6 +219,51 @@ async function insertProductRowHealing(row: Record<string, any>): Promise<{ erro
     );
   }
   return { error: { message: "Insert produk tetap gagal setelah schema healing." } };
+}
+
+/**
+ * UPDATE barang yang sudah ada by ID dengan schema healing:
+ * - UPDATE murni (bukan upsert/INSERT) sehingga TIDAK terkena NOT NULL /
+ *   unique constraint kolom tambahan DB live (material_number, dll.) yang
+ *   tidak dikirim aplikasi.
+ * - Kolom yang tidak ada di DB live (mis. image_url/doc_url di skema lama)
+ *   otomatis dibuang dari payload lalu dicoba ulang.
+ */
+async function updateProductRowHealing(
+  id: string,
+  fields: Record<string, any>,
+): Promise<{ error: any }> {
+  let payload = { ...fields };
+  for (let attempt = 0; attempt < 6; attempt++) {
+    // .select("id") → deteksi "sukses tapi 0 baris berubah" (id salah / RLS)
+    const { data, error } = await (supabase as any)
+      .from("products")
+      .update(payload)
+      .eq("id", id)
+      .select("id");
+    if (!error) {
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        return {
+          error: {
+            message:
+              "UPDATE tidak mengubah baris apa pun (0 row) — ID tidak ditemukan atau diblokir kebijakan RLS tabel products.",
+          },
+        };
+      }
+      return { error: null };
+    }
+
+    const unknownM = /Could not find the '([a-zA-Z0-9_]+)' column of 'products'/i.exec(
+      error.message || "",
+    );
+    if (unknownM?.[1]) {
+      delete payload[unknownM[1]];
+      console.warn(`Schema healing: kolom "${unknownM[1]}" tidak ada di DB → dibuang dari update.`);
+      continue;
+    }
+    return { error };
+  }
+  return { error: { message: "Update produk tetap gagal setelah schema healing." } };
 }
 
 type ProductsSearch = {
@@ -2227,22 +2328,25 @@ function WarehouseAndProductsPage() {
 
       const CHUNK_SIZE = 100;
       const failedImports: string[] = [];
-      // 1. Eksekusi update untuk barang yang sudah ada berdasarkan ID
+      // 1. Eksekusi update untuk barang yang sudah ada berdasarkan ID.
+      //    PENTING: memakai UPDATE murni (bukan upsert/INSERT ... onConflict)
+      //    karena upsert tetap menjalankan jalur INSERT dan kena constraint
+      //    kolom tambahan DB live (material_number/material_description NOT
+      //    NULL) → seluruh update stok gagal dan stok tidak pernah berubah.
       for (let i = 0; i < toUpdate.length; i += CHUNK_SIZE) {
         const chunk = toUpdate.slice(i, i + CHUNK_SIZE);
-        const { error: updErr } = await supabase
-          .from("products")
-          .upsert(chunk as any, { onConflict: "id" });
-        if (updErr) {
-          console.warn("Products batch upsert on ID fallback due to:", updErr.message);
-          for (const it of chunk) {
-            const { error: singleErr } = await supabase
-              .from("products")
-              .upsert(it as any, { onConflict: "id" });
-            if (singleErr) {
-              failedImports.push(`${it.name} — ${singleErr.message}`);
-              console.error("Failed to upsert existing product item:", it.name, singleErr.message);
-            }
+        const failures = await Promise.all(
+          chunk.map(async (it) => {
+            const { id, ...fields } = it as any;
+            if (!id) return `${it.name} — baris tanpa ID`;
+            const r = await updateProductRowHealing(String(id), fields);
+            return r.error ? `${it.name} — ${r.error.message}` : null;
+          }),
+        );
+        for (const f of failures) {
+          if (f) {
+            failedImports.push(f);
+            console.error("Failed to update existing product item:", f);
           }
         }
       }
@@ -2292,17 +2396,28 @@ function WarehouseAndProductsPage() {
       }
 
       const totalCount = toInsert.length + toUpdate.length;
+      const successCount = totalCount - failedImports.length;
       if (typeof recordActivity === "function") {
         await recordActivity(
           "IMPORT_BARANG",
-          `Mengimport ${toInsert.length} barang baru & memperbarui ${toUpdate.length} stok via Excel/CSV`,
+          `Mengimport ${successCount}/${totalCount} data (${toInsert.length} baru, ${toUpdate.length} update, ${failedImports.length} gagal) via Excel/CSV`,
         );
       }
-      toast.success(
-        `Berhasil mengimport ${totalCount} data barang (${toInsert.length} baru, ${toUpdate.length} diperbarui)!`,
-      );
+      if (failedImports.length > 0) {
+        // TOAST JUJUR: jangan pernah klaim "berhasil" untuk baris yang gagal tersimpan
+        toast.warning(
+          `HANYA ${successCount} dari ${totalCount} data yang benar-benar tersimpan (${toInsert.length} baru, ${toUpdate.length} update). ${failedImports.length} GAGAL: ` +
+            failedImports.slice(0, 2).join(" ; "),
+          { duration: 12000 },
+        );
+      } else {
+        toast.success(
+          `Berhasil mengimport ${totalCount} data barang (${toInsert.length} baru, ${toUpdate.length} diperbarui)!`,
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
       setImportPreview([]);
@@ -2548,6 +2663,7 @@ function WarehouseAndProductsPage() {
     queryKey: ["warehouse_products"],
     queryFn: async () => {
       let queryFailed = false;
+      let fetchedCount = 0;
       try {
         let allProducts: any[] = [];
         const PAGE_SIZE = 1000;
@@ -2578,6 +2694,7 @@ function WarehouseAndProductsPage() {
         }
 
         if (allProducts.length > 0) {
+          fetchedCount = allProducts.length;
           return allProducts.map((d: any) => ({
             id: d.id,
             name: d.name || d.material_description || "Item",
@@ -2606,6 +2723,13 @@ function WarehouseAndProductsPage() {
         toast.error(
           "Gagal memuat data barang dari database — yang tampil adalah daftar standar OBS, bukan data Supabase. Cek koneksi/izin akses Anda.",
           { duration: 10000 },
+        );
+      } else if (fetchedCount === 0) {
+        // Tabel KOSONG / diblokir RLS: PostgREST mengembalikan array kosong
+        // TANPA error bila policy SELECT memfilter semua baris → wajib diiingkatkan
+        toast.warning(
+          "Tabel products di Supabase KOSONG (atau diblokir RLS) — yang tampil adalah daftar standar OBS bawaan aplikasi, bukan data database. Import Anda belum masuk ke database!",
+          { duration: 12000 },
         );
       }
       return [];
@@ -3313,6 +3437,12 @@ function WarehouseAndProductsPage() {
 
       if (parsedObs) {
         parsedObs.ending_balance = newStock;
+        // Min/Max stok yang diedit super admin juga ikut memperbarui metadata
+        // file (Batas Minimal & Maksimal Stok di Dashboard mengikuti nilai baru)
+        if (isAdmin) {
+          parsedObs.min_stock_file = minStockToSave;
+          parsedObs.max_stock_file = maxStockToSave;
+        }
         updatedDescription = JSON.stringify(parsedObs);
       }
 
@@ -3398,6 +3528,33 @@ function WarehouseAndProductsPage() {
 
       if (error) throw error;
 
+      // ── SINKRONISASI PERUBAHAN ITEM KE 3 TABEL SUPABASE ────────────────────────
+      // Perubahan stok saat ini, maks.stok, min.stok (batas minimal), kode
+      // material & nama material dari handler ini harus mengalir ke tabel
+      // Master Barang (spareparts) & Buffer Stock supaya Dashboard dan proses
+      // Sistem Order membaca data yang sama. Pencarian baris lama memakai
+      // identitas SEBELUM diedit (kode/nama lama).
+      try {
+        await syncItemUpdateAcrossMenus(
+          supabase,
+          {
+            id: editingItem.id,
+            code: originalProduct?.code ?? editingItem.code,
+            name: originalProduct?.name ?? editingItem.name,
+          },
+          {
+            code: editingItem.code?.trim() || null,
+            name: editingItem.name.trim(),
+            stock: newStock,
+            minStock: minStockToSave,
+            maxStock: maxStockToSave,
+          },
+          { skipTables: ["products"] },
+        );
+      } catch (syncErr: any) {
+        console.warn("Sinkronisasi edit barang lintas menu gagal:", syncErr?.message || syncErr);
+      }
+
       const changes: string[] = [];
       const humanChanges: string[] = [];
       if (originalProduct) {
@@ -3479,7 +3636,12 @@ function WarehouseAndProductsPage() {
     onSuccess: () => {
       toast.success("Data barang berhasil diperbarui");
       setEditingItem(null);
+      // Refresh 3 sumber data menu gudang + dashboard
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
+      queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
     },
     onError: (e: Error) => toast.error("Gagal mengubah data barang", { description: e.message }),
   });

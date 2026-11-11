@@ -278,8 +278,12 @@ function DashboardPage() {
   const allProducts = useMemo(() => {
     const raw = products.data ?? [];
     if (raw.length > 0) return raw;
+    // Query GAGAL (RLS/jaringan) → JANGAN tampilkan data contoh seolah-olah
+    // data asli; tampilkan kosong. Banner error ditampilkan di atas halaman.
+    if (products.isError) return [];
+    // Query sukses & tabel memang kosong → baru tampilkan daftar standar OBS
     return defaultObsProducts;
-  }, [products.data, defaultObsProducts]);
+  }, [products.data, products.isError, defaultObsProducts]);
 
   const activeProducts = useMemo(() => allProducts.filter((p) => p.is_active), [allProducts]);
   const totalActiveProducts = activeProducts.length;
@@ -2977,6 +2981,23 @@ function DashboardPage() {
     >
       {(userRole === "admin" || isAdmin) && (
         <div className="space-y-6">
+          {/* ⚠️ Transparansi sumber data: jika query Supabase gagal, jangan biarkan
+              daftar standar bawaan dianggap hasil import oleh pengguna */}
+          {products.isError && (
+            <div className="rounded-xl border border-red-300 bg-red-50 dark:bg-red-950/40 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-300 flex items-start gap-2">
+              <AlertTriangle className="size-4 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-semibold">Gagal memuat data barang dari Supabase</p>
+                <p className="text-xs mt-0.5 break-words">
+                  {String((products.error as Error)?.message || products.error)} — tabel metrik di
+                  bawah bisa jadi menampilkan daftar standar bawaan aplikasi, BUKAN hasil import
+                  Anda. Cek koneksi/kebijakan RLS tabel <code>products</code>, lalu muat ulang
+                  halaman (Ctrl+Shift+R).
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Pintasan Menu Gudang: OBS, Master Barang, Buffer, Mutasi, Log */}
           {renderWarehouseQuickMenu()}
 
