@@ -2191,7 +2191,12 @@ function WarehouseAndProductsPage() {
               min_stock_file: hasMinInFile ? Number(item.min_stock) : null,
               max_stock_file: hasMaxInFile ? Number(item.max_stock) : null,
             };
-        const obsDescription = JSON.stringify(obsMeta);
+        // Import Master Barang tidak boleh mengubah metadata item OBS yang
+        // sudah ada. Stok tetap diperbarui, tetapi klasifikasi OBS dipertahankan.
+        const preserveExistingObs = isMasterTab && found && !isMasterBarangProduct(found);
+        const obsDescription = preserveExistingObs
+          ? found.description
+          : JSON.stringify(obsMeta);
 
         if (found) {
           // Data master barang: sertakan nama agar memenuhi NOT NULL constraint PostgreSQL saat upsert
@@ -2211,7 +2216,11 @@ function WarehouseAndProductsPage() {
             id: found.id,
             name: found.name || finalName,
             code: cleanCode || found.code || null,
-            category: isMasterTab ? "Master Barang" : "Sparepart & Tools",
+            // Import Master Barang tidak mengubah klasifikasi OBS existing.
+            // Item OBS yang sudah ada tetap tampil di OBS Sparepart.
+            category: preserveExistingObs
+              ? found.category
+              : (isMasterTab ? "Master Barang" : "Sparepart & Tools"),
             // Unit & lokasi barang lama dipertahankan (tidak diubah oleh import)
             unit: found.unit || item.unit || "pcs",
             location: found.location || item.location || "Gudang Utama",
