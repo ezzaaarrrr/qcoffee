@@ -240,9 +240,9 @@ export function checkIsTeknikUser(
   const deptLower = profile?.department?.toLowerCase() || "";
   const emailLower = profile?.email?.toLowerCase() || "";
   const storedAccess =
-    typeof window !== "undefined" ? localStorage.getItem("last_active_access") || "" : "";
+    typeof window !== "undefined" ? window.window.localStorage.getItem("last_active_access") || "" : "";
   const storedDept =
-    typeof window !== "undefined" ? localStorage.getItem("last_active_dept") || "" : "";
+    typeof window !== "undefined" ? window.localStorage.getItem("last_active_dept") || "" : "";
 
   return (
     userDept === "TEKNIK" ||
@@ -300,7 +300,7 @@ export function checkIsSuperAdminAccess(
   if (emailLower.includes("superadmin")) return true;
 
   const storedAccess =
-    typeof window !== "undefined" ? (localStorage.getItem("last_active_access") || "").trim() : "";
+    typeof window !== "undefined" ? (window.localStorage.getItem("last_active_access") || "").trim() : "";
   const storedRole =
     typeof window !== "undefined" ? (localStorage.getItem("last_active_role") || "").trim() : "";
   if (storedAccess === "Super Admin" || storedRole === "admin") return true;
@@ -312,7 +312,7 @@ export function checkIsSuperAdminAccess(
 export function getStoredDeptPermissions(): Record<string, Record<string, boolean>> {
   if (typeof window === "undefined") return DEFAULT_DEPARTMENT_PERMISSIONS;
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
     if (!raw) return { ...DEFAULT_DEPARTMENT_PERMISSIONS };
     const parsed = JSON.parse(raw);
     return { ...DEFAULT_DEPARTMENT_PERMISSIONS, ...parsed };
@@ -334,7 +334,7 @@ export function saveStoredDeptPermission(
     const deptMap = current[deptNorm] || { ...DEFAULT_DEPARTMENT_PERMISSIONS[deptNorm] } || {};
     deptMap[routePath] = canAccess;
     current[deptNorm] = deptMap;
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(current));
+    window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(current));
   } catch (err) {
     console.warn("Failed to persist department permissions cache:", err);
   }

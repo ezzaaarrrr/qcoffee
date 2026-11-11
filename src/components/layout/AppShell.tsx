@@ -139,24 +139,24 @@ export function AppShell({
       try {
         const em = profile.email.toLowerCase();
         roles.forEach((r) => {
-          localStorage.setItem(`role_auth_email_${r}`, em);
+          window.localStorage.setItem(`role_auth_email_${r}`, em);
         });
-        localStorage.setItem("last_active_account_email", em);
+        window.localStorage.setItem("last_active_account_email", em);
 
-        const rawMap = localStorage.getItem("role_accounts_map");
+        const rawMap = window.localStorage.getItem("role_accounts_map");
         const map = rawMap ? JSON.parse(rawMap) : {};
         roles.forEach((r) => {
           const list = Array.isArray(map[r]) ? map[r] : [];
           if (!list.includes(em)) list.push(em);
           map[r] = list;
         });
-        localStorage.setItem("role_accounts_map", JSON.stringify(map));
+        window.localStorage.setItem("role_accounts_map", JSON.stringify(map));
 
-        const rawKnown = localStorage.getItem("all_known_account_emails");
+        const rawKnown = window.localStorage.getItem("all_known_account_emails");
         const knownList = rawKnown ? JSON.parse(rawKnown) : [];
         if (Array.isArray(knownList) && !knownList.includes(em)) {
           knownList.push(em);
-          localStorage.setItem("all_known_account_emails", JSON.stringify(knownList));
+          window.localStorage.setItem("all_known_account_emails", JSON.stringify(knownList));
         }
       } catch {}
     }

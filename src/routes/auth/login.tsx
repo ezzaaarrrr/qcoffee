@@ -54,6 +54,9 @@ export const Route = createFileRoute("/auth/login")({
 /** Helper untuk mengumpulkan seluruh calon email akun berdasarkan opsi User / Departemen yang dipilih */
 function getCandidateEmailsForAccess(target: LoginAccessTarget): string[] {
   const candidates: string[] = [];
+  if (typeof window === "undefined") {
+    return ["superadmin@gmail.com", "admin@gmail.com"];
+  }
 
   // 1. Pola email bawaan/standar sistem sesuai masing-masing User / Departemen
   const defaultEmailsMap: Record<LoginAccessTarget, string[]> = {
@@ -185,11 +188,12 @@ function LoginPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [selectedAccess, setSelectedAccess] = useState<LoginAccessTarget>(() => {
-    const cachedAccess = localStorage.getItem("last_active_access") as LoginAccessTarget;
+    if (typeof window === "undefined") return "GDSP1201";
+    const cachedAccess = window.localStorage.getItem("last_active_access") as LoginAccessTarget;
     if (cachedAccess && LOGIN_ACCESS_TARGETS.some((t) => t.id === cachedAccess)) {
       return cachedAccess;
     }
-    const cachedDept = localStorage.getItem("last_active_dept");
+    const cachedDept = window.localStorage.getItem("last_active_dept");
     if (cachedDept && cachedDept.toUpperCase() === "TEKNIK") return "TEKNIK";
     return "GDSP1201";
   });

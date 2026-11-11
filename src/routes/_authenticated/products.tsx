@@ -2280,7 +2280,7 @@ function WarehouseAndProductsPage() {
             if (mCode) obsMap[mCode] = mData;
             if (mName) obsMap[mName] = mData;
           }
-          localStorage.setItem("obs_stock_balances_map", JSON.stringify(obsMap));
+          window.localStorage.setItem("obs_stock_balances_map", JSON.stringify(obsMap));
         } catch (e) {
           console.warn("Could not save to localStorage obs_stock_balances_map:", e);
         }
@@ -3432,7 +3432,7 @@ function WarehouseAndProductsPage() {
           const mName = formData.name ? formData.name.trim().toLowerCase() : "";
           if (mCode) obsMap[mCode] = itemMeta;
           if (mName) obsMap[mName] = itemMeta;
-          localStorage.setItem("obs_stock_balances_map", JSON.stringify(obsMap));
+          window.localStorage.setItem("obs_stock_balances_map", JSON.stringify(obsMap));
         } catch {}
       }
 
