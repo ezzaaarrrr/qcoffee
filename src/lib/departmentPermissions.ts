@@ -240,7 +240,7 @@ export function checkIsTeknikUser(
   const deptLower = profile?.department?.toLowerCase() || "";
   const emailLower = profile?.email?.toLowerCase() || "";
   const storedAccess =
-    typeof window !== "undefined" ? window.window.localStorage.getItem("last_active_access") || "" : "";
+    typeof window !== "undefined" ? window.localStorage.getItem("last_active_access") || "" : "";
   const storedDept =
     typeof window !== "undefined" ? window.localStorage.getItem("last_active_dept") || "" : "";
 
