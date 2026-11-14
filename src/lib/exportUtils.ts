@@ -1086,3 +1086,51 @@ export function exportDashboardSparepartExecutiveExcel(options: ExportDashboardO
   });
   triggerFileDownload(blob, `laporan_dashboard_sparepart_${fileDate}.xls`);
 }
+
+export function isMasterBarangProduct(p?: any): boolean {
+  if (!p) return false;
+
+  const cat = String(p.category || "")
+    .trim()
+    .toLowerCase();
+  if (cat === "master barang" || cat.startsWith("master") || cat.includes("master")) return true;
+
+  if ((p as any).source === "master_barang" || (p as any).source === "master") return true;
+  if ((p as any).is_master_only === true || (p as any).is_obs === false) return true;
+
+  if (p.description) {
+    const descLower = typeof p.description === "string" ? p.description.toLowerCase() : "";
+    if (
+      descLower.includes("master_barang") ||
+      descLower.includes("is_master_only") ||
+      descLower.includes('"is_obs":false') ||
+      descLower.includes('"is_obs": false')
+    ) {
+      return true;
+    }
+    try {
+      const meta = typeof p.description === "string" ? JSON.parse(p.description) : p.description;
+      if (meta && typeof meta === "object") {
+        if (
+          meta.source === "master_barang" ||
+          meta.source === "master" ||
+          meta.is_master_only === true ||
+          meta.is_obs === false ||
+          String(meta.category || "")
+            .toLowerCase()
+            .includes("master")
+        ) {
+          return true;
+        }
+      }
+    } catch {}
+  }
+  return false;
+}
+
+export function isObsProduct(p?: any): boolean {
+  if (!p) return false;
+  if (isMasterBarangProduct(p)) return false;
+  return true;
+}
+

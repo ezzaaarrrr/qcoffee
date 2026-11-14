@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -92,6 +92,8 @@ import {
   exportSparepartInventoryExcel,
   exportSparepartMutasiExcel,
   getProductObsMeta,
+  isMasterBarangProduct,
+  isObsProduct,
 } from "@/lib/exportUtils";
 import { OBS_DEFAULT_ITEMS } from "@/data/obsDefaultItems";
 
@@ -253,6 +255,39 @@ function DashboardPage() {
     return { inQty, outQty };
   }, [txData]);
 
+  // Realtime subscription untuk sinkronisasi otomatis Dashboard dengan perubahan tabel products, spareparts, buffer_stock
+  useEffect(() => {
+    const channel = supabase
+      .channel("dashboard_realtime_sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "products" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["products"] });
+          queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "spareparts" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "buffer_stock" },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
   // Query Data Master Barang dari tabel spareparts (2.735 item)
   const sparepartsQuery = useQuery({ queryKey: ["spareparts_master"], queryFn: fetchSpareparts });
   const allSpareparts = sparepartsQuery.data ?? [];
@@ -285,7 +320,10 @@ function DashboardPage() {
     return defaultObsProducts;
   }, [products.data, products.isError, defaultObsProducts]);
 
-  const activeProducts = useMemo(() => allProducts.filter((p) => p.is_active), [allProducts]);
+  const activeProducts = useMemo(
+    () => allProducts.filter((p) => p.is_active && isObsProduct(p)),
+    [allProducts],
+  );
   const totalActiveProducts = activeProducts.length;
 
   // Lookup map untuk kode material dan unit barang
@@ -364,7 +402,19 @@ function DashboardPage() {
     const gabunganHabis = zeroProductsCount + bufferZero.length;
 
     // Total stok fisik gabungan
-    const totalStokOBS = activeProducts.reduce((sum, p) => sum + (p.current_stock ?? 0), 0);
+    const totalStokOBS = activeProducts.reduce((sum, p) => {
+      let obsMeta: any = null;
+      try {
+        obsMeta = getProductObsMeta(p as any);
+      } catch {
+        obsMeta = null;
+      }
+      const obsEnding =
+        obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
+          ? Number(obsMeta.ending_balance)
+          : (p.current_stock ?? 0);
+      return sum + obsEnding;
+    }, 0);
     const totalStokBuffer = activeBufferItems.reduce((sum, b) => sum + (b.current_stock ?? 0), 0);
     const totalStokGabungan = totalStokOBS + totalStokBuffer;
 
@@ -531,41 +581,73 @@ function DashboardPage() {
       if (n) seenKeys.add(`n:${n}`);
     });
 
-    // Master Barang dibaca LANGSUNG dari tabel `spareparts` (live DB) — bukan
-    // lagi dari localStorage lama yang stale (sumber itu menyebabkan jumlah
-    // item di dashboard tidak sesuai dengan data yang diupload).
+    // Master Barang: gabungkan data tabel spareparts (live DB) + overlay hasil import Master Barang dari products
+    const importedMasterRows = (allProducts || []).filter(
+      (p) => isMasterBarangProduct(p) && p.is_active !== false,
+    );
+    const masterOverlay = new Map<string, any>();
+    importedMasterRows.forEach((mp) => {
+      const c = normKey(mp.code);
+      const n = normKey(mp.name);
+      if (c) masterOverlay.set(c, mp);
+      if (n) masterOverlay.set(n, mp);
+    });
+
+    const seenMasterCodes = new Set<string>();
+    const seenMasterNames = new Set<string>();
+
     allSpareparts.forEach((sp) => {
-      const stock = parseFloat(String(sp.qty_stock || "0").replace(/[^0-9.]/g, "")) || 0;
-      const minStock = parseFloat(String(sp.min_stock || "0").replace(/[^0-9.]/g, "")) || 0;
+      const codeKey = normKey(sp.material_number);
+      const nameKey = normKey(sp.material_description);
+      const latest =
+        (codeKey && masterOverlay.get(codeKey)) ||
+        (nameKey && masterOverlay.get(nameKey)) ||
+        null;
+
+      const stock = latest
+        ? Number(latest.current_stock ?? 0)
+        : parseFloat(String(sp.qty_stock || "0").replace(/[^0-9.]/g, "")) || 0;
+      const minStock = latest
+        ? Number(latest.min_stock ?? 0)
+        : parseFloat(String(sp.min_stock || "0").replace(/[^0-9.]/g, "")) || 0;
+
       let status: "safe" | "limit" | "empty" = "safe";
       if (stock <= 0) status = "empty";
       else if (stock <= minStock && minStock > 0) status = "limit";
 
       // Skip jika item ini sudah tampil sebagai barang OBS / Buffer yang sama
-      const codeKey = normKey(sp.material_number);
-      const nameKey = normKey(sp.material_description);
       const isDuplicate =
         (codeKey && seenKeys.has(`c:${codeKey}`)) || (nameKey && seenKeys.has(`n:${nameKey}`));
       if (isDuplicate) return;
 
-      // Rawannya catat supaya master yang dobel antar sendiri juga tidak dobel
-      if (codeKey) seenKeys.add(`c:${codeKey}`);
-      if (nameKey) seenKeys.add(`n:${nameKey}`);
+      if (codeKey) {
+        seenKeys.add(`c:${codeKey}`);
+        seenMasterCodes.add(codeKey);
+      }
+      if (nameKey) {
+        seenKeys.add(`n:${nameKey}`);
+        seenMasterNames.add(nameKey);
+      }
 
-      let maxStock = null as number | null;
-      if (sp.max_stock !== null && sp.max_stock !== undefined && sp.max_stock !== "") {
+      let maxStock = latest?.max_stock ?? null;
+      if (
+        maxStock === null &&
+        sp.max_stock !== null &&
+        sp.max_stock !== undefined &&
+        sp.max_stock !== ""
+      ) {
         const parsed = parseFloat(String(sp.max_stock).replace(/[^0-9.]/g, ""));
         maxStock = isNaN(parsed) ? null : parsed;
       }
 
       list.push({
-        id: `master-${sp.id}`,
-        name: sp.material_description,
-        code: sp.material_number,
+        id: latest?.id ? `master-${latest.id}` : `master-${sp.id}`,
+        name: latest?.name || sp.material_description,
+        code: latest?.code || sp.material_number,
         category: "Master Barang",
         current_stock: stock,
         min_stock: minStock,
-        unit: "PCS",
+        unit: latest?.unit || "PCS",
         status,
         ending_balance: stock,
         beginning_balance: stock,
@@ -575,8 +657,40 @@ function DashboardPage() {
       });
     });
 
+    // Masukkan baris baru dari importedMasterRows yang belum ada di allSpareparts
+    importedMasterRows.forEach((mp) => {
+      const c = normKey(mp.code);
+      const n = normKey(mp.name);
+      const exists = (c && seenMasterCodes.has(c)) || (n && seenMasterNames.has(n));
+      if (!exists && !((c && seenKeys.has(`c:${c}`)) || (n && seenKeys.has(`n:${n}`)))) {
+        if (c) seenKeys.add(`c:${c}`);
+        if (n) seenKeys.add(`n:${n}`);
+        const stock = Number(mp.current_stock ?? 0);
+        const minStock = Number(mp.min_stock ?? 0);
+        let status: "safe" | "limit" | "empty" = "safe";
+        if (stock <= 0) status = "empty";
+        else if (stock <= minStock && minStock > 0) status = "limit";
+
+        list.push({
+          id: `master-${mp.id}`,
+          name: mp.name,
+          code: mp.code || null,
+          category: "Master Barang",
+          current_stock: stock,
+          min_stock: minStock,
+          unit: mp.unit || "PCS",
+          status,
+          ending_balance: stock,
+          beginning_balance: stock,
+          receipt: null,
+          issued: null,
+          max_stock: mp.max_stock ?? null,
+        });
+      }
+    });
+
     return list;
-  }, [activeProducts, activeBufferItems, allSpareparts]);
+  }, [activeProducts, activeBufferItems, allSpareparts, allProducts]);
 
   // Filter barang sesuai kartu metrik yang dipilih & filter pencarian di modal
   const filteredModalItems = useMemo(() => {

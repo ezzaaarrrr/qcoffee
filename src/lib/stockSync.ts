@@ -322,7 +322,7 @@ export async function syncAbsoluteStockAcrossMenus(
             const meta = JSON.parse(row.description);
             if (meta && typeof meta === "object") {
               meta.ending_balance = nextStock;
-              update.description = JSON.stringify(meta);
+              update["description"] = JSON.stringify(meta);
             }
           } catch {
             /* description bukan metadata JSON */

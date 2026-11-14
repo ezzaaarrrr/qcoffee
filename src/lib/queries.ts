@@ -153,10 +153,36 @@ export async function fetchProducts() {
   // PENTING: error query TIDAK boleh ditelan → kalau RLS/jaringan gagal,
   // pemanggil (Dashboard) harus tahu bahwa data yang tampil BUKAN data DB.
   // Tabel kosong ([]) = kondisi sah, error = throw.
-  const { data, error } = await (supabase as any).from("products").select("*");
-  if (error) throw error;
-  if (!Array.isArray(data) || data.length === 0) return [];
-  return data.map((d: any) => ({
+  // Dilakukan paging berkala agar tidak terpotong batas 1.000 baris PostgREST Supabase.
+  let allRows: any[] = [];
+  const PAGE_SIZE = 1000;
+  let page = 0;
+  let hasMore = true;
+
+  while (hasMore && page < 15) {
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+    const { data, error } = await (supabase as any)
+      .from("products")
+      .select("*")
+      .range(from, to);
+
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      allRows = allRows.concat(data);
+      if (data.length < PAGE_SIZE) {
+        hasMore = false;
+      } else {
+        page++;
+      }
+    } else {
+      hasMore = false;
+    }
+  }
+
+  if (allRows.length === 0) return [];
+  return allRows.map((d: any) => ({
     id: d.id,
     name: d.name || d.material_description || "Item",
     code: d.code || d.material_number || null,
@@ -206,7 +232,7 @@ export async function fetchSpareparts(): Promise<SparepartRow[]> {
     let page = 0;
     let hasMore = true;
 
-    while (hasMore && page < 5) {
+    while (hasMore && page < 15) {
       const from = page * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
       const { data, error } = await (supabase as any)

@@ -1017,12 +1017,69 @@ function parseExcelWorkbookToSheets(
         val === null ||
         String(val).trim() === "" ||
         String(val).trim() === "—" ||
-        String(val).trim() === "-"
+        String(val).trim() === "-" ||
+        String(val).trim().toLowerCase() === "null" ||
+        String(val).trim().toLowerCase() === "nan"
       ) {
         return fallback;
       }
-      const normalized = String(val).trim().replace(",", ".");
-      const cleanStr = normalized.replace(/[^0-9.-]/g, "");
+      if (typeof val === "number") return isNaN(val) ? fallback : val;
+
+      const raw = String(val).trim().replace(/\s+/g, "");
+
+      // Format campuran dot (ribuan) & koma (desimal) misal "41.883,3" atau "1.200,5"
+      if (raw.includes(".") && raw.includes(",")) {
+        if (raw.lastIndexOf(",") > raw.lastIndexOf(".")) {
+          // Dot ribuan, koma desimal
+          const numStr = raw.replace(/\./g, "").replace(",", ".");
+          const n = parseFloat(numStr);
+          return !isNaN(n) ? n : fallback;
+        } else {
+          // Format US: koma ribuan, dot desimal "1,200.5"
+          const numStr = raw.replace(/,/g, "");
+          const n = parseFloat(numStr);
+          return !isNaN(n) ? n : fallback;
+        }
+      }
+
+      // Jika hanya ada koma: "41883,3" atau "1,5" atau "1,000,000"
+      if (raw.includes(",")) {
+        const parts = raw.split(",");
+        if (parts.length > 2) {
+          const n = parseFloat(raw.replace(/,/g, ""));
+          return !isNaN(n) ? n : fallback;
+        }
+        if (parts.length === 2 && parts[1] && parts[1].length !== 3) {
+          const n = parseFloat(raw.replace(",", "."));
+          return !isNaN(n) ? n : fallback;
+        }
+        const n = parseFloat(raw.replace(",", "."));
+        return !isNaN(n) ? n : fallback;
+      }
+
+      // Jika hanya ada dot: "1.200" (ribuan dalam Excel Indonesia) atau "41.883" atau "12.5"
+      if (raw.includes(".")) {
+        const parts = raw.split(".");
+        if (parts.length > 2) {
+          const n = parseFloat(raw.replace(/\./g, ""));
+          return !isNaN(n) ? n : fallback;
+        }
+        // 1 dot dengan 3 digit di belakang (format ribuan Indonesia seperti 1.200 atau 41.883)
+        if (
+          parts.length === 2 &&
+          parts[1] &&
+          parts[0] &&
+          parts[1].length === 3 &&
+          parts[0].length >= 1
+        ) {
+          const n = parseFloat(raw.replace(/\./g, ""));
+          return !isNaN(n) ? n : fallback;
+        }
+        const n = parseFloat(raw);
+        return !isNaN(n) ? n : fallback;
+      }
+
+      const cleanStr = raw.replace(/[^0-9.-]/g, "");
       const num = parseFloat(cleanStr);
       return !isNaN(num) ? num : fallback;
     };
@@ -1548,7 +1605,7 @@ function WarehouseAndProductsPage() {
         const buffer = e.target?.result;
         if (!buffer) return;
 
-        const workbook = XLSX.read(buffer, { type: "array" });
+        const workbook = XLSX.read(buffer, { type: "array", raw: true });
         if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
           toast.error("File tidak memiliki lembar kerja (sheet)");
           return;
@@ -1727,7 +1784,7 @@ function WarehouseAndProductsPage() {
         const buffer = e.target?.result;
         if (!buffer) return;
 
-        const workbook = XLSX.read(buffer, { type: "array" });
+        const workbook = XLSX.read(buffer, { type: "array", raw: true });
         if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
           toast.error("File tidak memiliki lembar kerja (sheet)");
           return;
@@ -2309,15 +2366,12 @@ function WarehouseAndProductsPage() {
             };
           });
 
-          // PENTING: Import Master Barang bersifat UPDATE-ONLY — tidak pernah
-          // menambah baris baru ke tabel `spareparts` sehingga jumlah daftar nama
-          // barang tetap 2.808 (tidak membengkak). File import hanya memperbarui
-          // stok/min/max/deskripsi item yang kodenya sudah ada.
+          // PENTING: Import Master Barang:
+          // Update item yang sudah ada serta tambahkan (INSERT) item baru yang belum ada di tabel `spareparts`
+          // sehingga total baris menyesuaikan file import (misal 2.808 item) dan sinkron ke semua user.
           const existingCodes = new Set<string>();
-          // Pemetaan Nama → Kode: jika kode di file tidak ditemukan di Master
-          // Barang tapi NAMA barangnya sama, qty tetap ter-link ke item Master
-          // Barang tersebut (tidak menciptakan baris baru → tidak dobel item).
           const spareNameMap = new Map<string, string>();
+          const codeToExactDbCode = new Map<string, string>();
           let page = 0;
           let hasMore = true;
           while (hasMore && page < 15) {
@@ -2330,27 +2384,33 @@ function WarehouseAndProductsPage() {
             (data as any[]).forEach((d) => {
               const raw = String(d.material_number ?? "").trim();
               const noLead = raw.replace(/^0+/, "") || raw;
-              existingCodes.add(raw);
-              existingCodes.add(noLead);
+              existingCodes.add(raw.toLowerCase());
+              existingCodes.add(noLead.toLowerCase());
+              codeToExactDbCode.set(raw.toLowerCase(), raw);
+              codeToExactDbCode.set(noLead.toLowerCase(), raw);
               const nm = normStr(d.material_description);
-              if (nm && noLead && !spareNameMap.has(nm)) spareNameMap.set(nm, noLead);
+              if (nm && noLead && !spareNameMap.has(nm)) spareNameMap.set(nm, raw);
             });
             if (data.length < 1000) hasMore = false;
             else page++;
           }
 
           const toUpdateSp: any[] = [];
-          let skippedNewRows = 0;
+          const toInsertSp: any[] = [];
+          const seenInsertKeys = new Set<string>();
+
           spareRows.forEach((row) => {
             const codeClean = String(row.material_number || "").trim();
             const codeNoLead = codeClean.replace(/^0+/, "") || codeClean;
             let targetCode = "";
             if (
-              existingCodes.size === 0 ||
-              existingCodes.has(codeClean) ||
-              existingCodes.has(codeNoLead)
+              existingCodes.has(codeClean.toLowerCase()) ||
+              existingCodes.has(codeNoLead.toLowerCase())
             ) {
-              targetCode = codeClean;
+              targetCode =
+                codeToExactDbCode.get(codeClean.toLowerCase()) ||
+                codeToExactDbCode.get(codeNoLead.toLowerCase()) ||
+                codeClean;
             } else {
               // Fallback pencocokan NAMA BARANG yang sama di Master Barang
               const nameHit = spareNameMap.get(normStr(row.material_description));
@@ -2359,13 +2419,33 @@ function WarehouseAndProductsPage() {
             if (targetCode) {
               toUpdateSp.push({ ...row, targetCode });
             } else {
-              skippedNewRows++;
+              // Item BARU yang belum ada di Master Barang: masukkan agar tabel bertambah barisnya!
+              const uKey = (codeNoLead || row.material_description).toLowerCase();
+              if (!seenInsertKeys.has(uKey)) {
+                seenInsertKeys.add(uKey);
+                toInsertSp.push({
+                  material_number: codeClean || `M-${Date.now()}-${toInsertSp.length}`,
+                  material_description: row.material_description,
+                  qty_stock: row.qty_stock,
+                  min_stock: row.min_stock,
+                  max_stock: row.max_stock,
+                });
+              }
             }
           });
-          if (skippedNewRows > 0) {
-            console.warn(
-              `${skippedNewRows} item import dilewati (kode & nama tidak ada di Master Barang — import master barang tidak menambah item baru).`,
-            );
+
+          // Insert baris baru ke spareparts jika ada
+          if (toInsertSp.length > 0) {
+            const SP_INSERT_BATCH = 100;
+            for (let i = 0; i < toInsertSp.length; i += SP_INSERT_BATCH) {
+              const batch = toInsertSp.slice(i, i + SP_INSERT_BATCH);
+              const { error: insErr } = await (supabase as any)
+                .from("spareparts")
+                .insert(batch);
+              if (insErr) {
+                console.error("Insert sparepart baru gagal:", insErr.message);
+              }
+            }
           }
 
           // Update paralel per 100 baris agar import ribuan item tetap cepat
@@ -2383,12 +2463,16 @@ function WarehouseAndProductsPage() {
                   (row as any).targetCode || row.material_number || "",
                 ).trim();
                 const clean = targetCode.replace(/^0+/, "") || targetCode;
+                const exactDbCode =
+                  codeToExactDbCode.get(targetCode.toLowerCase()) ||
+                  codeToExactDbCode.get(clean.toLowerCase()) ||
+                  targetCode;
                 const { error: upErr } = await (supabase as any)
                   .from("spareparts")
                   .update({
                     qty_stock: row.qty_stock,
                   })
-                  .in("material_number", [clean, targetCode]);
+                  .in("material_number", [exactDbCode, clean, targetCode, targetCode.padStart(18, "0")]);
                 if (upErr) console.error("Update sparepart gagal:", targetCode, upErr.message);
               }),
             );
@@ -2509,9 +2593,11 @@ function WarehouseAndProductsPage() {
         );
       }
       queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
+      queryClient.invalidateQueries({ queryKey: ["spareparts"] });
       queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["products_db"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
       setImportPreview([]);
@@ -2701,6 +2787,9 @@ function WarehouseAndProductsPage() {
       .channel("warehouse_realtime_orders_sync")
       .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => {
         queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+        queryClient.invalidateQueries({ queryKey: ["products"] });
+        queryClient.invalidateQueries({ queryKey: ["products_db"] });
+        queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
         queryClient.invalidateQueries({ queryKey: ["sparepart_orders"] });
       })
       .on(
@@ -2801,7 +2890,7 @@ function WarehouseAndProductsPage() {
             safe_stock: Number(d.safe_stock ?? 1),
             max_stock: d.max_stock ? Number(d.max_stock) : null,
             current_stock: Number(d.current_stock ?? 0),
-            is_active: d.is_active !== undefined ? d.is_active : true,
+            is_active: d.is_active !== false,
             description: d.description || null,
             created_at: d.created_at,
           })) as ProductItem[];
@@ -2951,12 +3040,41 @@ function WarehouseAndProductsPage() {
       };
     });
 
-    // PENTING: hasil import TIDAK MENAMBAH baris baru di sini.
-    // Daftar Master Barang = isi tabel spareparts (2.808 item) saja — import
-    // hanya menimpa (overlay) item yang kodenya sama. Barang baru dari import
-    // harus masuk lewat "Tambah Barang"/import yang menulis ke tabel `spareparts`,
-    // sehingga jumlah daftar nama barang tetap terkendali.
-    return merged;
+    // PENTING: sertakan baris BARU hasil import Master Barang yang belum ada di baseRows
+    // sehingga jumlah total barang bertambah sesuai file yang diupload (misal 2.808 item).
+    const seenCodesInBase = new Set<string>();
+    const seenNamesInBase = new Set<string>();
+    baseRows.forEach((r) => {
+      if (r.code) seenCodesInBase.add(String(r.code).trim().toLowerCase());
+      if (r.name) seenNamesInBase.add(String(r.name).trim().toLowerCase());
+    });
+
+    const newRows: ProductItem[] = [];
+    importedMasterRows.forEach((mp) => {
+      const c = mp.code ? String(mp.code).trim().toLowerCase() : "";
+      const n = mp.name ? String(mp.name).trim().toLowerCase() : "";
+      const existsInBase = (c && seenCodesInBase.has(c)) || (n && seenNamesInBase.has(n));
+      if (!existsInBase) {
+        newRows.push({
+          id: mp.id,
+          name: mp.name,
+          code: mp.code || null,
+          category: "Master Barang",
+          unit: mp.unit || "PCS",
+          location: mp.location || "Gudang Sparepart",
+          shelf: mp.shelf || "Rak Sparepart",
+          min_stock: mp.min_stock ?? 0,
+          safe_stock: mp.safe_stock ?? 1,
+          max_stock: mp.max_stock ?? null,
+          current_stock: Number(mp.current_stock ?? 0),
+          is_active: mp.is_active !== false,
+          description: mp.description || null,
+          created_at: mp.created_at || new Date().toISOString(),
+        });
+      }
+    });
+
+    return [...merged, ...newRows];
   }, [sparepartsDb, productsDb]);
 
   const products = useMemo(() => {
@@ -3361,8 +3479,24 @@ function WarehouseAndProductsPage() {
       if (!formData.name.trim()) throw new Error("Nama barang wajib diisi");
 
       const initialStock = Number(formData.current_stock) || 0;
-      const isMasterTab =
-        activeTab === "master" || search.tab === "master" || formData.category === "Master Barang";
+      const isMasterTab = activeTab === "master" || search.tab === "master";
+
+      // Cek apakah kode atau nama barang sudah ada untuk mencegah silent-update atau duplikasi tak disengaja
+      const cleanCode = formData.code ? formData.code.trim() : "";
+      const cleanName = formData.name.trim().toLowerCase();
+      const duplicateFound = products.find((p) => {
+        const c = p.code ? String(p.code).trim().toLowerCase() : "";
+        const n = p.name ? String(p.name).trim().toLowerCase() : "";
+        if (cleanCode && c && c === cleanCode.toLowerCase()) return true;
+        if (cleanName && n && n === cleanName) return true;
+        return false;
+      });
+
+      if (duplicateFound) {
+        throw new Error(
+          `Barang "${formData.name.trim()}" ${cleanCode ? `dengan kode "${cleanCode}" ` : ""}sudah terdaftar di tabel (Stok: ${duplicateFound.current_stock} ${duplicateFound.unit}). Gunakan nama/kode berbeda untuk menambah baris baru, atau gunakan tombol Edit untuk mengubah stok barang lama.`,
+        );
+      }
 
       // Metadata OBS vs Master Barang independen: barang dari menu Master Barang tidak mempengaruhi OBS Sparepart
       const itemMeta = isMasterTab
@@ -3380,6 +3514,7 @@ function WarehouseAndProductsPage() {
         : {
             source: "obs",
             is_obs: true,
+            category: "Sparepart & Tools",
             beginning_balance: initialStock,
             receipt: 0,
             issued: 0,
@@ -3388,13 +3523,19 @@ function WarehouseAndProductsPage() {
 
       const productDescription = JSON.stringify(itemMeta);
 
+      const resolvedCategory = isMasterTab
+        ? "Master Barang"
+        : formData.category && formData.category !== "Master Barang"
+          ? formData.category
+          : "Sparepart & Tools";
+
       const newRow: Record<string, any> = {
         name: formData.name.trim(),
         code: formData.code.trim() || null,
-        category: isMasterTab ? "Master Barang" : formData.category,
-        unit: formData.unit,
-        location: formData.location,
-        shelf: formData.shelf,
+        category: resolvedCategory,
+        unit: formData.unit || "PCS",
+        location: formData.location || "Gudang Utama",
+        shelf: formData.shelf || "Rak A-1",
         safe_stock: isAdmin ? Number(formData.safe_stock) || 1 : 1,
         min_stock: isAdmin ? Number(formData.min_stock) || 10 : 10,
         // Rekam nilai maksimal stok saat penambahan barang jika diisi
@@ -3421,6 +3562,23 @@ function WarehouseAndProductsPage() {
         delete retryRow["doc_url"];
         const retry = await insertProductRowHealing(retryRow);
         error = retry.error;
+      }
+
+      // Khusus Master Barang: masukkan juga ke tabel spareparts agar sinkron ke referral
+      if (isMasterTab) {
+        try {
+          const spCode = formData.code ? formData.code.trim() : "";
+          const cleanSpCode = spCode.replace(/^0+/, "") || spCode;
+          await (supabase as any).from("spareparts").insert({
+            material_number: cleanSpCode || `M-${Date.now()}`,
+            material_description: formData.name.trim(),
+            qty_stock: `${initialStock} ${(formData.unit || "PCS").toUpperCase()}`,
+            min_stock: isAdmin ? Number(formData.min_stock) || 10 : 10,
+            max_stock: formData.max_stock ? Number(formData.max_stock) : null,
+          });
+        } catch (spErr) {
+          console.warn("Sinkronisasi insert spareparts:", spErr);
+        }
       }
 
       // Simpan ke cache localStorage HANYA jika bukan master tab (agar data OBS tidak terpengaruh)
@@ -3460,7 +3618,7 @@ function WarehouseAndProductsPage() {
 
       await recordActivity(
         "TAMBAH_BARANG",
-        `Menambahkan ${isMasterTab ? "master barang baru" : "barang OBS baru"}: "${formData.name.trim()}" (${isMasterTab ? "Master Barang" : formData.category})${initialStock > 0 ? ` — Stok awal: ${initialStock} ${formData.unit}` : ""}`,
+        `Menambahkan ${isMasterTab ? "master barang baru" : "barang OBS baru"}: "${formData.name.trim()}" (${isMasterTab ? "Master Barang" : resolvedCategory})${initialStock > 0 ? ` — Stok awal: ${initialStock} ${formData.unit}` : ""}`,
       );
     },
     onSuccess: () => {
@@ -3485,10 +3643,13 @@ function WarehouseAndProductsPage() {
         doc_url: "",
       });
       queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      queryClient.invalidateQueries({ queryKey: ["products_db"] });
+      queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
+      queryClient.invalidateQueries({ queryKey: ["spareparts"] });
+      queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
-      queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
-      queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
     },
     onError: (e: Error) => toast.error("Gagal menambah barang", { description: e.message }),
   });
@@ -5222,10 +5383,10 @@ function WarehouseAndProductsPage() {
     // Tab "master" (Master Barang): HANYA tampilkan barang Master Barang independen
     const baseList =
       activeTab === "items" || (!activeTab && !isTeknikUser)
-        ? products.filter((p) => isObsProduct(p))
+        ? products.filter((p) => p.is_active !== false && isObsProduct(p))
         : activeTab === "master"
-          ? products.filter((p) => isMasterBarangProduct(p))
-          : products;
+          ? products.filter((p) => p.is_active !== false && isMasterBarangProduct(p))
+          : products.filter((p) => p.is_active !== false);
 
     const list = baseList.filter((p) => {
       const q = searchQuery.toLowerCase().trim();
@@ -5344,7 +5505,7 @@ function WarehouseAndProductsPage() {
 
   // ── OBS MONITORING CARD STATS ─────────────────────────────────────────────────
   // Hanya menghitung produk OBS murni (barang baru dari Master Barang independen tidak mempengaruhi card stats OBS)
-  const activeProductsObs = products.filter((p) => p.is_active && isObsProduct(p));
+  const activeProductsObs = products.filter((p) => p.is_active !== false && isObsProduct(p));
   const totalActiveItemsObs = activeProductsObs.length;
   const totalStockQtyObs = activeProductsObs.reduce((acc, p) => acc + (p.current_stock ?? 0), 0);
 
