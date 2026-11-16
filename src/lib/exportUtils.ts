@@ -100,30 +100,8 @@ export function getProductObsMeta(
       }
     } catch {}
   }
-  if (typeof window !== "undefined" && window.localStorage) {
-    try {
-      const rawMap = window.localStorage.getItem("obs_stock_balances_map");
-      if (rawMap) {
-        const map = JSON.parse(rawMap);
-        const codeKey = p.code ? String(p.code).trim().toLowerCase() : "";
-        const nameKey = p.name ? String(p.name).trim().toLowerCase() : "";
-        const idKey = p.id ? String(p.id).trim() : "";
-        const found =
-          (codeKey && map[codeKey]) || (nameKey && map[nameKey]) || (idKey && map[idKey]);
-        if (found) {
-          return {
-            beginning_balance:
-              found.beginning_balance !== undefined ? found.beginning_balance : null,
-            receipt: found.receipt !== undefined ? found.receipt : null,
-            issued: found.issued !== undefined ? found.issued : null,
-            ending_balance: found.ending_balance !== undefined ? found.ending_balance : null,
-            min_stock_file: found.min_stock_file !== undefined ? found.min_stock_file : null,
-            max_stock_file: found.max_stock_file !== undefined ? found.max_stock_file : null,
-          };
-        }
-      }
-    } catch {}
-  }
+  // ponytail: localStorage fallback dihapus — DB (products.description) adalah
+  // sumber kebenaran tunggal. Tambahkan kembali hanya jika ada kebutuhan offline.
   return null;
 }
 

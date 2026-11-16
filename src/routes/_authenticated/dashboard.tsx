@@ -402,19 +402,8 @@ function DashboardPage() {
     const gabunganHabis = zeroProductsCount + bufferZero.length;
 
     // Total stok fisik gabungan
-    const totalStokOBS = activeProducts.reduce((sum, p) => {
-      let obsMeta: any = null;
-      try {
-        obsMeta = getProductObsMeta(p as any);
-      } catch {
-        obsMeta = null;
-      }
-      const obsEnding =
-        obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
-          ? Number(obsMeta.ending_balance)
-          : (p.current_stock ?? 0);
-      return sum + obsEnding;
-    }, 0);
+    // Total stok fisik gabungan: products.current_stock adalah sumber kebenaran tunggal DB
+    const totalStokOBS = activeProducts.reduce((sum, p) => sum + (p.current_stock ?? 0), 0);
     const totalStokBuffer = activeBufferItems.reduce((sum, b) => sum + (b.current_stock ?? 0), 0);
     const totalStokGabungan = totalStokOBS + totalStokBuffer;
 

@@ -135,8 +135,8 @@ import {
 // mirror data aplikasi, lalu mencoba ulang — hingga insert lolos (maks 8 kali
 // untuk menangani beberapa kolom sekaligus).
 const PRODUCTS_NOTNULL_MIRRORS: Record<string, (p: Record<string, any>) => any> = {
-  material_number: (p) => p["code"] ?? "",
-  material_description: (p) => p["name"] ?? "",
+  material_number: (p) => p["code"] ?? p["material_number"] ?? "",
+  material_description: (p) => p["name"] ?? p["material_description"] ?? "",
   material_type: () => "",
   qty_stock: (p) => p["current_stock"] ?? 0,
   uom: (p) => p["unit"] ?? "PCS",
@@ -146,7 +146,11 @@ const PRODUCTS_NOTNULL_MIRRORS: Record<string, (p: Record<string, any>) => any> 
 };
 
 async function insertProductRowHealing(row: Record<string, any>): Promise<{ error: any }> {
-  let payload = { ...row };
+  let payload = {
+    ...row,
+    material_number: row.material_number || row.code || null,
+    material_description: row.material_description || row.name || null,
+  };
   for (let attempt = 0; attempt < 8; attempt++) {
     // .select("id") → bisa memastikan baris BENAR-BENAR tersimpan (RLS bisa
     // memblokir INSERT tanpa error tapi 0 baris masuk = "berhasil" palsu).
@@ -856,25 +860,34 @@ function parseExcelWorkbookToSheets(
 
     const isSparepart = defaultCategory === "Sparepart & Tools";
 
-    const safeStockIdx = headers.findIndex(
+    // Header Batas Minimal / Minimal Stok (kolom min_stock di database)
+    const minStockIdx = headers.findIndex(
       (h: string) =>
         h.includes("batas minimal") ||
         h.includes("batas min") ||
-        h.includes("safe stock") ||
-        h.includes("safety stock") ||
-        h.includes("safety") ||
-        h.includes("limit"),
+        h.includes("minimal stok") ||
+        h.includes("min stok") ||
+        h.includes("minimal stock") ||
+        h.includes("min stock") ||
+        h.includes("min. stock") ||
+        h.includes("min.stock") ||
+        h.includes("minimum stock") ||
+        h.includes("minimum") ||
+        h === "min" ||
+        h === "minimum" ||
+        h === "batas minimal" ||
+        h === "batas min",
     );
 
-    const minStockIdx = headers.findIndex(
+    // Header Safe Stock (opsional jika terpisah dari batas minimal)
+    const safeStockIdx = headers.findIndex(
       (h: string, idx: number) =>
-        idx !== safeStockIdx &&
-        (h.includes("minimal stok") ||
-          h.includes("min stok") ||
-          h.includes("minimal stock") ||
-          h.includes("min stock") ||
-          h === "min" ||
-          h === "minimum"),
+        idx !== minStockIdx &&
+        (h.includes("safe stock") ||
+          h.includes("safety stock") ||
+          h.includes("safety") ||
+          h.includes("safe") ||
+          h.includes("limit")),
     );
 
     const maxStockIdx = headers.findIndex(
@@ -1148,7 +1161,14 @@ function parseExcelWorkbookToSheets(
       } else if (c === minStockIdx) {
         sheetColumns.push({
           key: "min_stock",
-          label: hRaw || "MINIMUM STOCK",
+          label: hRaw || "Batas Minimal",
+          align: "center",
+          rawIndex: c,
+        });
+      } else if (c === safeStockIdx) {
+        sheetColumns.push({
+          key: "safe_stock",
+          label: hRaw || "Safe Stock",
           align: "center",
           rawIndex: c,
         });
@@ -1283,7 +1303,9 @@ function parseExcelWorkbookToSheets(
         ending_balance: endingBalance,
         current_stock: endingBalance ?? rawBeginning ?? 0,
         safe_stock: safeStockIdx >= 0 ? (parseNum(row[safeStockIdx], 1) ?? 1) : 1,
-        min_stock: minStockIdx >= 0 ? parseNum(row[minStockIdx], null) : null,
+        min_stock: minStockIdx >= 0
+          ? parseNum(row[minStockIdx], null)
+          : (safeStockIdx >= 0 ? parseNum(row[safeStockIdx], null) : null),
         max_stock: maxStockIdx >= 0 ? parseNum(row[maxStockIdx], null) : null,
         category: defaultCategory,
         unit: unit || "pcs",
@@ -1670,16 +1692,17 @@ function WarehouseAndProductsPage() {
         "Material",
         "Satuan",
         "BEGINNING BALANCE",
+        "Batas Minimal",
         "RECEIPT",
         "ISSUED",
         "ENDING BALANCE",
         "Maks. Stock",
       ],
-      [1, "7100110213", "BEARING 32004", "PCS", 10, 0, 0, 10, 50],
-      [2, "7100110339", "BEARING 6001 2Z", "PCS", 40, 26, 7, 59, 100],
-      [3, "7100110345", "BEARING 6003 2Z", "PCS", 40, 31, 23, 48, 80],
-      [4, "7100110347", "BEARING 6004 2Z", "PCS", 60, 18, 32, 46, 75],
-      [5, "7100110351", "BEARING 6005 2Z", "PCS", 50, 3, 1, 52, 90],
+      [1, "7100110213", "BEARING 32004", "PCS", 10, 10, 0, 0, 10, 50],
+      [2, "7100110339", "BEARING 6001 2Z", "PCS", 40, 10, 26, 7, 59, 100],
+      [3, "7100110345", "BEARING 6003 2Z", "PCS", 40, 10, 31, 23, 48, 80],
+      [4, "7100110347", "BEARING 6004 2Z", "PCS", 60, 10, 18, 32, 46, 75],
+      [5, "7100110351", "BEARING 6005 2Z", "PCS", 50, 10, 3, 1, 52, 90],
     ];
 
     const worksheet = XLSX.utils.aoa_to_sheet(templateData);
@@ -1689,6 +1712,7 @@ function WarehouseAndProductsPage() {
       { wch: 34 },
       { wch: 10 },
       { wch: 20 },
+      { wch: 16 },
       { wch: 14 },
       { wch: 14 },
       { wch: 20 },
@@ -2089,21 +2113,26 @@ function WarehouseAndProductsPage() {
       return;
     }
     setIsImporting(true);
+    const toastId = toast.loading("Memulai proses import barang...", {
+      description: `Mempersiapkan ${importPreview.length} data barang dari file...`,
+    });
+
     try {
-      // Fetch SELURUH existing products dengan paging (bukan hanya 5.000 baris
-      // pertama) supaya pencocokan import tidak melewatkan item lama & tidak
-      // salah memperlakukannya sebagai barang baru.
+      // 1. Fetch seluruh existing products dari DB
+      toast.loading("Memeriksa database...", {
+        id: toastId,
+        description: "Mengecek kode barang yang sudah ada di database...",
+      });
+
       const existingProducts: any[] = [];
       {
         let page = 0;
         let hasMorePages = true;
-        while (hasMorePages && page < 10) {
+        while (hasMorePages && page < 15) {
           const from = page * 1000;
           const { data, error } = await supabase
             .from("products")
-            .select(
-              "id, name, code, category, unit, location, shelf, min_stock, safe_stock, max_stock, current_stock, description",
-            )
+            .select("id, name, code, category, min_stock, safe_stock, max_stock, current_stock, description")
             .range(from, from + 999);
           if (error) {
             console.warn("Could not fetch existing products:", error.message);
@@ -2128,18 +2157,17 @@ function WarehouseAndProductsPage() {
       // Normalisasi kode material: mengabaikan leading zeros (0 di depan) dan dikonversi ke angka integer/string numerik bersih
       const normCodeKey = (c: any) => {
         if (!c) return "";
-        const raw = String(c).trim();
+        const raw = String(c).replace(/\u00a0/g, " ").trim();
         if (/^\d+$/.test(raw)) {
           return String(parseInt(raw, 10));
         }
-        return raw.toLowerCase();
+        return raw.replace(/^0+/, "").toLowerCase() || raw.toLowerCase();
       };
 
+      // Set seluruh kode barang yang sudah ada di database
+      const existingCodes = new Set<string>();
       const existingByName = new Map<string, any>();
       const existingByCode = new Map<string, any>();
-      // Fallback: baris LEGACY tanpa metadata flow (is_obs / master_barang),
-      // yang selama ini selalu dianggap "barang baru" oleh import sampai-sampai
-      // menimbulkan error ON CONFLICT. Boleh dicocokkan dengan nama/kode asli.
       const fallbackByName = new Map<string, any>();
       const fallbackByCode = new Map<string, any>();
 
@@ -2154,13 +2182,28 @@ function WarehouseAndProductsPage() {
           isMasterRows = false;
         }
         const nName = normStr(p.name);
+        const rawCode = String(p.code || "").trim();
         const nCodeKey = normCodeKey(p.code);
-        // Peta utama: pemisahan ketat sesuai flow (perbaikan bug 206-vs-207)
+
+        if (rawCode) {
+          existingCodes.add(rawCode.toLowerCase());
+          const clean = rawCode.replace(/^0+/, "");
+          if (clean) existingCodes.add(clean.toLowerCase());
+        }
+        if (nCodeKey) existingCodes.add(nCodeKey);
+
+        if ((p as any).material_number) {
+          const mn = String((p as any).material_number).trim();
+          existingCodes.add(mn.toLowerCase());
+          const mnClean = mn.replace(/^0+/, "");
+          if (mnClean) existingCodes.add(mnClean.toLowerCase());
+        }
+
+        // Peta lookup untuk flow Master Barang
         if (isMasterTab ? isMasterRows && !isObs : isObs && !isMasterRows) {
           if (nName) existingByName.set(nName, p);
           if (nCodeKey) existingByCode.set(nCodeKey, p);
         } else {
-          // Baris ambiguous/legacy → dicocokkan sebagai fallback
           if (nName) fallbackByName.set(nName, p);
           if (nCodeKey) fallbackByCode.set(nCodeKey, p);
         }
@@ -2168,6 +2211,8 @@ function WarehouseAndProductsPage() {
 
       const toUpdate: any[] = [];
       const toInsert: any[] = [];
+      const skippedItems: Array<{ code: string; name: string; reason: string }> = [];
+      const seenCodesInBatch = new Set<string>();
       const seenNamesInBatch = new Set<string>();
 
       for (const item of importPreview) {
@@ -2185,51 +2230,91 @@ function WarehouseAndProductsPage() {
         if (!cleanName && !cleanCode) continue;
 
         let finalName = cleanName || (cleanCode ? `Item ${cleanCode}` : "Unnamed Item");
-        let normName = normStr(finalName);
+        const normName = normStr(finalName);
 
-        // Jika ada nama yang sama persis dalam file, beri penanda unik agar semua baris dari file tetap diimport
-        if (seenNamesInBatch.has(normName)) {
-          finalName = cleanCode
-            ? `${finalName} (${cleanCode})`
-            : `${finalName} #${seenNamesInBatch.size + 1}`;
-          normName = normStr(finalName);
-        }
-        seenNamesInBatch.add(normName);
-
-        // Cari di database: strict match sesuai flow dulu, lalu fallback baris
-        // legacy/ambiguous (tanpa metadata) berdasarkan nama / kode yang sama.
         const isRealCode =
           cleanCode &&
-          cleanCode.length >= 3 &&
+          cleanCode.length >= 2 &&
           !["-", "--", "0", "n/a", "na", "none", "null"].includes(cleanCode.toLowerCase());
 
-        const found =
-          (normName ? existingByName.get(normName) : null) ||
-          (isRealCode ? existingByCode.get(normCodeKey(cleanCode)) : null) ||
-          (normName ? fallbackByName.get(normName) : null) ||
-          (isRealCode && fallbackByCode ? fallbackByCode.get(normCodeKey(cleanCode)) : null);
+        const codeKey = isRealCode ? normCodeKey(cleanCode) : "";
+
+        // ── ATURAN UNTUK OBS SPAREPART (!isMasterTab) ─────────────────────────
+        // (1) Periksa apakah barang sudah ada di database menggunakan kode barang
+        //     sebagai identitas unik. Jika sudah ada, LEWATI tanpa menimpa data lama.
+        // (2) Jika duplikat dalam file yang sama, LEWATI agar tidak error constraint.
+        // (3) Jika belum ada di database, tambahkan sebagai data BARU.
+        if (!isMasterTab) {
+          if (isRealCode && (existingCodes.has(cleanCode.toLowerCase()) || existingCodes.has(codeKey))) {
+            skippedItems.push({
+              code: cleanCode,
+              name: finalName,
+              reason: "Kode barang sudah terdaftar di database",
+            });
+            continue; // LEWATI TANPA MENIMPA DATA LAMA
+          }
+
+          if (isRealCode && seenCodesInBatch.has(codeKey)) {
+            skippedItems.push({
+              code: cleanCode,
+              name: finalName,
+              reason: "Duplikat kode dalam file import",
+            });
+            continue; // LEWATI DUPLIKAT DI FILE
+          }
+
+          if (!isRealCode) {
+            if (seenNamesInBatch.has(normName)) {
+              skippedItems.push({
+                code: cleanCode || "-",
+                name: finalName,
+                reason: "Duplikat nama dalam file import",
+              });
+              continue;
+            }
+            seenNamesInBatch.add(normName);
+          } else {
+            seenCodesInBatch.add(codeKey);
+            seenCodesInBatch.add(cleanCode.toLowerCase());
+          }
+        } else {
+          // Flow khusus Master Barang: cek apakah item sudah ada untuk diupdate
+          if (seenNamesInBatch.has(normName)) {
+            finalName = cleanCode
+              ? `${finalName} (${cleanCode})`
+              : `${finalName} #${seenNamesInBatch.size + 1}`;
+          }
+          seenNamesInBatch.add(normStr(finalName));
+        }
+
+        const found = isMasterTab
+          ? (normName ? existingByName.get(normName) : null) ||
+            (isRealCode ? existingByCode.get(normCodeKey(cleanCode)) : null) ||
+            (normName ? fallbackByName.get(normName) : null) ||
+            (isRealCode && fallbackByCode ? fallbackByCode.get(normCodeKey(cleanCode)) : null)
+          : null;
 
         const hasEndingInFile = item.ending_balance !== null && item.ending_balance !== undefined;
+        const hasBeginningInFile = item.beginning_balance !== null && item.beginning_balance !== undefined;
         const hasMaxInFile = item.max_stock !== null && item.max_stock !== undefined;
         const hasMinInFile = item.min_stock !== null && item.min_stock !== undefined;
 
         // Metadata OBS / Master Barang untuk kolom BEGINNING BALANCE, RECEIPT, ISSUED, ENDING BALANCE
-        // + BATAS MINIMAL (nilai MIN STOCK dari file — tidak pernah menimpa
-        // min/max stok database, hanya rekam untuk tampilan kolom Batas Minimal)
+        // + BATAS MINIMAL (nilai MIN STOCK dari file — tersimpan di kolom min_stock database)
         const obsMeta = isMasterTab
           ? {
               source: "master_barang",
               is_obs: false,
               is_master_only: true,
               category: "Master Barang",
-              beginning_balance:
-                item.beginning_balance !== undefined
-                  ? item.beginning_balance
-                  : (item.ending_balance ?? item.current_stock ?? 0),
-              receipt: item.receipt !== undefined ? item.receipt : 0,
-              issued: item.issued !== undefined ? item.issued : 0,
-              ending_balance:
-                item.ending_balance !== undefined ? item.ending_balance : (item.current_stock ?? 0),
+              beginning_balance: hasBeginningInFile
+                ? Number(item.beginning_balance)
+                : (item.ending_balance ?? item.current_stock ?? 0),
+              receipt: item.receipt !== undefined && item.receipt !== null ? Number(item.receipt) : 0,
+              issued: item.issued !== undefined && item.issued !== null ? Number(item.issued) : 0,
+              ending_balance: hasEndingInFile
+                ? Number(item.ending_balance)
+                : (Number(item.current_stock) || 0),
               min_stock_file: hasMinInFile ? Number(item.min_stock) : null,
               max_stock_file: hasMaxInFile ? Number(item.max_stock) : null,
             }
@@ -2237,79 +2322,60 @@ function WarehouseAndProductsPage() {
               source: "obs",
               is_obs: true,
               category: "Sparepart & Tools",
-              beginning_balance:
-                item.beginning_balance !== undefined
-                  ? item.beginning_balance
-                  : (item.ending_balance ?? item.current_stock ?? 0),
-              receipt: item.receipt !== undefined ? item.receipt : 0,
-              issued: item.issued !== undefined ? item.issued : 0,
-              ending_balance:
-                item.ending_balance !== undefined ? item.ending_balance : (item.current_stock ?? 0),
+              beginning_balance: hasBeginningInFile
+                ? Number(item.beginning_balance)
+                : (item.ending_balance ?? item.current_stock ?? 0),
+              receipt: item.receipt !== undefined && item.receipt !== null ? Number(item.receipt) : 0,
+              issued: item.issued !== undefined && item.issued !== null ? Number(item.issued) : 0,
+              ending_balance: hasEndingInFile
+                ? Number(item.ending_balance)
+                : (Number(item.current_stock) || 0),
               min_stock_file: hasMinInFile ? Number(item.min_stock) : null,
               max_stock_file: hasMaxInFile ? Number(item.max_stock) : null,
             };
-        // Import Master Barang tidak boleh mengubah metadata item OBS yang
-        // sudah ada. Stok tetap diperbarui, tetapi klasifikasi OBS dipertahankan.
+
         const preserveExistingObs = isMasterTab && found && !isMasterBarangProduct(found);
         const obsDescription = preserveExistingObs
           ? found.description
           : JSON.stringify(obsMeta);
 
         if (found) {
-          // Data master barang: sertakan nama agar memenuhi NOT NULL constraint PostgreSQL saat upsert
-          //
-          // ⚠️ ATURAN IMPORT: import file baru HANYA mengubah ENDING BALANCE
-          // (current_stock) dan BEGINNING BALANCE (metadata di description).
-          // min_stock & max_stock TIDAK pernah ditimpa dari file — hanya
-          // super admin yang dapat mengeditnya lewat menu Edit Barang.
-          //
-          // ⚠️ KATEGORI DIKUNCI PADA FLOW-nya: import dari menu OBS mengubah
-          // barang yang ditemukan menjadi OBS penuh (source "obs"), dan import
-          // dari menu Master Barang menjadi Master Barang. Tanpa ini, barang
-          // lama yang pernah tersimpan dengan kategori "Master Barang" tidak
-          // ikut tampil di daftar OBS (jumlah yang terlihat jadi kurang dari
-          // jumlah item di file).
           toUpdate.push({
             id: found.id,
             name: found.name || finalName,
             code: cleanCode || found.code || null,
-            // Import Master Barang tidak mengubah klasifikasi OBS existing.
-            // Item OBS yang sudah ada tetap tampil di OBS Sparepart.
             category: preserveExistingObs
               ? found.category
               : (isMasterTab ? "Master Barang" : "Sparepart & Tools"),
-            // Unit & lokasi barang lama dipertahankan (tidak diubah oleh import)
             unit: found.unit || item.unit || "pcs",
             location: found.location || item.location || "Gudang Utama",
             shelf: found.shelf || item.shelf || "Rak A-1",
-            // Jika file memuat ending balance, perbarui stok. Jika file HANYA update master, pertahankan stok yang ada di database
             current_stock: hasEndingInFile
               ? Number(item.ending_balance)
               : (found.current_stock ?? 0),
             safe_stock: found.safe_stock ?? 1,
-            // Min/Max stock barang lama TIDAK berubah oleh import (proteksi atas)
             min_stock: found.min_stock ?? 10,
             max_stock: found.max_stock ?? null,
             description: obsDescription,
             is_active: true,
           });
         } else {
-          // Barang BARU: min/max stock diinisialisasi dari file (bukan mengubah
-          // data lama); setelah itu hanya super admin yang dapat mengeditnya.
           toInsert.push({
             name: finalName,
             code: cleanCode || null,
+            material_number: cleanCode || null,
+            material_description: finalName,
             category: isMasterTab
               ? item.category || "Master Barang"
               : item.category || "Sparepart & Tools",
             unit: item.unit || "pcs",
             location: item.location || "Gudang Utama",
             shelf: item.shelf || "Rak A-1",
-            current_stock: hasEndingInFile ? Number(item.ending_balance) : 0,
-            safe_stock: 1,
-            // Rekam minimal stock jika ada di file
+            current_stock: hasEndingInFile
+              ? Number(item.ending_balance)
+              : (Number(item.current_stock) || (hasBeginningInFile ? Number(item.beginning_balance) : 0)),
+            safe_stock: item.safe_stock ?? 1,
             min_stock: hasMinInFile ? Number(item.min_stock) : 10,
-            // Rekam maksimal stock jika ada di file
             max_stock: hasMaxInFile ? Number(item.max_stock) : null,
             description: obsDescription,
             is_active: true,
@@ -2478,13 +2544,46 @@ function WarehouseAndProductsPage() {
             );
           }
 
-          for (const row of toUpdateSp) {
-            await syncAbsoluteStockAcrossMenus(
-              supabase,
-              { code: row.targetCode, name: row.material_description },
-              Number(String(row.qty_stock).replace(/[^0-9.]/g, "")) || 0,
-              { skipTables: ["spareparts"] },
-            );
+          // Batch sync ke products & buffer_stock (bukan per-item sequential)
+          {
+            const SYNC_TABLES_MB = ["products", "buffer_stock"] as const;
+            const TABLE_SPEC_MB: Record<string, { codeCol: string; nameCol: string; stockCol: string; stockIsString: boolean }> = {
+              products:     { codeCol: "code", nameCol: "name", stockCol: "current_stock", stockIsString: false },
+              buffer_stock: { codeCol: "code", nameCol: "name", stockCol: "current_stock", stockIsString: false },
+            };
+            for (const tbl of SYNC_TABLES_MB) {
+              const sp = TABLE_SPEC_MB[tbl]!;
+              const allR: any[] = [];
+              for (let pg = 0; pg < 20; pg++) {
+                const { data } = await (supabase as any).from(tbl).select("*").range(pg * 1000, pg * 1000 + 999);
+                if (!Array.isArray(data) || data.length === 0) break;
+                allR.push(...data);
+                if (data.length < 1000) break;
+              }
+              if (allR.length === 0) continue;
+              const bc = new Map<string, any>();
+              const bn = new Map<string, any>();
+              for (const r of allR) {
+                const rc = String(r[sp.codeCol] ?? "").trim();
+                if (rc) { bc.set(rc.toLowerCase(), r); const cl = rc.replace(/^0+/, "") || rc; if (cl !== rc) bc.set(cl.toLowerCase(), r); }
+                const rn = String(r[sp.nameCol] ?? "").trim();
+                if (rn) bn.set(rn.toLowerCase(), r);
+              }
+              const ups: Array<{ id: string; stock: number }> = [];
+              for (const row of toUpdateSp) {
+                const code = String((row as any).targetCode || row.material_number || "").trim();
+                const name = String(row.material_description || "").trim();
+                const cleanC = code ? (code.replace(/^0+/, "") || code) : "";
+                const matched = (code ? bc.get(code.toLowerCase()) : null) ?? (cleanC ? bc.get(cleanC.toLowerCase()) : null) ?? (name ? bn.get(name.toLowerCase()) : null);
+                if (!matched) continue;
+                const stock = Math.max(0, Number(String(row.qty_stock).replace(/[^0-9.]/g, "")) || 0);
+                ups.push({ id: matched.id, stock });
+              }
+              for (let i = 0; i < ups.length; i += 100) {
+                const chunk = ups.slice(i, i + 100);
+                await Promise.all(chunk.map(({ id, stock }) => (supabase as any).from(tbl).update({ [sp.stockCol]: stock }).eq("id", id)));
+              }
+            }
           }
         } catch (e: any) {
           console.warn("Could not sync master barang import to spareparts:", e?.message || e);
@@ -2493,104 +2592,180 @@ function WarehouseAndProductsPage() {
 
       const CHUNK_SIZE = 100;
       const failedImports: string[] = [];
-      // 1. Eksekusi update untuk barang yang sudah ada berdasarkan ID.
-      //    PENTING: memakai UPDATE murni (bukan upsert/INSERT ... onConflict)
-      //    karena upsert tetap menjalankan jalur INSERT dan kena constraint
-      //    kolom tambahan DB live (material_number/material_description NOT
-      //    NULL) → seluruh update stok gagal dan stok tidak pernah berubah.
-      for (let i = 0; i < toUpdate.length; i += CHUNK_SIZE) {
-        const chunk = toUpdate.slice(i, i + CHUNK_SIZE);
-        const failures = await Promise.all(
-          chunk.map(async (it) => {
-            const { id, ...fields } = it as any;
-            if (!id) return `${it.name} — baris tanpa ID`;
-            const r = await updateProductRowHealing(String(id), fields);
-            return r.error ? `${it.name} — ${r.error.message}` : null;
-          }),
-        );
-        for (const f of failures) {
-          if (f) {
-            failedImports.push(f);
-            console.error("Failed to update existing product item:", f);
-          }
-        }
-      }
+      let insertedCount = 0;
 
-      // 2. Barang BARU: INSERT polos (TANPA onConflict "name") — kolom name di
-      //    tabel products tidak dijamin memiliki unique constraint di database
-      //    live; upsert dengan onConflict "name" selalu gagal dengan error
-      //    "there is no unique or exclusion constraint matching the ON CONFLICT
-      //    specification". Duplikasi dicegah oleh pra-pencocokan existing +
-      //    fallback map di atas; konflik unik (bila DB memang punya constraint)
-      //    di-retry dengan nama alternatif "Nama (KODE)".
-      for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
-        const chunk = toInsert.slice(i, i + CHUNK_SIZE);
-        const { error: insErr } = await supabase.from("products").insert(chunk as any);
-        if (insErr) {
-          console.warn("Products batch insert fallback due to:", insErr.message);
-          for (const it of chunk) {
-            // Schema healing: mengisi otomatis kolom NOT NULL tak dikenal DB live
-            // (material_number, material_description, dst.) lalu mencoba ulang.
-            const first = await insertProductRowHealing(it as any);
-            if (!first.error) continue;
-
-            // Konflik nama unik → coba ulang dengan nama + kode barang
-            const conflictLike = /unique|duplicate|conflict/i.test(first.error.message || "");
-            if (conflictLike && it.name && it.code) {
-              const alt = `${it.name} (${it.code})`;
-              const retry = await insertProductRowHealing({ ...it, name: alt });
-              if (!retry.error) continue;
-              failedImports.push(`${it.name} — ${retry.error.message}`);
-            } else {
-              failedImports.push(`${it.name} — ${first.error.message}`);
+      // 1. Eksekusi update KHUSUS jika ada baris toUpdate (pada Master Barang)
+      if (toUpdate.length > 0) {
+        toast.loading("Memperbarui data barang...", {
+          id: toastId,
+          description: `Menyimpan pembaruan ${toUpdate.length} barang di database...`,
+        });
+        for (let i = 0; i < toUpdate.length; i += CHUNK_SIZE) {
+          const chunk = toUpdate.slice(i, i + CHUNK_SIZE);
+          const failures = await Promise.all(
+            chunk.map(async (it) => {
+              const { id, ...fields } = it as any;
+              if (!id) return `${it.name} — baris tanpa ID`;
+              const r = await updateProductRowHealing(String(id), fields);
+              return r.error ? `${it.name} — ${r.error.message}` : null;
+            }),
+          );
+          for (const f of failures) {
+            if (f) {
+              failedImports.push(f);
+              console.error("Failed to update existing product item:", f);
             }
-            console.error("Failed to insert product item:", it.name, first.error.message);
           }
         }
       }
 
-      // ⚠️ SEMUA baris dari file harus tersimpan: jika ada baris yang gagal,
-      // user dapat tahu nama barangnya — tidak ada yang hilang tanpa jejak.
-      if (failedImports.length > 0) {
-        toast.error(
-          `${failedImports.length} barang GAGAL tersimpan saat import (cek detail di console): ` +
-            failedImports.slice(0, 3).join(" ; "),
-          { duration: 10000 },
-        );
-        console.error("Barang gagal diimport:", failedImports);
+      // 2. Eksekusi INSERT untuk barang BARU (dengan pelaporan progres Sonner)
+      if (toInsert.length > 0) {
+        const totalChunks = Math.ceil(toInsert.length / CHUNK_SIZE);
+        for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
+          const chunkIndex = Math.floor(i / CHUNK_SIZE) + 1;
+          const chunk = toInsert.slice(i, i + CHUNK_SIZE);
+          const currentProcessed = Math.min(i + CHUNK_SIZE, toInsert.length);
+
+          toast.loading("Menyimpan data baru...", {
+            id: toastId,
+            description: `Menyimpan batch ${chunkIndex}/${totalChunks} (${currentProcessed}/${toInsert.length} barang baru)...`,
+          });
+
+          const { error: insErr } = await supabase.from("products").insert(chunk as any);
+          if (!insErr) {
+            insertedCount += chunk.length;
+          } else {
+            console.warn("Products batch insert fallback due to:", insErr.message);
+            // Fallback: per baris dengan schema healing
+            for (const it of chunk) {
+              const first = await insertProductRowHealing(it as any);
+              if (!first.error) {
+                insertedCount++;
+                continue;
+              }
+
+              // Cek bila terjadi konflik unik nama
+              const conflictLike = /unique|duplicate|conflict/i.test(first.error.message || "");
+              if (conflictLike && it.name && it.code) {
+                const alt = `${it.name} (${it.code})`;
+                const retry = await insertProductRowHealing({ ...it, name: alt });
+                if (!retry.error) {
+                  insertedCount++;
+                  continue;
+                }
+                failedImports.push(`${it.name} — ${retry.error.message}`);
+              } else {
+                failedImports.push(`${it.name} — ${first.error.message}`);
+              }
+              console.error("Failed to insert product item:", it.name, first.error.message);
+            }
+          }
+        }
       }
 
-      // Nilai ending balance dari import OBS menjadi sumber absolut untuk
-      // Master Barang dan Buffer Stok, bukan sekadar perubahan delta.
-      for (const item of [...toUpdate, ...toInsert]) {
-        const stock = item.current_stock ?? 0;
-        await syncAbsoluteStockAcrossMenus(
-          supabase,
-          { code: item.code, name: item.name },
-          Number(stock) || 0,
-          { skipTables: ["products"] },
-        );
+      // ── SINKRONISASI BATCH KE SPAREPARTS & BUFFER_STOCK ────────────────
+      const itemsToSync = [...toUpdate, ...toInsert.slice(0, insertedCount)];
+      if (itemsToSync.length > 0) {
+        toast.loading("Sinkronisasi stok...", {
+          id: toastId,
+          description: "Menyelaraskan saldo stok dengan tabel sparepart dan buffer...",
+        });
+
+        const SYNC_TABLES = ["spareparts", "buffer_stock"] as const;
+        const TABLE_SPEC: Record<string, { codeCol: string; nameCol: string; stockCol: string; stockIsString: boolean }> = {
+          spareparts:   { codeCol: "material_number", nameCol: "material_description", stockCol: "qty_stock", stockIsString: true },
+          buffer_stock: { codeCol: "code", nameCol: "name", stockCol: "current_stock", stockIsString: false },
+        };
+
+        for (const table of SYNC_TABLES) {
+          const spec = TABLE_SPEC[table]!;
+          const allRows: any[] = [];
+          for (let page = 0; page < 20; page++) {
+            const { data } = await (supabase as any)
+              .from(table)
+              .select("*")
+              .range(page * 1000, page * 1000 + 999);
+            if (!Array.isArray(data) || data.length === 0) break;
+            allRows.push(...data);
+            if (data.length < 1000) break;
+          }
+          if (allRows.length === 0) continue;
+
+          const byCode = new Map<string, any>();
+          const byName = new Map<string, any>();
+          for (const row of allRows) {
+            const rc = String(row[spec.codeCol] ?? "").trim();
+            if (rc) {
+              byCode.set(rc.toLowerCase(), row);
+              const clean = rc.replace(/^0+/, "") || rc;
+              if (clean !== rc) byCode.set(clean.toLowerCase(), row);
+            }
+            const rn = String(row[spec.nameCol] ?? "").trim();
+            if (rn) byName.set(rn.toLowerCase(), row);
+          }
+
+          const updates: Array<{ id: string; update: Record<string, any> }> = [];
+          for (const item of itemsToSync) {
+            const stock = Math.max(0, Number(item.current_stock ?? 0) || 0);
+            const code = String(item.code ?? "").trim();
+            const name = String(item.name ?? "").trim();
+            const cleanCode = code ? (code.replace(/^0+/, "") || code) : "";
+            const row =
+              (code ? byCode.get(code.toLowerCase()) : null) ??
+              (cleanCode ? byCode.get(cleanCode.toLowerCase()) : null) ??
+              (name ? byName.get(name.toLowerCase()) : null);
+            if (!row) continue;
+
+            const upd: Record<string, any> = {
+              [spec.stockCol]: spec.stockIsString
+                ? `${stock} ${(row.unit || row[spec.stockCol]?.toString().replace(/[0-9.,\s]/g, "").trim() || "PCS").toUpperCase()}`
+                : stock,
+            };
+            updates.push({ id: row.id, update: upd });
+          }
+
+          const BATCH = 100;
+          for (let i = 0; i < updates.length; i += BATCH) {
+            const chunk = updates.slice(i, i + BATCH);
+            await Promise.all(
+              chunk.map(({ id, update }) =>
+                (supabase as any).from(table).update(update).eq("id", id),
+              ),
+            );
+          }
+        }
       }
 
-      const totalCount = toInsert.length + toUpdate.length;
-      const successCount = totalCount - failedImports.length;
+      // Validasi Total Data
+      const processedCount = importPreview.length;
+      const skippedCount = skippedItems.length;
+      const updatedCount = toUpdate.length - (toUpdate.length > 0 ? failedImports.length : 0);
+      const savedCount = insertedCount + (isMasterTab ? updatedCount : 0);
+      const failedCount = failedImports.length;
+
+      // Catat log audit aktivitas
       if (typeof recordActivity === "function") {
         await recordActivity(
           "IMPORT_BARANG",
-          `Mengimport ${successCount}/${totalCount} data (${toInsert.length} baru, ${toUpdate.length} update, ${failedImports.length} gagal) via Excel/CSV`,
+          `Import selesai: total ${processedCount} diproses (${savedCount} tersimpan, ${skippedCount} dilewati, ${failedCount} gagal)`,
         );
       }
-      if (failedImports.length > 0) {
-        // TOAST JUJUR: jangan pernah klaim "berhasil" untuk baris yang gagal tersimpan
-        toast.warning(
-          `HANYA ${successCount} dari ${totalCount} data yang benar-benar tersimpan (${toInsert.length} baru, ${toUpdate.length} update). ${failedImports.length} GAGAL: ` +
-            failedImports.slice(0, 2).join(" ; "),
-          { duration: 12000 },
-        );
+
+      // Tampilkan notifikasi ringkasan hasil import informatif
+      if (failedCount > 0) {
+        toast.warning("Import Selesai dengan Beberapa Catatan", {
+          id: toastId,
+          description: `Total: ${processedCount} diproses | Berhasil: ${savedCount} | Dilewati: ${skippedCount} | Gagal: ${failedCount}. ` +
+            failedImports.slice(0, 2).join("; "),
+          duration: 10000,
+        });
       } else {
-        toast.success(
-          `Berhasil mengimport ${totalCount} data barang (${toInsert.length} baru, ${toUpdate.length} diperbarui)!`,
-        );
+        toast.success("Import Barang Berhasil!", {
+          id: toastId,
+          description: `Total: ${processedCount} diproses • Berhasil disimpan: ${savedCount} • Dilewati: ${skippedCount} (sudah ada/duplikat) • Gagal: 0`,
+          duration: 7000,
+        });
       }
       queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
       queryClient.invalidateQueries({ queryKey: ["spareparts"] });
@@ -2599,6 +2774,7 @@ function WarehouseAndProductsPage() {
       queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["products_db"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["warehouse_transactions_full"] });
       queryClient.invalidateQueries({ queryKey: ["warehouse_activity_logs"] });
       setImportPreview([]);
       setImportFile(null);
@@ -3532,6 +3708,8 @@ function WarehouseAndProductsPage() {
       const newRow: Record<string, any> = {
         name: formData.name.trim(),
         code: formData.code.trim() || null,
+        material_number: formData.code.trim() || null,
+        material_description: formData.name.trim(),
         category: resolvedCategory,
         unit: formData.unit || "PCS",
         location: formData.location || "Gudang Utama",
@@ -10522,7 +10700,7 @@ function WarehouseAndProductsPage() {
                               .replace(/\s+/g, " ")
                               .trim()
                               .toLowerCase();
-                            const key = nName ? `n_${nName}` : nCode ? `c_${nCode}` : "";
+                            const key = nCode ? `c_${nCode}` : nName ? `n_${nName}` : "";
                             if (!key || !seen.has(key)) {
                               if (key) seen.add(key);
                               result.push(it);

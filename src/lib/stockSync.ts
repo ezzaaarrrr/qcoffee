@@ -107,10 +107,10 @@ async function findRowInTable(
         .limit(1);
       if (Array.isArray(data) && data.length > 0) return data[0];
     }
-    // Query seluruh kode hanya sebagai fallback untuk data lama dengan
-    // representasi leading zero yang berbeda; pencocokan dilakukan lokal.
+    // Fallback scan dibatasi 3 halaman (3000 baris) untuk mencegah query explosion.
+    // ponytail: naikkan ke 20 jika tabel melebihi 3000 baris unik kode.
     const candidates: any[] = [];
-    for (let page = 0; page < 20; page++) {
+    for (let page = 0; page < 3; page++) {
       const { data } = await (supabase as any)
         .from(table)
         .select("*")
@@ -134,9 +134,9 @@ async function findRowInTable(
       .limit(1);
     if (Array.isArray(data) && data.length > 0) return data[0];
 
-    // Fallback untuk perbedaan spasi, kapitalisasi, atau nama kolom lama.
+    // Fallback scan dibatasi 3 halaman untuk performa.
     const candidates: any[] = [];
-    for (let page = 0; page < 20; page++) {
+    for (let page = 0; page < 3; page++) {
       const { data } = await (supabase as any)
         .from(table)
         .select("*")
