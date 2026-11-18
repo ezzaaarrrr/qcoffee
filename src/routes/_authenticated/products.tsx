@@ -4561,6 +4561,55 @@ function WarehouseAndProductsPage() {
     };
   }, [transactions, products]);
 
+  // ── MAP MUTASI HARIAN (RECEIPT & ISSUED) KHUSUS TAB MASTER BARANG ──
+  // Menghitung mutasi masuk & keluar hanya pada hari berjalan (today) atau tanggal filter.
+  // Jika berganti hari, otomatis reset ke qty 0.
+  const { masterDailyInQtyMap, masterDailyOutQtyMap } = useMemo(() => {
+    const inQty: Record<string, number> = {};
+    const outQty: Record<string, number> = {};
+    const targetDate = productDateFilter || getTodayDateStr();
+
+    const productById = new Map<string, ProductItem>();
+    const productByName = new Map<string, ProductItem>();
+    products.forEach((p) => {
+      if (p.id) productById.set(p.id, p);
+      if (p.name) productByName.set(p.name.trim().toLowerCase(), p);
+    });
+
+    transactions.forEach((tx) => {
+      const txDate = getTxLocalDateStr(tx.created_at);
+      if (txDate !== targetDate) return;
+
+      const qty = Number(tx.quantity) || 0;
+      const idKey = tx.product_id;
+      const nameKey = tx.product_name ? tx.product_name.trim().toLowerCase() : "";
+
+      const pObj =
+        (idKey ? productById.get(idKey) : undefined) ||
+        (nameKey ? productByName.get(nameKey) : undefined);
+      const targetId = pObj?.id || idKey;
+      const targetName = pObj?.name ? pObj.name.trim().toLowerCase() : nameKey;
+      const targetCode = pObj?.code ? pObj.code.trim().toLowerCase() : "";
+
+      if (tx.tx_type === "IN") {
+        if (targetId) inQty[targetId] = (inQty[targetId] || 0) + qty;
+        if (targetName && targetName !== targetId)
+          inQty[targetName] = (inQty[targetName] || 0) + qty;
+        if (targetCode) inQty[targetCode] = (inQty[targetCode] || 0) + qty;
+      } else if (tx.tx_type === "OUT") {
+        if (targetId) outQty[targetId] = (outQty[targetId] || 0) + qty;
+        if (targetName && targetName !== targetId)
+          outQty[targetName] = (outQty[targetName] || 0) + qty;
+        if (targetCode) outQty[targetCode] = (outQty[targetCode] || 0) + qty;
+      }
+    });
+
+    return {
+      masterDailyInQtyMap: inQty,
+      masterDailyOutQtyMap: outQty,
+    };
+  }, [transactions, products, productDateFilter]);
+
   // ── MAP MUTASI (RECEIPT & ISSUED) UNTUK TABEL OBS SPAREPART ──────
   // Kolom Receipt dan Issued mencatat transaksi mutasi masuk & keluar secara akumulatif harian.
   // Setiap ada catatan keluar atau masuk (meskipun di hari yang berbeda), nilai Issued & Receipt
@@ -6220,19 +6269,17 @@ function WarehouseAndProductsPage() {
                       const nameKey = p.name ? p.name.trim().toLowerCase() : "";
                       const codeKey = p.code ? p.code.trim().toLowerCase() : "";
 
-                      // RECEIPT: akumulasi SELURUH transaksi masuk per item
-                      // (hasil import/tambah barang dari menu OBS maupun Buffer Stok)
+                      // RECEIPT: transaksi harian masuk per item (reset ke 0 saat berganti hari)
                       const masterReceiptVal =
-                        (totalInQtyMap[p.id] ?? 0) ||
-                        (nameKey ? (totalInQtyMap[nameKey] ?? 0) : 0) ||
-                        (codeKey ? (totalInQtyMap[codeKey] ?? 0) : 0);
+                        (masterDailyInQtyMap[p.id] ?? 0) ||
+                        (nameKey ? (masterDailyInQtyMap[nameKey] ?? 0) : 0) ||
+                        (codeKey ? (masterDailyInQtyMap[codeKey] ?? 0) : 0);
 
-                      // ISSUED: akumulasi SELURUH transaksi keluar per item
-                      // (barang yang telah diorder/permintaan barang & dicatat keluar)
+                      // ISSUED: transaksi harian keluar per item (reset ke 0 saat berganti hari)
                       const masterIssuedVal =
-                        (totalOutQtyMap[p.id] ?? 0) ||
-                        (nameKey ? (totalOutQtyMap[nameKey] ?? 0) : 0) ||
-                        (codeKey ? (totalOutQtyMap[codeKey] ?? 0) : 0);
+                        (masterDailyOutQtyMap[p.id] ?? 0) ||
+                        (nameKey ? (masterDailyOutQtyMap[nameKey] ?? 0) : 0) ||
+                        (codeKey ? (masterDailyOutQtyMap[codeKey] ?? 0) : 0);
 
                       const obsMeta = getProductObsMeta(p);
                       const baseEnding =
@@ -7079,19 +7126,17 @@ function WarehouseAndProductsPage() {
                         (nameKey ? (dailyOutQtyMap[nameKey] ?? 0) : 0) ||
                         (codeKey ? (dailyOutQtyMap[codeKey] ?? 0) : 0);
 
-                      // RECEIPT Master Barang: akumulasi SELURUH transaksi masuk per item
-                      // (hasil import tambah barang dari menu OBS maupun Buffer Stok)
+                      // RECEIPT Master Barang: transaksi harian masuk per item (reset ke 0 saat berganti hari)
                       const masterReceiptVal =
-                        (totalInQtyMap[p.id] ?? 0) ||
-                        (nameKey ? (totalInQtyMap[nameKey] ?? 0) : 0) ||
-                        (codeKey ? (totalInQtyMap[codeKey] ?? 0) : 0);
+                        (masterDailyInQtyMap[p.id] ?? 0) ||
+                        (nameKey ? (masterDailyInQtyMap[nameKey] ?? 0) : 0) ||
+                        (codeKey ? (masterDailyInQtyMap[codeKey] ?? 0) : 0);
 
-                      // ISSUED Master Barang: akumulasi SELURUH transaksi keluar per item
-                      // (barang yang telah diorder / dicatat keluar)
+                      // ISSUED Master Barang: transaksi harian keluar per item (reset ke 0 saat berganti hari)
                       const masterIssuedVal =
-                        (totalOutQtyMap[p.id] ?? 0) ||
-                        (nameKey ? (totalOutQtyMap[nameKey] ?? 0) : 0) ||
-                        (codeKey ? (totalOutQtyMap[codeKey] ?? 0) : 0);
+                        (masterDailyOutQtyMap[p.id] ?? 0) ||
+                        (nameKey ? (masterDailyOutQtyMap[nameKey] ?? 0) : 0) ||
+                        (codeKey ? (masterDailyOutQtyMap[codeKey] ?? 0) : 0);
 
                       // BEGINNING BALANCE tetap tidak berubah dari hasil excel:
                       const obsMeta = getProductObsMeta(p);

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -336,21 +336,64 @@ function DashboardPage() {
     return map;
   }, [allProducts]);
 
-  // Klasifikasi 3 Kondisi Status Stok Barang
+  // ── SINKRONISASI BATAS MINIMAL DARI MENU BUFFER STOK KE ITEM OBS BERDASARKAN NAMA ──
+  const { bufferMinStockMap, bufferMinStockCodeMap } = useMemo(() => {
+    const nameMap = new Map<string, number>();
+    const codeMap = new Map<string, number>();
+    activeBufferItems.forEach((b) => {
+      const minVal =
+        b.min_stock !== null && b.min_stock !== undefined ? Number(b.min_stock) : null;
+      if (minVal !== null && !isNaN(minVal)) {
+        if (b.name) {
+          const kName = b.name.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+          nameMap.set(kName, minVal);
+        }
+        if (b.code) {
+          const kCode = b.code.trim().toLowerCase();
+          codeMap.set(kCode, minVal);
+        }
+      }
+    });
+    return { bufferMinStockMap: nameMap, bufferMinStockCodeMap: codeMap };
+  }, [activeBufferItems]);
+
+  const getObsItemMinStock = useCallback(
+    (p: { name?: string | null; code?: string | null; min_stock?: number | null }) => {
+      const cleanName = (p.name || "")
+        .replace(/\u00a0/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+      const cleanCode = (p.code || "").trim().toLowerCase();
+      const fromBuffer =
+        bufferMinStockMap.get(cleanName) ??
+        (cleanCode ? bufferMinStockCodeMap.get(cleanCode) : undefined);
+      return fromBuffer !== undefined ? fromBuffer : (p.min_stock ?? 10);
+    },
+    [bufferMinStockMap, bufferMinStockCodeMap],
+  );
+
+  // Klasifikasi 3 Kondisi Status Stok Barang OBS (ambang batas minimal disinkronkan dari Buffer Stok)
   // 1. Stok Habis (0 pcs)
   const zeroProductsList = activeProducts.filter((p) => (p.current_stock ?? 0) <= 0);
-  // 2. Stok Limit / Kritis (> 0 tapi <= min_stock)
-  const limitOnlyProductsList = activeProducts.filter(
-    (p) => (p.current_stock ?? 0) > 0 && (p.current_stock ?? 0) <= (p.min_stock ?? 10),
-  );
-  // 3. Stok Aman / Normal (> min_stock)
-  const safeProductsList = activeProducts.filter(
-    (p) => (p.current_stock ?? 0) > (p.min_stock ?? 10),
-  );
-  // Legacy: Semua barang yang perlu restock (stok <= min_stock)
-  const limitProductsList = activeProducts.filter(
-    (p) => (p.current_stock ?? 0) <= (p.min_stock ?? 10),
-  );
+  // 2. Stok Limit / Kritis (> 0 tapi <= batas minimal buffer)
+  const limitOnlyProductsList = activeProducts.filter((p) => {
+    const stock = p.current_stock ?? 0;
+    const min = getObsItemMinStock(p);
+    return stock > 0 && stock <= min;
+  });
+  // 3. Stok Aman / Normal (> batas minimal buffer)
+  const safeProductsList = activeProducts.filter((p) => {
+    const stock = p.current_stock ?? 0;
+    const min = getObsItemMinStock(p);
+    return stock > min;
+  });
+  // Legacy: Semua barang yang perlu restock (stok <= batas minimal buffer)
+  const limitProductsList = activeProducts.filter((p) => {
+    const stock = p.current_stock ?? 0;
+    const min = getObsItemMinStock(p);
+    return stock <= min;
+  });
 
   const zeroProductsCount = zeroProductsList.length;
   const limitOnlyCount = limitOnlyProductsList.length;
@@ -373,10 +416,16 @@ function DashboardPage() {
   const availablePct =
     totalActiveProducts > 0 ? Math.round((availableItemsCount / totalActiveProducts) * 100) : 0;
 
-  // KPI Sparepart (Stok Aman):
-  // Standar: Jika persentase <= 91.99% status "MISS", jika >= 92.00% status "HIT"
-  const kpiExactPct =
-    totalActiveProducts > 0 ? (nonLimitProductsCount / totalActiveProducts) * 100 : 0;
+  // Total kuantitas stok fisik OBS (pcs / unit)
+  const totalStokOBS = useMemo(
+    () => activeProducts.reduce((sum, p) => sum + (p.current_stock ?? 0), 0),
+    [activeProducts],
+  );
+
+  // Persentase Diagram OBS Sparepart:
+  // Rumus: (Jumlah keseluruhan pcs/unit OBS / Jumlah total 207 item barang) * 100
+  const obsTotalItems = totalActiveProducts > 0 ? totalActiveProducts : 207;
+  const kpiExactPct = (totalStokOBS / obsTotalItems) * 100;
   const isKpiHit = kpiExactPct >= 92.0;
   const kpiStatus: "HIT" | "MISS" = isKpiHit ? "HIT" : "MISS";
 
@@ -403,7 +452,6 @@ function DashboardPage() {
 
     // Total stok fisik gabungan
     // Total stok fisik gabungan: products.current_stock adalah sumber kebenaran tunggal DB
-    const totalStokOBS = activeProducts.reduce((sum, p) => sum + (p.current_stock ?? 0), 0);
     const totalStokBuffer = activeBufferItems.reduce((sum, b) => sum + (b.current_stock ?? 0), 0);
     const totalStokGabungan = totalStokOBS + totalStokBuffer;
 
@@ -442,6 +490,7 @@ function DashboardPage() {
     safePct,
     limitOnlyPct,
     zeroPct,
+    totalStokOBS,
   ]);
 
   // Data gabungan OBS + Buffer untuk Modal Interaktif 4 Kartu Metrik
@@ -468,7 +517,7 @@ function DashboardPage() {
 
     activeProducts.forEach((p) => {
       const stock = p.current_stock ?? 0;
-      const minStock = p.min_stock ?? 10;
+      const minStock = getObsItemMinStock(p);
       let status: "safe" | "limit" | "empty" = "safe";
       if (stock <= 0) status = "empty";
       else if (stock <= minStock) status = "limit";
@@ -679,7 +728,7 @@ function DashboardPage() {
     });
 
     return list;
-  }, [activeProducts, activeBufferItems, allSpareparts, allProducts]);
+  }, [activeProducts, activeBufferItems, allSpareparts, allProducts, getObsItemMinStock]);
 
   // Filter barang sesuai kartu metrik yang dipilih & filter pencarian di modal
   const filteredModalItems = useMemo(() => {
@@ -980,7 +1029,7 @@ function DashboardPage() {
     };
 
     const obsSafeColor = getKpiColor(kpiExactPct);
-    const obsKpiPctStr = `${kpiExactPct.toFixed(1)}%`;
+    const obsKpiPctStr = `${kpiExactPct.toLocaleString("id-ID", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
     const allItemKpiPct = ca.totalGabungan > 0 ? (ca.gabunganAman / ca.totalGabungan) * 100 : 0;
     const allItemSafeColor = getKpiColor(allItemKpiPct);
