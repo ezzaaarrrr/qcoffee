@@ -259,28 +259,16 @@ function DashboardPage() {
   useEffect(() => {
     const channel = supabase
       .channel("dashboard_realtime_sync")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "products" },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["products"] });
-          queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "spareparts" },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "buffer_stock" },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
-        },
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["products"] });
+        queryClient.invalidateQueries({ queryKey: ["warehouse_products"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "spareparts" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["spareparts_master"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "buffer_stock" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["buffer_stock"] });
+      })
       .subscribe();
 
     return () => {
@@ -341,11 +329,14 @@ function DashboardPage() {
     const nameMap = new Map<string, number>();
     const codeMap = new Map<string, number>();
     activeBufferItems.forEach((b) => {
-      const minVal =
-        b.min_stock !== null && b.min_stock !== undefined ? Number(b.min_stock) : null;
+      const minVal = b.min_stock !== null && b.min_stock !== undefined ? Number(b.min_stock) : null;
       if (minVal !== null && !isNaN(minVal)) {
         if (b.name) {
-          const kName = b.name.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+          const kName = b.name
+            .replace(/\u00a0/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
           nameMap.set(kName, minVal);
         }
         if (b.code) {
@@ -638,9 +629,7 @@ function DashboardPage() {
       const codeKey = normKey(sp.material_number);
       const nameKey = normKey(sp.material_description);
       const latest =
-        (codeKey && masterOverlay.get(codeKey)) ||
-        (nameKey && masterOverlay.get(nameKey)) ||
-        null;
+        (codeKey && masterOverlay.get(codeKey)) || (nameKey && masterOverlay.get(nameKey)) || null;
 
       const stock = latest
         ? Number(latest.current_stock ?? 0)
@@ -1320,7 +1309,6 @@ function DashboardPage() {
         color: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
       },
     ];
-
     return (
       <div>
         <div className="mb-3 flex items-center gap-2">

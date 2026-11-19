@@ -53,6 +53,11 @@ import {
   CheckCircle2,
   Info,
   RotateCcw,
+  User,
+  CheckSquare,
+  Factory,
+  BadgeCheck,
+  Wrench,
 } from "lucide-react";
 import { OBS_DEFAULT_ITEMS } from "@/data/obsDefaultItems";
 import { toast } from "sonner";
@@ -419,7 +424,9 @@ type ActivityLog = {
   id: string;
   action: string;
   description: string;
+  user_id?: string | null;
   user_name?: string | null;
+  metadata?: any;
   created_at: string;
 };
 
@@ -496,24 +503,53 @@ function parseActivityLog(log: ActivityLog) {
   } else if (
     action === "BARANG_KELUAR" ||
     action === "ORDER_SPAREPART" ||
+    action.startsWith("ORDER_SPAREPART") ||
     desc.toLowerCase().includes("pencatatan keluar") ||
     desc.toLowerCase().includes("sistem order") ||
     desc.toLowerCase().includes("order sparepart") ||
-    desc.toLowerCase().includes("pengambilan/order")
+    desc.toLowerCase().includes("pengambilan/order") ||
+    desc.toLowerCase().includes("[permintaan order]") ||
+    desc.toLowerCase().includes("[order disetujui") ||
+    desc.toLowerCase().includes("[order ditolak")
   ) {
     type = "OUT";
-    title =
-      action === "ORDER_SPAREPART" || desc.toLowerCase().includes("sistem order")
-        ? "Sistem Order Sparepart (Teknik)"
-        : "Barang Keluar";
+    const isOrderBon =
+      action.startsWith("ORDER_SPAREPART") ||
+      desc.toLowerCase().includes("sistem order") ||
+      desc.toLowerCase().includes("order sparepart") ||
+      desc.toLowerCase().includes("[permintaan order]") ||
+      desc.toLowerCase().includes("[order disetujui") ||
+      desc.toLowerCase().includes("[order ditolak") ||
+      Boolean(log.metadata?.order_number);
+
+    title = isOrderBon ? "Bon Orderan Sparepart" : "Barang Keluar";
     qtyLabel = "Stok berkurang";
-    const match = desc.match(/(?:[:\-])\s*([\d\.,]+)\s*([A-Za-z]+)\s*(.+)/);
-    if (match && match[1] && match[2] && match[3]) {
-      qtyText = `-${match[1]} ${match[2].toLowerCase()}`;
-      subtitle = match[3].replace(/\s*\([^)]*\)\s*$/, "").trim() || match[3].trim();
+
+    const meta = log.metadata || {};
+    if (isOrderBon && meta.alasan_permintaan) {
+      subtitle = meta.alasan_permintaan;
     } else {
-      const colonIdx = desc.indexOf(":");
-      if (colonIdx !== -1) subtitle = desc.substring(colonIdx + 1).trim();
+      const match = desc.match(/(?:[:\-])\s*([\d\.,]+)\s*([A-Za-z]+)\s*(.+)/);
+      if (match && match[1] && match[2] && match[3]) {
+        subtitle = match[3].replace(/\s*\([^)]*\)\s*$/, "").trim() || match[3].trim();
+      } else {
+        const colonIdx = desc.indexOf(":");
+        if (colonIdx !== -1) subtitle = desc.substring(colonIdx + 1).trim();
+      }
+    }
+
+    if (isOrderBon && Array.isArray(meta.items) && meta.items.length > 0) {
+      const totalQty = meta.items.reduce(
+        (s: number, it: any) => s + (Number(it.quantity) || 0),
+        0,
+      );
+      const unit = meta.items[0]?.unit || "PCS";
+      qtyText = `-${totalQty} ${unit.toLowerCase()}`;
+    } else {
+      const match = desc.match(/(?:[:\-])\s*([\d\.,]+)\s*([A-Za-z]+)\s*(.+)/);
+      if (match && match[1] && match[2]) {
+        qtyText = `-${match[1]} ${match[2].toLowerCase()}`;
+      }
     }
   } else if (
     action === "EDIT_BARANG" ||
@@ -12386,6 +12422,27 @@ function WarehouseAndProductsPage() {
               const parsed = parseActivityLog(selectedLog);
               const changesList = parseChangeDetails(selectedLog.description);
 
+              const meta = selectedLog.metadata || {};
+              const matchedOrder = sparepartOrders.find(
+                (o) =>
+                  (meta.order_number && o.order_number === meta.order_number) ||
+                  (meta.order_id && o.id === meta.order_id) ||
+                  (selectedLog.id && o.id === selectedLog.id),
+              );
+
+              const isOrderBon =
+                selectedLog.action?.startsWith("ORDER_SPAREPART") ||
+                Boolean(meta.order_number) ||
+                Boolean(matchedOrder) ||
+                Boolean(meta.line) ||
+                Boolean(meta.group) ||
+                Boolean(meta.pelaksana_lapangan) ||
+                selectedLog.description?.toLowerCase().includes("[permintaan order]") ||
+                selectedLog.description?.toLowerCase().includes("[order disetujui") ||
+                selectedLog.description?.toLowerCase().includes("[order ditolak") ||
+                selectedLog.description?.toLowerCase().includes("bon orderan sparepart") ||
+                parsed.title === "Bon Orderan Sparepart";
+
               // Cari barang terkait di products atau bufferItems
               const targetName = parsed.subtitle.toLowerCase().trim();
               const matchedObs = products.find(
@@ -12415,6 +12472,250 @@ function WarehouseAndProductsPage() {
                 relatedItem?.item.code ||
                 (extractedCodeMatch ? extractedCodeMatch[1] : null) ||
                 "-";
+
+              // ── SPESIFIKASI BARU: TAMPILAN BON PERMINTAAN SPAREPART ────────────
+              if (isOrderBon) {
+                const orderDateRaw = meta.order_date || matchedOrder?.order_date || selectedLog.created_at;
+                const orderDateObj = new Date(orderDateRaw || selectedLog.created_at);
+                const formattedOrderDate = !isNaN(orderDateObj.getTime())
+                  ? orderDateObj.toLocaleDateString("id-ID", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })
+                  : orderDateRaw || "19 November 2026";
+
+                const orderTimeObj = new Date(selectedLog.created_at);
+                const formattedOrderTime = !isNaN(orderTimeObj.getTime())
+                  ? `${String(orderTimeObj.getHours()).padStart(2, "0")}.${String(
+                      orderTimeObj.getMinutes(),
+                    ).padStart(2, "0")} WIB`
+                  : "08.43 WIB";
+
+                const plant =
+                  meta.plant ||
+                  matchedOrder?.plant ||
+                  "TES GROUND 2 ( Coffee ) Cikupa Tangerang";
+
+                const line = meta.line || matchedOrder?.line || "Line Roasting 1";
+                const group = meta.group || matchedOrder?.group || "Group A";
+
+                const pelaksanaRaw =
+                  meta.pelaksana_lapangan ||
+                  matchedOrder?.pelaksana_lapangan;
+                const pelaksana = Array.isArray(pelaksanaRaw)
+                  ? pelaksanaRaw.join(", ")
+                  : (pelaksanaRaw || "Electric");
+
+                const kebutuhan =
+                  meta.dibutuhkan ||
+                  matchedOrder?.dibutuhkan ||
+                  "Urgent";
+
+                const alasanPermintaan =
+                  meta.alasan_permintaan ||
+                  matchedOrder?.alasan_permintaan ||
+                  parsed.subtitle ||
+                  "Penggantian Bearing Rusak Line Roasting 1";
+
+                const uraianPerbaikan =
+                  meta.uraian_perbaikan ||
+                  meta.alasan_permintaan ||
+                  matchedOrder?.alasan_permintaan ||
+                  "Penggantian Bearing Rusak Line Roasting 1";
+
+                // Susun daftar item barang bon
+                let rawItems: any[] = [];
+                if (Array.isArray(meta.items) && meta.items.length > 0) {
+                  rawItems = meta.items;
+                } else if (matchedOrder && Array.isArray(matchedOrder.items) && matchedOrder.items.length > 0) {
+                  rawItems = matchedOrder.items;
+                } else {
+                  rawItems = [
+                    {
+                      product_code: materialCode !== "-" ? materialCode : "7700910018",
+                      product_name: parsed.subtitle || "TEFLON TAPE (1365X0,3X15)",
+                      quantity: parsed.qtyText ? parsed.qtyText.replace(/[^0-9.]/g, "") : 1,
+                      unit: parsed.qtyText ? parsed.qtyText.replace(/[0-9.+\-\s]/g, "") : "PCS",
+                    },
+                  ];
+                }
+
+                const bonItems = rawItems.map((it: any) => {
+                  let code = it.product_code || "";
+                  if (!code) {
+                    const p = products.find(
+                      (prod) =>
+                        (it.product_id && prod.id === it.product_id) ||
+                        prod.name.toLowerCase().trim() === (it.product_name || "").toLowerCase().trim(),
+                    );
+                    if (p?.code) code = p.code;
+                  }
+                  return {
+                    product_code: code || "-",
+                    product_name: it.product_name || "-",
+                    quantity: it.quantity || 1,
+                    unit: (it.unit || "PCS").toUpperCase(),
+                  };
+                });
+
+                return (
+                  <div className="flex flex-col p-5 sm:p-6 space-y-5 max-h-[88vh] overflow-y-auto">
+                    {/* Header Kop Bon */}
+                    <div className="text-center pt-1">
+                      <DialogTitle className="text-lg sm:text-xl font-extrabold tracking-wide text-foreground uppercase">
+                        BON PERMINTAAN SPAREPART
+                      </DialogTitle>
+                      <DialogDescription className="sr-only">
+                        Detail Bon Permintaan Sparepart
+                      </DialogDescription>
+                    </div>
+
+                    {/* Metadata / Detail Transaksi (Vertical List) */}
+                    <div className="rounded-xl border border-border/80 bg-background p-4 sm:p-5 space-y-3.5">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        METADATA / DETAIL TRANSAKSI
+                      </div>
+
+                      <div className="space-y-3.5 text-xs">
+                        {/* 1. Tanggal Keluar */}
+                        <div className="flex items-center gap-3">
+                          <CalendarIcon className="size-4.5 text-slate-700 dark:text-slate-300 shrink-0" />
+                          <div className="min-w-0 flex items-baseline gap-1.5 flex-wrap">
+                            <span className="text-muted-foreground text-xs">Tanggal Keluar :</span>
+                            <span className="font-bold text-xs sm:text-sm text-foreground">{formattedOrderDate}</span>
+                          </div>
+                        </div>
+
+                        {/* 2. Waktu */}
+                        <div className="flex items-center gap-3">
+                          <Clock className="size-4.5 text-slate-700 dark:text-slate-300 shrink-0" />
+                          <div className="min-w-0 flex items-baseline gap-1.5 flex-wrap">
+                            <span className="text-muted-foreground text-xs">Waktu :</span>
+                            <span className="font-bold text-xs sm:text-sm text-foreground">{formattedOrderTime}</span>
+                          </div>
+                        </div>
+
+                        {/* 3. Plant */}
+                        <div className="flex items-start gap-3">
+                          <MapPin className="size-4.5 text-slate-700 dark:text-slate-300 shrink-0 mt-0.5" />
+                          <div className="min-w-0 flex items-baseline gap-1.5 flex-wrap">
+                            <span className="text-muted-foreground text-xs">Plant :</span>
+                            <span className="font-bold text-xs sm:text-sm text-foreground">{plant}</span>
+                          </div>
+                        </div>
+
+                        {/* 4. Line */}
+                        <div className="flex items-center gap-3">
+                          <Factory className="size-4.5 text-slate-700 dark:text-slate-300 shrink-0" />
+                          <div className="min-w-0 flex items-baseline gap-1.5 flex-wrap">
+                            <span className="text-muted-foreground text-xs">Line :</span>
+                            <span className="font-bold text-xs sm:text-sm text-foreground">{line}</span>
+                          </div>
+                        </div>
+
+                        {/* 5. Group */}
+                        <div className="flex items-center gap-3">
+                          <Factory className="size-4.5 text-slate-700 dark:text-slate-300 shrink-0" />
+                          <div className="min-w-0 flex items-baseline gap-1.5 flex-wrap">
+                            <span className="text-muted-foreground text-xs">Group :</span>
+                            <span className="font-bold text-xs sm:text-sm text-foreground">{group}</span>
+                          </div>
+                        </div>
+
+                        {/* 6. Pelaksana Lapangan */}
+                        <div className="flex items-center gap-3">
+                          <User className="size-4.5 text-slate-700 dark:text-slate-300 shrink-0" />
+                          <div className="min-w-0 flex items-baseline gap-1.5 flex-wrap">
+                            <span className="text-muted-foreground text-xs">Pelaksana Lapangan :</span>
+                            <span className="font-bold text-xs sm:text-sm text-foreground">{pelaksana}</span>
+                          </div>
+                        </div>
+
+                        {/* 7. Detail Kebutuhan */}
+                        <div className="flex items-center gap-3">
+                          <CheckSquare className="size-4.5 text-slate-700 dark:text-slate-300 shrink-0" />
+                          <div className="min-w-0 flex items-baseline gap-1.5 flex-wrap">
+                            <span className="text-muted-foreground text-xs">Detail Kebutuhan :</span>
+                            <span className="font-bold text-xs sm:text-sm text-foreground">{kebutuhan}</span>
+                          </div>
+                        </div>
+
+                        {/* 8. Alasan Permintaan */}
+                        <div className="flex items-start gap-3">
+                          <FileText className="size-4.5 text-slate-700 dark:text-slate-300 shrink-0 mt-0.5" />
+                          <div className="min-w-0 flex items-baseline gap-1.5 flex-wrap">
+                            <span className="text-muted-foreground text-xs">Alasan Permintaan :</span>
+                            <span className="font-bold text-xs sm:text-sm text-foreground break-words">{alasanPermintaan}</span>
+                          </div>
+                        </div>
+
+                        {/* 9. Uraian Perbaikan */}
+                        <div className="flex items-start gap-3">
+                          <Wrench className="size-4.5 text-amber-800 dark:text-amber-500 shrink-0 mt-0.5" />
+                          <div className="min-w-0 flex items-baseline gap-1.5 flex-wrap">
+                            <span className="text-muted-foreground text-xs">Uraian Perbaikan :</span>
+                            <span className="font-bold text-xs sm:text-sm text-foreground break-words">{uraianPerbaikan}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Informasi Barang & Transaksi */}
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                        INFORMASI BARANG & TRANSAKSI
+                      </div>
+                      <div className="rounded-lg border border-border/80 overflow-hidden bg-background">
+                        <table className="w-full text-xs text-left">
+                          <thead>
+                            <tr className="bg-slate-100/90 dark:bg-slate-800/60 border-b border-border/80 text-foreground font-bold">
+                              <th className="px-3 py-2.5 text-center w-12 border-r border-border/60">No.</th>
+                              <th className="px-3 py-2.5 w-32 border-r border-border/60">Code Material</th>
+                              <th className="px-3 py-2.5 border-r border-border/60">Name Material</th>
+                              <th className="px-3 py-2.5 text-center w-16 border-r border-border/60">Qty</th>
+                              <th className="px-3 py-2.5 text-center w-20">Satuan</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/60">
+                            {bonItems.map((it: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-muted/20">
+                                <td className="px-3 py-2.5 text-center font-mono text-muted-foreground border-r border-border/60">
+                                  {idx + 1}
+                                </td>
+                                <td className="px-3 py-2.5 font-mono text-foreground border-r border-border/60">
+                                  {it.product_code || "-"}
+                                </td>
+                                <td className="px-3 py-2.5 font-medium text-foreground border-r border-border/60">
+                                  {it.product_name}
+                                </td>
+                                <td className="px-3 py-2.5 text-center font-bold font-mono text-foreground border-r border-border/60">
+                                  {it.quantity}
+                                </td>
+                                <td className="px-3 py-2.5 text-center uppercase font-medium text-foreground">
+                                  {it.unit || "PCS"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Footer Dialog */}
+                    <div className="flex justify-end pt-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedLog(null)}
+                        className="text-xs h-8.5 px-5 rounded-lg border-border/80 hover:bg-muted font-medium"
+                      >
+                        Tutup
+                      </Button>
+                    </div>
+                  </div>
+                );
+              }
 
               const isExportActivity =
                 parsed.type === "EXPORT" ||

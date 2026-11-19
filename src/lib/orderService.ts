@@ -79,6 +79,10 @@ export async function fetchSparepartOrders(supabase: SupabaseClient): Promise<Sp
             user_pemohon: row.user_pemohon || row.created_by_name || "-",
             alasan_permintaan: row.alasan_permintaan || "-",
             petugas_shift: row.petugas_shift || "-",
+            line: row.line || null,
+            group: row.group || null,
+            pelaksana_lapangan: row.pelaksana_lapangan || null,
+            dibutuhkan: row.dibutuhkan || null,
             status: row.status as "PENDING" | "APPROVED" | "REJECTED",
             stock_before:
               row.stock_before !== null && row.stock_before !== undefined
@@ -130,6 +134,10 @@ export async function fetchSparepartOrders(supabase: SupabaseClient): Promise<Sp
             user_pemohon: meta.user_pemohon || log.user_name || "Teknik",
             alasan_permintaan: meta.alasan_permintaan || "-",
             petugas_shift: meta.petugas_shift || "-",
+            line: meta.line || null,
+            group: meta.group || null,
+            pelaksana_lapangan: meta.pelaksana_lapangan || null,
+            dibutuhkan: meta.dibutuhkan || null,
             status: (meta.status as any) || "PENDING",
             stock_before: meta.stock_before,
             stock_after: meta.stock_after,
@@ -151,6 +159,10 @@ export async function fetchSparepartOrders(supabase: SupabaseClient): Promise<Sp
           if (Array.isArray(meta.items) && meta.items.length > 0) {
             existing.items = meta.items;
           }
+          if (meta.line) existing.line = meta.line;
+          if (meta.group) existing.group = meta.group;
+          if (meta.pelaksana_lapangan) existing.pelaksana_lapangan = meta.pelaksana_lapangan;
+          if (meta.dibutuhkan) existing.dibutuhkan = meta.dibutuhkan;
           if (meta.stock_before !== undefined) existing.stock_before = meta.stock_before;
           if (meta.stock_after !== undefined) existing.stock_after = meta.stock_after;
           existing.updated_at = log.created_at;
