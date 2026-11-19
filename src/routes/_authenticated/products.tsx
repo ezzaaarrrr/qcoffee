@@ -96,6 +96,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -2836,6 +2837,10 @@ function WarehouseAndProductsPage() {
     referenceNo: profile?.full_name || profile?.email || "Administrator Teknik", // User
     supplierOrDest: "", // Alasan Permintaan Barang
     notes: "", // Petugas Sparepart Shift 1/2/3
+    line: "",
+    group: "",
+    pelaksanaLapangan: [] as string[],
+    dibutuhkan: "",
   });
 
   // Query order sparepart dari database (dipakai badge "Monitoring Stok Order" & tabel approval)
@@ -2880,6 +2885,10 @@ function WarehouseAndProductsPage() {
         referenceNo: profile?.full_name || profile?.email || "Administrator Teknik",
         supplierOrDest: "",
         notes: "",
+        line: "",
+        group: "",
+        pelaksanaLapangan: [],
+        dibutuhkan: "",
       });
       setIsOrderModalOpen(true);
     }
@@ -4443,6 +4452,10 @@ function WarehouseAndProductsPage() {
         userPemohon: orderHeader.referenceNo.trim(),
         alasanPermintaan: orderHeader.supplierOrDest.trim(),
         petugasShift: orderHeader.notes.trim() || "-",
+        line: orderHeader.line,
+        group: orderHeader.group,
+        pelaksanaLapangan: orderHeader.pelaksanaLapangan,
+        dibutuhkan: orderHeader.dibutuhkan,
         userId: profile?.id || undefined,
       });
 
@@ -4459,6 +4472,10 @@ function WarehouseAndProductsPage() {
         referenceNo: profile?.full_name || profile?.email || "Administrator Teknik",
         supplierOrDest: "",
         notes: "",
+        line: "",
+        group: "",
+        pelaksanaLapangan: [],
+        dibutuhkan: "",
       });
     } catch (err: any) {
       toast.error("Gagal memproses order sparepart", { description: err.message });
@@ -4819,14 +4836,8 @@ function WarehouseAndProductsPage() {
             : endingStock;
       const beginningBalance = rawBeg !== null && !isNaN(rawBeg) ? rawBeg : 0;
 
-      // Ending Balance = Mengikuti stok saat ini atau metadata OBS (tidak dipengaruhi mutasi)
-      const baseEnding =
-        obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
-          ? Number(obsMeta.ending_balance)
-          : endingStock;
-      const effectiveBaseEnding = endingStock !== baseEnding ? endingStock : baseEnding;
-
-      const finalEndingStock = effectiveBaseEnding;
+      // Ending Balance = murni mengikuti stok saat ini (current_stock) persis seperti Master Barang & Buffer Stok
+      const finalEndingStock = endingStock;
 
       totalBeginningAll += beginningBalance;
       totalReceiptAll += totalReceipt;
@@ -5814,6 +5825,10 @@ function WarehouseAndProductsPage() {
                   referenceNo: profile?.full_name || profile?.email || "Administrator Teknik",
                   supplierOrDest: "",
                   notes: "",
+                  line: "",
+                  group: "",
+                  pelaksanaLapangan: [],
+                  dibutuhkan: "",
                 });
                 setIsOrderModalOpen(true);
               }}
@@ -6252,6 +6267,11 @@ function WarehouseAndProductsPage() {
                       <th className="label-caps px-2.5 py-3 text-center w-[120px] whitespace-nowrap text-white font-semibold">
                         Stok Saat Ini
                       </th>
+                      {isSuperAdminSession && (
+                        <th className="label-caps px-2.5 py-3 text-center w-[110px] whitespace-nowrap text-white font-semibold">
+                          Aksi
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -6380,6 +6400,35 @@ function WarehouseAndProductsPage() {
                               {Number(effectiveStock).toLocaleString("id-ID")}
                             </span>
                           </td>
+
+                          {/* 8. Aksi (Khusus Super Admin) */}
+                          {isSuperAdminSession && (
+                            <td className="px-2.5 py-2.5 text-center whitespace-nowrap bg-slate-50/30 dark:bg-slate-900/10">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 px-2.5 text-xs gap-1 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+                                  onClick={() => setSelectedProduct(p)}
+                                  title="Lihat Detail & Edit Barang"
+                                >
+                                  <Eye className="size-3 text-primary" />
+                                  <span>Detail</span>
+                                </Button>
+                                {canDeleteMaster && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="size-7 p-0 text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                    onClick={() => setDeletingItem(p)}
+                                    title="Hapus Barang"
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -7176,17 +7225,10 @@ function WarehouseAndProductsPage() {
                           : null;
                       const batasMinimal = batasMinimalFile !== null ? batasMinimalFile : minStock;
 
-                      // ENDING BALANCE: murni mengikuti stok saat ini / metadata OBS dari import/input baru (tidak dipengaruhi mutasi)
-                      const baseEnding =
-                        obsMeta &&
-                        obsMeta.ending_balance !== null &&
-                        obsMeta.ending_balance !== undefined
-                          ? Number(obsMeta.ending_balance)
-                          : current;
-                      // Jika stok saat ini di master barang berbeda dari metadata OBS (karena diedit user), utamakan stok saat ini
-                      const effectiveBaseEnding = current !== baseEnding ? current : baseEnding;
-
-                      const endingBalance = effectiveBaseEnding;
+                      // ENDING BALANCE: murni mengikuti stok saat ini (current_stock) dari database,
+                      // disamakan dengan struktur menu Master Barang dan Buffer Stok agar berkurang
+                      // saat pemotongan stok dan nilainya persisten saat ganti hari.
+                      const endingBalance = current;
 
                       // Logika Kondisi:
                       // 1. Order warna merah (endingBalance <= minStock)
@@ -11408,8 +11450,8 @@ function WarehouseAndProductsPage() {
       {/* ── MODAL DIALOG: DETAIL TRANSAKSI MUTASI ────────────────────────────── */}
       {/* ── MODAL SISTEM ORDER SPAREPART (STRUKTUR SAMA SEPERTI CATATAN KELUAR) ── */}
       <Dialog open={isOrderModalOpen} onOpenChange={setIsOrderModalOpen}>
-        <DialogContent className="max-w-2xl" style={{ maxWidth: "min(42rem, calc(100vw - 2rem))" }}>
-          <DialogHeader>
+        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col" style={{ maxWidth: "min(56rem, calc(100vw - 2rem))" }}>
+          <DialogHeader className="shrink-0">
             <div className="flex items-center gap-2.5">
               <div className="flex items-center justify-center size-9 rounded-lg bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 shrink-0">
                 <ShoppingCart className="size-4.5" />
@@ -11427,7 +11469,7 @@ function WarehouseAndProductsPage() {
             </div>
           </DialogHeader>
 
-          <div className="space-y-4 py-2 text-sm">
+          <div className="space-y-4 py-2 text-sm overflow-y-auto">
             {/* Bagian List Barang (Multi-item hingga 15, persis Catatan Keluar) */}
             <div className="space-y-3 rounded-lg border border-border bg-surface-muted/30 p-3.5">
               <div className="flex items-center justify-between gap-2">
@@ -11593,6 +11635,60 @@ function WarehouseAndProductsPage() {
                   value={orderHeader.referenceNo}
                   onChange={(e) => setOrderHeader({ ...orderHeader, referenceNo: e.target.value })}
                   placeholder="cth. Nama Pemohon / User"
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Line</Label>
+                <Input
+                  value={orderHeader.line}
+                  onChange={(e) => setOrderHeader({ ...orderHeader, line: e.target.value })}
+                  placeholder="cth. Line Roasting 1"
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Group</Label>
+                <Input
+                  value={orderHeader.group}
+                  onChange={(e) => setOrderHeader({ ...orderHeader, group: e.target.value })}
+                  placeholder="cth. Group A"
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Pelaksana Lapangan</Label>
+                <div className="flex items-center gap-4 pt-1">
+                  {["Electric", "Mechanic", "Utility"].map((role) => (
+                    <label key={role} className="flex items-center gap-1.5 cursor-pointer select-none">
+                      <Checkbox
+                        checked={orderHeader.pelaksanaLapangan.includes(role)}
+                        onCheckedChange={(checked) => {
+                          setOrderHeader((prev) => ({
+                            ...prev,
+                            pelaksanaLapangan: checked
+                              ? [...prev.pelaksanaLapangan, role]
+                              : prev.pelaksanaLapangan.filter((r) => r !== role),
+                          }));
+                        }}
+                      />
+                      <span className="text-xs">{role}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Dibutuhkan</Label>
+                <Input
+                  value={orderHeader.dibutuhkan}
+                  onChange={(e) => setOrderHeader({ ...orderHeader, dibutuhkan: e.target.value })}
+                  placeholder="cth. Urgent / Rutin"
                   className="h-9 text-xs"
                 />
               </div>

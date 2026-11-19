@@ -19,6 +19,10 @@ export type SparepartOrder = {
   user_pemohon: string;
   alasan_permintaan: string;
   petugas_shift: string;
+  line?: string | null | undefined;
+  group?: string | null | undefined;
+  pelaksana_lapangan?: string[] | null | undefined;
+  dibutuhkan?: string | null | undefined;
   status: "PENDING" | "APPROVED" | "REJECTED";
   stock_before?: number | undefined;
   stock_after?: number | undefined;
@@ -218,6 +222,10 @@ export async function createSparepartOrder(
     userPemohon: string;
     alasanPermintaan: string;
     petugasShift: string;
+    line?: string | undefined;
+    group?: string | undefined;
+    pelaksanaLapangan?: string[] | undefined;
+    dibutuhkan?: string | undefined;
     userId?: string | undefined;
   },
 ): Promise<SparepartOrder> {
@@ -267,6 +275,10 @@ export async function createSparepartOrder(
     user_pemohon: payload.userPemohon.trim(),
     alasan_permintaan: payload.alasanPermintaan.trim(),
     petugas_shift: payload.petugasShift.trim() || "-",
+    line: payload.line?.trim() || null,
+    group: payload.group?.trim() || null,
+    pelaksana_lapangan: payload.pelaksanaLapangan && payload.pelaksanaLapangan.length > 0 ? payload.pelaksanaLapangan : null,
+    dibutuhkan: payload.dibutuhkan?.trim() || null,
     status: "PENDING",
     created_by: payload.userId || null,
     created_by_name: payload.userPemohon.trim(),

@@ -470,14 +470,8 @@ export function exportSparepartInventoryExcel(options: ExportInventoryOptions) {
       const beginningBalance = rawBeg !== null && !isNaN(rawBeg) ? rawBeg : 0;
       totalBeginningAll += beginningBalance;
 
-      // 4. ENDING BALANCE — mengikuti stok saat ini / metadata OBS dari import/input baru (tidak dipengaruhi mutasi):
-      const baseEnding =
-        obsMeta && obsMeta.ending_balance !== null && obsMeta.ending_balance !== undefined
-          ? Number(obsMeta.ending_balance)
-          : endingStock;
-      const effectiveBaseEnding = endingStock !== baseEnding ? endingStock : baseEnding;
-
-      const finalEndingStock = effectiveBaseEnding;
+      // 4. ENDING BALANCE — murni mengikuti stok saat ini (current_stock) persis seperti Master Barang & Buffer Stok:
+      const finalEndingStock = endingStock;
       totalEndingStock += finalEndingStock;
 
       // 5. STATUS STOCK (AMAN jika di atas minStock, LIMIT / KRITIS jika <= minStock)

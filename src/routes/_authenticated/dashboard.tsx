@@ -423,9 +423,9 @@ function DashboardPage() {
   );
 
   // Persentase Diagram OBS Sparepart:
-  // Rumus: (Jumlah keseluruhan pcs/unit OBS / Jumlah total 207 item barang) * 100
+  // Rumus: (Total stok item aman / Total stok item barang) * 100
   const obsTotalItems = totalActiveProducts > 0 ? totalActiveProducts : 207;
-  const kpiExactPct = (totalStokOBS / obsTotalItems) * 100;
+  const kpiExactPct = obsTotalItems > 0 ? (nonLimitProductsCount / obsTotalItems) * 100 : 0;
   const isKpiHit = kpiExactPct >= 92.0;
   const kpiStatus: "HIT" | "MISS" = isKpiHit ? "HIT" : "MISS";
 
