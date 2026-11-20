@@ -1263,85 +1263,9 @@ function DashboardPage() {
   };
 
   // ── PANEL SHORTCUT MENU GUDANG (Dashboard) ─────────────────────────────────
-  // Menu pintasan OBS Sparepart, Master Barang, Buffer Stok, Riwayat Mutasi,
-  // dan Activity Log — tampil di dashboard untuk role pengelola gudang
-  // (Super Admin, GDSP1201, CI1201/QC) sama seperti yang terdaftar di sidebar.
-  const renderWarehouseQuickMenu = () => {
-    const menus = [
-      {
-        to: "/products",
-        search: { tab: "items" },
-        icon: BoxIcon,
-        label: "OBS Sparepart",
-        desc: "Stok & keluhan sparepart OBS",
-        color: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-      },
-      {
-        to: "/products",
-        search: { tab: "master" },
-        icon: Package,
-        label: "Master Barang",
-        desc: "Data induk 2.808 barang gudang",
-        color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-      },
-      {
-        to: "/products",
-        search: { tab: "buffer_stock" },
-        icon: ShieldAlert,
-        label: "Buffer Stok",
-        desc: "Kontrol batas minimum buffer",
-        color: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
-      },
-      {
-        to: "/products",
-        search: { tab: "transactions" },
-        icon: History,
-        label: "Riwayat Mutasi",
-        desc: "Transaksi barang masuk & keluar",
-        color: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-      },
-      {
-        to: "/products",
-        search: { tab: "logs" },
-        icon: FileText,
-        label: "Activity Log",
-        desc: "Audit aktivitas modul gudang",
-        color: "bg-violet-500/10 text-violet-600 dark:text-violet-400",
-      },
-    ];
-    return (
-      <div>
-        <div className="mb-3 flex items-center gap-2">
-          <Wrench className="size-4 text-muted-foreground" />
-          <h2 className="label-caps text-xs font-bold uppercase tracking-wide text-muted-foreground">
-            Menu Gudang
-          </h2>
-        </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {menus.map((m) => (
-            <Link
-              key={m.label}
-              to={m.to}
-              search={m.search as never}
-              className="group flex items-start gap-3 rounded-lg border border-border bg-surface p-3 shadow-2xs transition-all hover:border-primary/40 hover:shadow-md"
-            >
-              <span className={cn("grid size-9 shrink-0 place-items-center rounded-md", m.color)}>
-                <m.icon className="size-4.5" />
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-semibold group-hover:text-primary">
-                  {m.label}
-                </span>
-                <span className="block text-[11px] leading-tight text-muted-foreground">
-                  {m.desc}
-                </span>
-              </span>
-            </Link>
-          ))}
-        </div>
-      </div>
-    );
-  };
+  // Disembunyikan dari dashboard overview sesuai permintaan:
+  // "OBS Sparepart", "Master Barang", "Buffer Stok", "Riwayat Mutasi", "Activity Log"
+  const renderWarehouseQuickMenu = () => null;
 
   // Render Panel Analisis Keseluruhan OBS + Buffer Stock
   const renderCombinedAnalysisPanel = () => {
@@ -3138,8 +3062,6 @@ function DashboardPage() {
             </div>
           )}
 
-          {/* Pintasan Menu Gudang: OBS, Master Barang, Buffer, Mutasi, Log */}
-          {renderWarehouseQuickMenu()}
 
           {/* Ringkasan Analisis Keseluruhan OBS + Buffer Stock */}
           {renderCombinedAnalysisPanel()}
@@ -3157,8 +3079,6 @@ function DashboardPage() {
 
       {userRole === "qc_field" && (
         <div className="space-y-6">
-          {/* Pintasan Menu Gudang: OBS, Master Barang, Buffer, Mutasi, Log */}
-          {renderWarehouseQuickMenu()}
 
           {/* Ringkasan Analisis Keseluruhan OBS + Buffer Stock */}
           {renderCombinedAnalysisPanel()}
@@ -3234,8 +3154,6 @@ function DashboardPage() {
 
       {userRole === "prod_process_uh" && (
         <div className="space-y-6">
-          {/* Pintasan Menu Gudang: OBS, Master Barang, Buffer, Mutasi, Log */}
-          {renderWarehouseQuickMenu()}
 
           {/* Ringkasan Analisis Keseluruhan OBS + Buffer Stock */}
           {renderCombinedAnalysisPanel()}

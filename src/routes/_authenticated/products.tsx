@@ -152,10 +152,10 @@ const PRODUCTS_NOTNULL_MIRRORS: Record<string, (p: Record<string, any>) => any> 
 };
 
 async function insertProductRowHealing(row: Record<string, any>): Promise<{ error: any }> {
-  let payload = {
+  let payload: Record<string, any> = {
     ...row,
-    material_number: row.material_number || row.code || null,
-    material_description: row.material_description || row.name || null,
+    ["material_number"]: row["material_number"] || row["code"] || null,
+    ["material_description"]: row["material_description"] || row["name"] || null,
   };
   for (let attempt = 0; attempt < 8; attempt++) {
     // .select("id") → bisa memastikan baris BENAR-BENAR tersimpan (RLS bisa
@@ -12494,7 +12494,7 @@ function WarehouseAndProductsPage() {
 
                 const plant =
                   meta.plant ||
-                  matchedOrder?.plant ||
+                  (matchedOrder as any)?.plant ||
                   "TES GROUND 2 ( Coffee ) Cikupa Tangerang";
 
                 const line = meta.line || matchedOrder?.line || "Line Roasting 1";

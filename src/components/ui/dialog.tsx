@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,24 @@ const DialogTrigger = DialogPrimitive.Trigger;
 const DialogPortal = DialogPrimitive.Portal;
 
 const DialogClose = DialogPrimitive.Close;
+
+const DialogBackButton = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Close>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Close>
+>(({ className, children, ...props }, ref) => (
+  <DialogPrimitive.Close
+    ref={ref}
+    className={cn(
+      "inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors cursor-pointer py-1 px-2 rounded-md hover:bg-accent/50 focus:outline-none",
+      className,
+    )}
+    {...props}
+  >
+    <ArrowLeft className="size-4" />
+    <span>{children || "Kembali"}</span>
+  </DialogPrimitive.Close>
+));
+DialogBackButton.displayName = "DialogBackButton";
 
 const DialogOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
@@ -96,6 +114,7 @@ export {
   DialogOverlay,
   DialogTrigger,
   DialogClose,
+  DialogBackButton,
   DialogContent,
   DialogHeader,
   DialogFooter,
